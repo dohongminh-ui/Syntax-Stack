@@ -1,13 +1,17 @@
 """Syntax Stack backend: FastAPI app. API under /api, static frontend at / (if ../frontend exists)."""
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import re
 import sys
 from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -25,6 +29,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Cache policy for responses that pass through a CDN (Cloudflare caches .css/.js by default and
+# otherwise falls back to its own 4-hour TTL). The frontend's files have fixed names and the JS
+# modules import each other by plain relative paths, so a long cache would serve old CSS next to
+# new JS after a deploy. Code and pages therefore revalidate every time (cheap: StaticFiles answers
+# a matching ETag with 304); images and icons change rarely and may be cached for a day.
+_REVALIDATE = (".html", ".css", ".js", ".json", ".xml", ".txt")
+_CACHE_A_DAY = (".png", ".ico", ".svg")
+
+
+@app.middleware("http")
+async def _cache_headers(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    elif request.query_params.get("v") and path.endswith((".css", ".js")) and response.status_code == 200:
+        # versioned by render_index(): the URL changes on every deploy, so cache it for good
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path == "/" or path.endswith(_REVALIDATE):
+        response.headers["Cache-Control"] = "no-cache"
+    elif path.endswith(_CACHE_A_DAY):
+        response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
 
 
 @app.exception_handler(bank.BankError)
@@ -259,5 +288,48 @@ def rows_coach(level_id: str, req: RowsHintRequest, level: int = Query(..., ge=1
 # --------------------------------------------------------------------------- static frontend
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
-if FRONTEND_DIR.is_dir():  # mounted last so it never shadows /api
+
+
+def build_id() -> str:
+    """A short id that changes whenever the frontend code changes.
+
+    ``SYNTAX_STACK_BUILD`` (e.g. the git commit) wins when set; otherwise it is a hash of the
+    shipped HTML/CSS/JS, so a redeploy with changed files always produces a new id.
+    """
+    env = os.getenv("SYNTAX_STACK_BUILD", "").strip()
+    if env:
+        return re.sub(r"[^A-Za-z0-9._-]", "", env)[:12] or "dev"
+    h = hashlib.sha1()
+    for p in sorted(FRONTEND_DIR.rglob("*")):
+        if p.is_file() and p.suffix in (".html", ".css", ".js") and "_screens" not in p.parts:
+            h.update(p.relative_to(FRONTEND_DIR).as_posix().encode())
+            h.update(p.read_bytes())
+    return h.hexdigest()[:10]
+
+
+def render_index(build: str) -> str:
+    """index.html with every stylesheet and module URL stamped with ``?v=<build>``.
+
+    The JS modules import each other by plain relative paths (``./game.js``), so an import map
+    re-points each module URL at its versioned twin. A CDN therefore never pairs new HTML with
+    old CSS/JS after a deploy: new code always has new URLs.
+    """
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    html = re.sub(r'((?:href|src)=")((?:css|js)/[^"?#]+\.(?:css|js))"', rf'\1\2?v={build}"', html)
+    modules = sorted(p.relative_to(FRONTEND_DIR).as_posix() for p in (FRONTEND_DIR / "js").glob("*.js"))
+    importmap = json.dumps({"imports": {f"/{m}": f"/{m}?v={build}" for m in modules}}, indent=1)
+    tag = f'<script type="importmap">\n{importmap}\n</script>\n'
+    return html.replace('<script type="module"', tag + '<script type="module"', 1)
+
+
+if FRONTEND_DIR.is_dir():
+    BUILD_ID = build_id()
+    _INDEX_HTML = render_index(BUILD_ID)
+
+    @app.get("/", include_in_schema=False)
+    @app.get("/index.html", include_in_schema=False)
+    def _index() -> HTMLResponse:
+        return HTMLResponse(_INDEX_HTML, headers={"Cache-Control": "no-cache", "X-Build": BUILD_ID})
+
+    # mounted last so it never shadows /api or the rendered index above
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

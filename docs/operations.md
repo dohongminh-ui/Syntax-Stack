@@ -234,8 +234,44 @@ relative URLs and is served by the same app, no CORS setup is needed.
 - **Secrets.** Keep `SYNTAX_STACK_TUTOR_TOKEN` out of git; the default in `compose.yaml` is the empty
   string.
 - **Health check.** `GET /api/health`; treat `puzzles: 0` as a deployment error (database missing).
-- **Static files** are served by Starlette with its default caching headers; there is no cache busting
-  or minification.
+- **Caching and asset versions.** The server renders `index.html` itself (`render_index` in
+  `backend/app/main.py`): every stylesheet and `js/main.js` gets `?v=<build>`, and an import map points
+  each JS module at its versioned URL, so a CDN can never pair new HTML with old CSS/JS. `<build>` is
+  `SYNTAX_STACK_BUILD` (the git commit when deployed by `deploy/update.sh`) or a hash of the frontend
+  files. Response headers: versioned CSS/JS `public, max-age=31536000, immutable`; HTML and other
+  code `no-cache` (revalidated with ETag, so a 304 when unchanged); images and icons one day; `/api/*`
+  `no-store`. The live page reports its build in the `X-Build` response header.
+- **Cloudflare** (the live site at https://syntax.screepai.moe sits behind it). Set *Caching →
+  Configuration → Browser Cache TTL* to **Respect Existing Headers**; otherwise Cloudflare replaces the
+  headers above with its own 4-hour TTL. Versioned URLs make deploys safe either way. No minification.
+
+### Production server: updates pull from GitHub
+
+The live server (SSH login kept in the team's private notes, not in this repo; stack directory
+`/opt/stacks/syntax-stack`) is a git
+checkout of https://github.com/dohongminh-ui/Syntax-Stack. A cron job runs `deploy/update.sh` every
+5 minutes:
+
+1. `git fetch` the branch (`main`); if `origin/main` has not moved, stop. Nothing is rebuilt.
+2. `git reset --hard origin/main`. Untracked server files are kept: `.env` (tutor token,
+   `SYNTAX_STACK_BIND`), `backend/data/review/...`.
+3. `docker compose up -d --build` with `SYNTAX_STACK_BUILD=<commit>`.
+4. Poll `http://127.0.0.1:8000/api/health` for up to 60 s. If it never answers, reset to the previous
+   commit and redeploy that (automatic rollback), and exit non-zero.
+
+So **deploying = pushing to `main`**. The log is `~/syntax-stack-update.log` on the server. A
+`flock` stops two runs overlapping.
+
+```bash
+ssh <user>@<server> bash /opt/stacks/syntax-stack/deploy/update.sh --force   # deploy now
+ssh <user>@<server> tail -n 30 ~/syntax-stack-update.log                 # what happened
+```
+
+First-time setup (already done on the live server; for a new machine):
+`ssh <user>@<host> 'bash -s' < deploy/server-setup.sh`. It backs up the stack directory to
+`~/syntax-stack-backup-<date>.tgz`, converts it to a git checkout, deploys, and installs the cron job.
+It's safe to re-run. Override `SYNTAX_STACK_REPO`, `SYNTAX_STACK_BRANCH` or `SYNTAX_STACK_DIR` if
+needed.
 
 ## 7. Troubleshooting
 

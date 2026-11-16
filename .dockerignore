@@ -16,6 +16,12 @@
 !backend/data/puzzles.sqlite
 !frontend/
 !frontend/index.html
+!frontend/*.png
+!frontend/favicon.ico
+!frontend/favicon.svg
+!frontend/manifest.json
+!frontend/robots.txt
+!frontend/sitemap.xml
 !frontend/css/
 !frontend/css/*.css
 !frontend/js/

@@ -6,6 +6,9 @@ services:
     environment:
       SYNTAX_STACK_TUTOR_URL: http://127.0.0.1:5678/webhook/syntax-stack-tutor
       SYNTAX_STACK_TUTOR_TOKEN: ${SYNTAX_STACK_TUTOR_TOKEN:-}
+      # Asset version stamped on CSS/JS URLs; deploy/update.sh sets it to the git commit.
+      # Empty falls back to a hash of the frontend files.
+      SYNTAX_STACK_BUILD: ${SYNTAX_STACK_BUILD:-}
     command:
       - python
       - -m
