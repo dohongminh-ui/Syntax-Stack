@@ -42,7 +42,7 @@ Open **http://localhost:8000/**. API explorer: http://localhost:8000/docs. Healt
 .venv/bin/python -m pytest -q        # Windows: .venv\Scripts\python -m pytest -q
 ```
 
-Expected: `130 passed`.
+Expected: `161 passed`.
 
 The tutor is optional. To enable it, set `SYNTAX_STACK_TUTOR_URL` and `SYNTAX_STACK_TUTOR_TOKEN` in the
 server's environment ([docs/ai-tutor.md](docs/ai-tutor.md)). Without them everything works with
@@ -50,6 +50,12 @@ authored hints and explanations.
 
 UI work without the backend: `python -m http.server 5173 -d frontend`, then open
 `http://localhost:5173/?mock=1` ([docs/frontend.md](docs/frontend.md#14-mock-mode-and-demo-hooks)).
+
+## Deploying
+
+The live site (https://syntax.screepai.moe) deploys from GitHub: **push to `main`** and the server picks
+it up within 5 minutes, rebuilds, checks `/api/health` and rolls back on its own if the new build does
+not answer. Details and manual commands: [docs/operations.md](docs/operations.md#production-server-updates-pull-from-github).
 
 ## Repository layout
 
@@ -63,7 +69,9 @@ sextax/
 ├── Syntax_Stack_BTEC_Best_Coder_2026_Proposal.pdf   project proposal (Vietnamese)
 ├── SERS.pdf                           presentation template
 ├── deploy/
-│   └── n8n-tutor.json                 importable n8n workflow for the tutor webhook
+│   ├── n8n-tutor.json                 importable n8n workflow for the tutor webhook
+│   ├── update.sh                      server: pull main from GitHub and redeploy (cron, every 5 min)
+│   └── server-setup.sh                one-time server setup: git checkout + cron job
 ├── docs/                              documentation (index: docs/README.md)
 │   ├── api-contract.md                HTTP API contract
 │   └── design-brief.md                visual design brief v2 ("Keycap")
