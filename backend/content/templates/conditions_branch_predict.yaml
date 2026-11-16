@@ -1,0 +1,114 @@
+id: conditions_branch_predict
+topic: conditions
+type: predict_output
+hints:
+  - "Chỉ một nhánh của if / elif / else được chạy: nhánh đầu tiên có điều kiện đúng."
+  - "Thay giá trị của biến vào từng điều kiện theo thứ tự từ trên xuống, dừng ở điều kiện đầu tiên đúng."
+  - "Khi một điều kiện đã đúng, các elif và else phía dưới bị bỏ qua hoàn toàn."
+explanation: "Python kiểm tra điều kiện từ trên xuống và chỉ chạy nhánh đầu tiên đúng, rồi bỏ qua các nhánh còn lại. Kết quả là {expected_inline}."
+tiers:
+  1:
+    - count: 12
+      prompt: "Chương trình này in ra gì?"
+      code: |
+        {var} = {d}
+        if {var} >= {t}:
+            print("{pass_l}")
+        else:
+            print("{fail_l}")
+      params:
+        story: [["diem", 5, "Đậu", "Trượt"], ["diem", 8, "Giỏi", "Chưa giỏi"], ["tuoi", 18, "Đủ tuổi", "Chưa đủ tuổi"], ["nhiet_do", 30, "Nóng", "Mát"], ["tien", 100, "Đủ tiền", "Thiếu tiền"], ["dem", 10, "Đủ số", "Chưa đủ"]]
+        dl: [-3, -2, -1, 0, 1, 2, 3]
+      derived:
+        var: "story[0]"
+        t: "story[1]"
+        pass_l: "story[2]"
+        fail_l: "story[3]"
+        d: "t + dl"
+        other: "fail_l if t + dl >= t else pass_l"
+      distractors:
+        - {name: wrong_branch, out: "{other}"}
+        - {name: both_branches, out: "{pass_l}\n{fail_l}"}
+        - {name: printed_variable, out: "{d}"}
+        - {name: printed_threshold, out: "{t}"}
+  2:
+    - count: 12
+      prompt: "Chương trình này in ra gì?"
+      code: |
+        {var} = {d}
+        if {var} >= {t1}:
+            print("{l1}")
+        elif {var} >= {t2}:
+            print("{l2}")
+        else:
+            print("{l3}")
+      params:
+        story: [["diem", "Giỏi", "Khá", "Yếu"], ["tuoi", "Người lớn", "Thiếu niên", "Trẻ em"], ["nhiet_do", "Nóng", "Ấm", "Lạnh"], ["tien", "Nhiều", "Đủ dùng", "Ít"]]
+        t1: [7, 8, 9]
+        t2: [4, 5]
+        d: [2, 3, 4, 5, 6, 7, 8, 9, 10]
+      derived:
+        var: "story[0]"
+        labels: "[story[1], story[2], story[3]]"
+        l1: "story[1]"
+        l2: "story[2]"
+        l3: "story[3]"
+        k: "0 if d >= t1 else (1 if d >= t2 else 2)"
+        o1: "labels[(k + 1) % 3]"
+        o2: "labels[(k + 2) % 3]"
+      distractors:
+        - {name: wrong_branch, out: "{o1}"}
+        - {name: wrong_branch, out: "{o2}"}
+        - {name: elif_also_runs, out: "{l1}\n{l2}"}
+        - {name: printed_variable, out: "{d}"}
+  3:
+    - count: 6
+      prompt: "Chương trình này in ra những gì? (Mỗi lần print là một dòng.)"
+      code: |
+        for i in range({a}, {b}):
+            if i % 2 == 0:
+                print(i, "chẵn")
+            else:
+                print(i, "lẻ")
+      params:
+        a: [0, 1, 2, 3]
+        b: [4, 5, 6, 7]
+      where: ["3 <= b - a <= 4"]
+      derived:
+        seq: "[str(j) + (' chẵn' if j % 2 == 0 else ' lẻ') for j in range(a, b)]"
+        flipped: "[str(j) + (' lẻ' if j % 2 == 0 else ' chẵn') for j in range(a, b)]"
+        evens: "[str(j) + ' chẵn' for j in range(a, b) if j % 2 == 0]"
+        incl: "[str(j) + (' chẵn' if j % 2 == 0 else ' lẻ') for j in range(a, b + 1)]"
+      distractors:
+        - {name: swapped_labels, out: "{J(flipped)}"}
+        - {name: only_one_branch, out: "{J(evens)}"}
+        - {name: range_includes_end, out: "{J(incl)}"}
+        - {name: numbers_only, out: "{J(range(a, b))}"}
+    - count: 8
+      prompt: "Chương trình này in ra những gì? (Mỗi lần print là một dòng.)"
+      code: |
+        for {i} in range({a}, {b}):
+            if {i} < {t}:
+                print("{lo}")
+            else:
+                print("{hi}")
+      params:
+        i: [i, j, k]
+        pair: [["thấp", "cao"], ["nhỏ", "lớn"], ["sớm", "muộn"], ["rẻ", "đắt"]]
+        a: [1, 2]
+        b: [5, 6]
+        t: [3, 4]
+      where: ["a < t < b"]
+      derived:
+        lo: "pair[0]"
+        hi: "pair[1]"
+        seq: "[lo if j < t else hi for j in range(a, b)]"
+        rev: "[hi if j < t else lo for j in range(a, b)]"
+        incl: "[lo if j <= t else hi for j in range(a, b)]"
+        all_lo: "[lo] * (b - a)"
+        all_hi: "[hi] * (b - a)"
+      distractors:
+        - {name: swapped_labels, out: "{J(rev)}"}
+        - {name: boundary_off_by_one, out: "{J(incl)}"}
+        - {name: only_if_branch, out: "{J(all_lo)}"}
+        - {name: only_else_branch, out: "{J(all_hi)}"}

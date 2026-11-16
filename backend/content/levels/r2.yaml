@@ -1,0 +1,54 @@
+id: r2
+order: 2
+title: "Đậu hay trượt"
+concept: conditions
+goal: "Điểm của bạn là 8. Viết chương trình dùng if để in ra Đậu khi điểm từ 5 trở lên."
+expected_output: "Đậu"
+twist_output: "Trượt"
+practice: {replace: t2, with: t8}
+rows: 5
+cols: 10
+indent_cols: 2
+tokens:
+  - {id: t1, text: ">=", w: 1, topic: syntax, is_distractor: false}
+  - {id: t2, text: "print(\"Đậu\")", w: 3, topic: conditions, is_distractor: false}
+  - {id: t3, text: "diem", w: 2, topic: conditions, is_distractor: false}
+  - {id: t4, text: "<", w: 1, topic: syntax, is_distractor: true}
+  - {id: t5, text: "if", w: 1, topic: syntax, is_distractor: false}
+  - {id: t6, text: "8", w: 1, topic: conditions, is_distractor: false}
+  - {id: t7, text: ":", w: 1, topic: syntax, is_distractor: false}
+  - {id: t8, text: "print(\"Trượt\")", w: 3, topic: conditions, is_distractor: true}
+  - {id: t9, text: "diem", w: 2, topic: conditions, is_distractor: false}
+  - {id: t10, text: "=", w: 1, topic: syntax, is_distractor: false}
+  - {id: t11, text: "5", w: 1, topic: conditions, is_distractor: false}
+  - {id: t12, text: "=", w: 1, topic: syntax, is_distractor: true}
+solution:
+  - {indent: 0, tokens: [t3, t10, t6]}
+  - {indent: 0, tokens: [t5, t9, t1, t11, t7]}
+  - {indent: 1, tokens: [t2]}
+required_constructs: [Assign, If]
+hints:
+  - "Câu lệnh if cho chương trình rẽ nhánh: dòng thụt vào dưới if chỉ chạy khi điều kiện đúng."
+  - "Tạo biến điểm, viết dòng if kiểm tra điểm, rồi in Đậu ở dòng thụt vào dưới if. Dòng if kết thúc bằng dấu hai chấm."
+  - "Điều kiện cần là điểm lớn hơn hoặc bằng 5. Chọn toán tử so sánh đúng, và nhớ mảnh = chỉ dùng để gán giá trị."
+group_hints:
+  output_mismatch:
+    - "Chương trình chạy nhưng in ra khác yêu cầu, hoặc không in gì."
+    - "Điểm là 8 và cần in Đậu. Hãy kiểm tra điều kiện của if cho đúng và mảnh print bạn đã chọn."
+    - "Với điểm 8, điều kiện diem so với 5 phải đúng; toán tử < làm điều kiện sai. Và mảnh print phải in Đậu."
+  wrong_order:
+    - "Biến phải được tạo trước khi dùng trong if."
+    - "Dòng gán điểm phải nằm trên dòng if."
+    - "Thứ tự từ trên xuống: gán điểm, dòng if, rồi dòng in thụt vào."
+  bad_indent:
+    - "Dòng nằm trong if phải thụt vào một mức; các dòng khác thì không."
+    - "Chỉ mảnh print cần thụt vào, đặt ở cột thụt lề số 1. Dòng gán và dòng if sát cột 0."
+    - "Đặt mảnh print ở cột 1 của hàng ngay dưới dòng if, không đặt ở cột 0."
+  missing_colon:
+    - "Dòng if phải kết thúc bằng dấu hai chấm."
+    - "Mảnh ':' nằm cuối dòng if, sau số 5."
+    - "Thêm mảnh ':' vào cuối hàng chứa if diem >= 5."
+  missing_construct:
+    - "Màn này yêu cầu dùng câu lệnh if (và một biến)."
+    - "Đầu ra đúng chưa đủ: chương trình cần kiểm tra điều kiện bằng if."
+    - "Dùng mảnh if, so sánh diem với 5, rồi đặt dòng print thụt vào dưới."

@@ -1,0 +1,98 @@
+id: loops_sum_predict
+topic: loops
+type: predict_output
+hints:
+  - "Vòng lặp lặp lại các dòng thụt vào bên trong nó; mỗi lần lặp biến đếm nhận một giá trị mới."
+  - "Lập bảng: ghi giá trị của biến đếm và của biến tổng sau mỗi lần lặp. Nhớ range() không gồm số kết thúc."
+  - "Biến tổng giữ lại giá trị cũ giữa các lần lặp, và dòng print() thụt lề ở đâu thì in ở đó (trong hay sau vòng lặp)."
+explanation: "Lập bảng theo từng lần lặp: biến tổng cộng dồn giá trị của biến đếm sau mỗi vòng. Kết quả đúng là {expected_inline}."
+tiers:
+  1:
+    - count: 8
+      prompt: "Chương trình này in ra gì?"
+      code: |
+        {t} = 0
+        for {i} in range({n}):
+            {t} = {t} + {i}
+        print({t})
+      params:
+        t: [tong, s, kq]
+        i: [i, j, k]
+        n: [4, 5, 6, 7, 8, 9]
+      distractors:
+        - {name: range_includes_end, out: "{n*(n+1)//2}"}
+        - {name: counted_iterations, out: "{n}"}
+        - {name: only_last_value, out: "{n-1}"}
+        - {name: product_instead_of_sum, out: "{n*(n-1)}"}
+  2:
+    - count: 12
+      prompt: "Chương trình này in ra những gì? (Mỗi lần print là một dòng.)"
+      code: |
+        {t} = 0
+        for {i} in range({a}, {b}):
+            {t} = {t} + {i}
+            print({t})
+      params:
+        t: [tong, s, kq]
+        i: [i, j, k]
+        a: [1, 2, 3]
+        b: [5, 6, 7]
+      where: ["3 <= b - a <= 4"]
+      derived:
+        seq: "[sum(range(a, j + 1)) for j in range(a, b)]"
+        seq2: "[sum(range(a, j + 1)) for j in range(a, b + 1)]"
+        seqb: "[sum(range(a, j)) for j in range(a, b)]"
+      distractors:
+        - {name: only_final_total, out: "{seq[-1]}"}
+        - {name: values_not_totals, out: "{J(range(a, b))}"}
+        - {name: range_includes_end, out: "{J(seq2)}"}
+        - {name: printed_before_adding, out: "{J(seqb)}"}
+  3:
+    - count: 6
+      prompt: "Chương trình này in ra gì?"
+      code: |
+        {t} = 0
+        for {i} in range({a}, {b}):
+            if {i} % 2 == 1:
+                {t} = {t} + {i}
+        print({t})
+      params:
+        t: [tong, s, kq]
+        i: [i, j, k]
+        a: [1, 2, 3]
+        b: [7, 9]
+      derived:
+        even: "sum(j for j in range(a, b) if j % 2 == 0)"
+        everything: "sum(range(a, b))"
+        incl: "sum(j for j in range(a, b + 1) if j % 2 == 1)"
+        cnt: "len([j for j in range(a, b) if j % 2 == 1])"
+      distractors:
+        - {name: summed_even_instead, out: "{even}"}
+        - {name: summed_everything, out: "{everything}"}
+        - {name: range_includes_end, out: "{incl}"}
+        - {name: counted_instead_of_summed, out: "{cnt}"}
+    - count: 8
+      prompt: "Chương trình này in ra gì?"
+      code: |
+        {t} = 0
+        for {i} in range({a}, {b}):
+            if {i} > {k}:
+                {t} = {t} + {i}
+        print({t})
+      params:
+        t: [tong, s, kq]
+        i: [i, j]
+        a: [1, 2]
+        b: [6, 7, 8]
+        k: [2, 3, 4]
+      where: ["a < k < b - 1"]
+      derived:
+        incl_k: "sum(j for j in range(a, b) if j >= k)"
+        below: "sum(j for j in range(a, b) if j < k)"
+        everything: "sum(range(a, b))"
+        incl_end: "sum(j for j in range(a, b + 1) if j > k)"
+      distractors:
+        - {name: boundary_included, out: "{incl_k}"}
+        - {name: summed_below_instead, out: "{below}"}
+        - {name: summed_everything, out: "{everything}"}
+        - {name: range_includes_end, out: "{incl_end}"}

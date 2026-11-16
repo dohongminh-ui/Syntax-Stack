@@ -1,0 +1,86 @@
+id: variables_assign_fill
+topic: variables
+type: fill_blank
+hints:
+  - "Biến lưu một giá trị, còn print() in ra đúng giá trị mà biến đang giữ."
+  - "Đọc chương trình từ trên xuống dưới và theo dõi giá trị hiện tại của biến sau mỗi dòng."
+  - "Đầu ra cần là {expected_inline}. Hãy đi ngược từ dòng print() để tìm xem ô trống phải mang giá trị nào."
+explanation: "Chỗ trống cần giá trị để sau khi chạy hết các dòng, biến in ra đúng {expected_inline}. Hãy đi từng dòng từ trên xuống và theo dõi giá trị của biến."
+tiers:
+  1:
+    - count: 8
+      prompt: "Điền giá trị còn thiếu để chương trình in ra {expected_inline}."
+      code: |
+        {v} = ___
+        print({v})
+      params:
+        v: [diem, tuoi, so, gia, dem, sl]
+        n: [3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25]
+      answer: "{n}"
+      distractors:
+        - {name: off_by_one_high, frag: "{n+1}"}
+        - {name: off_by_one_low, frag: "{n-1}"}
+        - {name: doubled_value, frag: "{n*2}"}
+        - {name: ten_more, frag: "{n+10}"}
+      explanation: "print({v}) in ra giá trị đang lưu trong {v}. Muốn in {expected_inline} thì phải gán {v} = {n}."
+    - count: 6
+      prompt: "Điền giá trị còn thiếu để chương trình in ra {expected_inline}. Nhớ rằng chuỗi cần dấu nháy."
+      code: |
+        {v} = ___
+        print({v})
+      params:
+        v: [ten, loi_chao, mon, lop]
+        pair: [["Lan", "Minh"], ["An", "Bình"], ["Python", "Java"], ["Xin chào", "Tạm biệt"], ["Hoa", "Mai"], ["Toán", "Văn"]]
+      derived:
+        s: "pair[0]"
+        s2: "pair[1]"
+        up: "pair[0].upper()"
+      answer: '"{s}"'
+      distractors:
+        - {name: no_quotes, frag: "{s}"}
+        - {name: other_word, frag: '"{s2}"'}
+        - {name: wrong_case, frag: '"{up}"'}
+        - {name: repeated_text, frag: '"{s}{s}"'}
+      explanation: "Chữ (chuỗi) phải nằm trong dấu nháy, ví dụ \"{s}\". Không có dấu nháy, Python hiểu {s} là tên một biến chưa tồn tại."
+  2:
+    - count: 12
+      prompt: "Biến được cập nhật hai lần. Điền số để chương trình in ra {expected_inline}."
+      code: |
+        {v} = {a}
+        {v} = {v} + ___
+        print({v})
+      params:
+        v: [diem, tong, so, gia, dem]
+        a: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        b: [2, 3, 4, 5, 6, 7, 8, 9]
+      where: ["a != b"]
+      derived:
+        target: "a + b"
+      answer: "{b}"
+      distractors:
+        - {name: used_start_value, frag: "{a}"}
+        - {name: used_final_result, frag: "{target}"}
+        - {name: off_by_one_high, frag: "{b+1}"}
+        - {name: off_by_one_low, frag: "{b-1}"}
+      explanation: "{v} = {v} + ... lấy giá trị cũ của {v} ({a}), cộng thêm số ở ô trống rồi ghi đè lại. Cần {a} + ? = {target} nên ô trống là {b}."
+  3:
+    - count: 12
+      prompt: "Vòng lặp cộng thêm một giá trị ở mỗi lần chạy. Điền số để in ra {expected_inline}."
+      code: |
+        {v} = {a}
+        for i in range({r}):
+            {v} = {v} + ___
+        print({v})
+      params:
+        v: [tong, diem, so, gia]
+        a: [0, 1, 2, 3, 4, 5]
+        b: [2, 3, 4, 5]
+        r: [2, 3, 4]
+      where: ["r != b"]
+      answer: "{b}"
+      distractors:
+        - {name: off_by_one_high, frag: "{b+1}"}
+        - {name: off_by_one_low, frag: "{b-1}"}
+        - {name: used_loop_count, frag: "{r}"}
+        - {name: used_loop_variable, frag: "i"}
+      explanation: "Thân vòng lặp chạy {r} lần, mỗi lần cộng thêm cùng một số vào {v}. Từ {a} đến {expected_inline} cần cộng {r} lần số {b}."

@@ -1,0 +1,74 @@
+id: loops_bug
+topic: loops
+type: find_bug
+hints:
+  - "Hãy so sánh đầu ra thực tế của chương trình với đầu ra mong muốn: thiếu hay thừa số nào, và công thức cập nhật có đúng không?"
+  - "range() không gồm giá trị kết thúc; và biến tổng phải được cộng dồn chứ không phải gán lại mỗi lần lặp."
+  - "Tìm dòng quyết định số lần lặp hoặc cách biến được cập nhật, rồi đối chiếu từng chi tiết với kết quả cần có."
+explanation: "Lỗi thường gặp trong vòng lặp: giá trị kết thúc của range() bị thiếu một đơn vị, hoặc biến tổng bị gán lại thay vì cộng dồn (t = t + i)."
+tiers:
+  1:
+    - count: 10
+      prompt: "Chương trình in thiếu số. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        for {v} in range({a}, {e}):
+            print({v})
+      bug_line: 1
+      fix: "for {v} in range({a}, {e1}):"
+      params:
+        v: [i, j, k, so]
+        a: [0, 1, 2]
+        e: [3, 4, 5]
+      where: ["e - a + 1 <= 5", "e - a >= 2"]
+      derived:
+        e1: "e + 1"
+      distractors:
+        - {name: wrong_start_before, rep: "for {v} in range({a-1}, {e1}):"}
+        - {name: wrong_start_after, rep: "for {v} in range({a+1}, {e1}):"}
+        - {name: too_long, rep: "for {v} in range({a}, {e+2}):"}
+        - {name: missing_colon, rep: "for {v} in range({a}, {e1})"}
+      explanation: "range({a}, {e}) dừng trước {e} nên không in {e}. Để in cả {e}, giá trị kết thúc phải là {e1}."
+  2:
+    - count: 10
+      prompt: "Chương trình in sai kết quả. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        {t} = 0
+        for {i} in range({n}):
+            {t} = {i}
+        print({t})
+      bug_line: 3
+      fix: "{t} = {t} + {i}"
+      params:
+        t: [tong, s, kq]
+        i: [i, j, k]
+        n: [4, 5, 6, 7, 8]
+      distractors:
+        - {name: counted_instead_of_summed, rep: "{t} = {t} + 1"}
+        - {name: no_assignment, rep: "{t} + {i}"}
+        - {name: multiplied_instead_of_added, rep: "{t} = {t} * {i}"}
+        - {name: replaced_with_next, rep: "{t} = {i} + 1"}
+      explanation: "{t} = {i} gán đè giá trị mỗi lần lặp nên chỉ giữ số cuối cùng. Muốn cộng dồn phải viết {t} = {t} + {i}."
+  3:
+    - count: 12
+      prompt: "Chương trình in sai kết quả. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        {t} = 0
+        for {i} in range({a}, {b}):
+            if {i} > {k}:
+                {t} = {t} + {i}
+        print({t})
+      bug_line: 3
+      fix: "if {i} >= {k}:"
+      params:
+        t: [tong, s, kq]
+        i: [i, j]
+        a: [1, 2]
+        b: [6, 7, 8]
+        k: [2, 3, 4]
+      where: ["a < k < b - 1"]
+      distractors:
+        - {name: wrong_direction, rep: "if {i} < {k}:"}
+        - {name: equality_only, rep: "if {i} == {k}:"}
+        - {name: strict_comparison, rep: "if {i} > {k} + 1:"}
+        - {name: missing_colon, rep: "if {i} >= {k}"}
+      explanation: "Điều kiện {i} > {k} bỏ sót chính số {k}. Muốn cộng cả {k} thì phải dùng {i} >= {k} (lớn hơn hoặc bằng)."

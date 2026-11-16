@@ -1,0 +1,50 @@
+id: r3
+order: 3
+title: "Đếm đến ba"
+concept: loops
+goal: "Viết chương trình in ra 0, 1, 2, mỗi số một dòng."
+expected_output: "0\n1\n2"
+twist_output: "0\n1"
+practice: {replace: t4, with: t1}
+rows: 4
+cols: 10
+indent_cols: 2
+tokens:
+  - {id: t1, text: "range(2)", w: 3, topic: loops, is_distractor: true}
+  - {id: t2, text: "for", w: 1, topic: syntax, is_distractor: false}
+  - {id: t3, text: "print(i)", w: 3, topic: loops, is_distractor: false}
+  - {id: t4, text: "range(3)", w: 3, topic: loops, is_distractor: false}
+  - {id: t5, text: ":", w: 1, topic: syntax, is_distractor: false}
+  - {id: t6, text: "while", w: 2, topic: syntax, is_distractor: true}
+  - {id: t7, text: "i", w: 1, topic: loops, is_distractor: false}
+  - {id: t8, text: "in", w: 1, topic: syntax, is_distractor: false}
+  - {id: t9, text: "range(4)", w: 3, topic: loops, is_distractor: true}
+solution:
+  - {indent: 0, tokens: [t2, t7, t8, t4, t5]}
+  - {indent: 1, tokens: [t3]}
+required_constructs: [For]
+hints:
+  - "Vòng lặp for lặp lại các dòng thụt vào dưới nó. range(n) cho các số bắt đầu từ 0."
+  - "Viết một vòng for dùng biến i, bên dưới thụt vào một dòng in i. Cần in ba số: 0, 1, 2."
+  - "range() dừng trước giá trị kết thúc, nên để in ra ba số 0, 1, 2 thì giá trị kết thúc phải lớn hơn số cuối đúng một đơn vị."
+group_hints:
+  output_mismatch:
+    - "range() dừng trước giá trị kết thúc."
+    - "Đếm xem chương trình in ra mấy số so với đề: range(n) in ra đúng n số, bắt đầu từ 0."
+    - "Cần in ba số, nên chọn mảnh range cho đúng ba số. Hãy thử từng mảnh range trong khay."
+  wrong_order:
+    - "Vòng lặp phải được viết đủ cả dòng for trước khi có thân vòng lặp."
+    - "Dòng print(i) phải nằm bên dưới dòng for, không nằm trên."
+    - "Hàng trên: for i in range(...) kết thúc bằng dấu hai chấm. Hàng dưới: print(i) thụt vào một mức."
+  bad_indent:
+    - "Dòng thân vòng lặp phải thụt vào một mức."
+    - "Mảnh print(i) cần nằm ở cột thụt lề số 1, còn dòng for nằm sát cột 0."
+    - "Đặt print(i) ở cột 1 của hàng ngay dưới dòng for."
+  missing_colon:
+    - "Dòng for phải kết thúc bằng dấu hai chấm."
+    - "Mảnh ':' đặt cuối dòng for, sau mảnh range."
+    - "Thêm mảnh ':' vào cuối hàng chứa for i in range(...)."
+  missing_construct:
+    - "Màn này yêu cầu dùng vòng lặp for."
+    - "Chỉ dùng while hay in rời rạc chưa đủ; bài này luyện vòng lặp for với range()."
+    - "Dùng mảnh for, i, in, một mảnh range và dấu hai chấm cho dòng đầu."

@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#141518">
+  <title>Syntax Stack — Học Python bằng cách xếp khối mã</title>
+  <!--
+    SITE URL: current production domain: https://syntax.screepai.moe
+    Places to change (or run: python tools/social/set-site-url.py https://your-domain):
+      index.html: canonical, og:url, og:image, twitter:image, JSON-LD url + image
+      robots.txt: Sitemap line      sitemap.xml: <loc>
+  -->
+  <meta name="description" content="Syntax Stack là game xếp khối mà mỗi khối là mã Python thật. Hàng chỉ biến mất khi chương trình chạy đúng, và gia sư AI giải thích từng lỗi sai của bạn.">
+  <link rel="canonical" href="https://syntax.screepai.moe/">
+  <meta name="author" content="Nhóm Le Rouge · BTEC FPT">
+  <meta name="application-name" content="Syntax Stack">
+  <meta name="apple-mobile-web-app-title" content="Syntax Stack">
+  <meta name="color-scheme" content="dark">
+  <meta name="format-detection" content="telephone=no">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Syntax Stack">
+  <meta property="og:title" content="Syntax Stack — Học Python bằng cách xếp khối mã">
+  <meta property="og:description" content="Game xếp khối mà mỗi khối là mã Python thật. Hàng chỉ biến mất khi chương trình chạy đúng, có gia sư AI giải thích lỗi sai.">
+  <meta property="og:url" content="https://syntax.screepai.moe/">
+  <meta property="og:locale" content="vi_VN">
+  <meta property="og:image" content="https://syntax.screepai.moe/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:alt" content="Syntax Stack: tiêu đề bằng phím bàn phím, bàn Syntax Rows với dòng for i in range(3) và kết quả 0 1 2.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Syntax Stack — Học Python bằng cách xếp khối mã">
+  <meta name="twitter:description" content="Game xếp khối mà mỗi khối là mã Python thật. Hàng chỉ biến mất khi chương trình chạy đúng, có gia sư AI giải thích lỗi sai.">
+  <meta name="twitter:image" content="https://syntax.screepai.moe/og-image.png">
+  <meta name="twitter:image:alt" content="Syntax Stack: tiêu đề bằng phím bàn phím, bàn Syntax Rows với dòng for i in range(3) và kết quả 0 1 2.">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Syntax Stack",
+    "url": "https://syntax.screepai.moe/",
+    "image": "https://syntax.screepai.moe/og-image.png",
+    "description": "Game xếp khối mà mỗi khối là mã Python thật. Hàng chỉ biến mất khi chương trình chạy đúng, có gia sư AI giải thích lỗi sai.",
+    "applicationCategory": "EducationalApplication",
+    "operatingSystem": "Web (trình duyệt)",
+    "inLanguage": "vi",
+    "isAccessibleForFree": true,
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "VND" },
+    "educationalLevel": "Beginner",
+    "teaches": "Lập trình Python cơ bản",
+    "creator": { "@type": "Organization", "name": "Nhóm Le Rouge — BTEC FPT" }
+  }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600&family=Bricolage+Grotesque:wght@800&family=JetBrains+Mono:wght@500;700&display=swap&subset=vietnamese" rel="stylesheet">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/game.css">
+  <link rel="stylesheet" href="css/rows.css">
+  <link rel="stylesheet" href="css/modal.css">
+</head>
+<body>
+<noscript><p class="noscript">Syntax Stack cần JavaScript để chạy. Hãy bật JavaScript trong trình duyệt rồi tải lại trang.</p></noscript>
+<div id="app">
+
+  <!-- Indicator strip (shared by both game modes and the level select) -->
+  <header id="strip" class="strip" hidden>
+    <div class="strip-l">
+      <button id="strip-back" class="icon-btn" type="button" aria-label="Quay lại"></button>
+      <span class="wordmark" aria-label="syntax_stack">syntax<span class="caret" aria-hidden="true">_</span>stack</span>
+    </div>
+    <div id="strip-mode" class="strip-c"></div>
+    <div class="strip-r">
+      <div id="strip-streak" class="streak" hidden></div>
+      <div id="strip-leds" class="leds" role="status" aria-live="polite">
+        <span class="led-item"><i class="led" data-led="ok" style="--c:var(--ok)"></i><span class="led-l">BUILD</span></span>
+        <span class="led-item"><i class="led" data-led="warn" style="--c:var(--warn)"></i><span class="led-l">WARN</span></span>
+        <span class="led-item"><i class="led" data-led="crash" style="--c:var(--crash)"></i><span class="led-l">CRASH</span></span>
+      </div>
+      <div class="score"><span class="score-l">ĐIỂM</span><b id="hud-score" class="score-n">0</b></div>
+    </div>
+  </header>
+
+  <!-- START -->
+  <section id="screen-start" class="screen start">
+    <div class="start-wrap">
+      <h1 class="title-keys" aria-label="Syntax Stack">
+        <span id="tk-1" class="tk-row" aria-hidden="true"></span>
+        <span id="tk-2" class="tk-row" aria-hidden="true"></span>
+      </h1>
+      <p class="lead">Chương trình của bạn là một bàn phím. Mỗi khối là một phím.</p>
+
+      <div class="modes">
+        <article id="card-rescue" class="mode-card">
+          <div class="mc-preview" id="pv-rescue" aria-hidden="true"></div>
+          <h2>Code Rescue</h2>
+          <p>Xếp khối, giải đố để dọn hàng. Sai 2 lần là sập.</p>
+          <button id="btn-play" class="key key-btn enter-key t-neutral" type="button"><span class="cap-top"><span class="kb-label">Chơi Code Rescue</span><span class="ret" aria-hidden="true">↵</span></span></button>
+        </article>
+        <article id="card-rows" class="mode-card">
+          <div class="mc-preview" id="pv-rows" aria-hidden="true"></div>
+          <h2>Syntax Rows</h2>
+          <p>Mỗi hàng là một dòng Python. Viết đúng thì hàng biến mất.</p>
+          <button id="btn-rows" class="key key-btn enter-key t-neutral" type="button"><span class="cap-top"><span class="kb-label">Chơi Syntax Rows</span><span class="ret" aria-hidden="true">↵</span></span></button>
+        </article>
+      </div>
+
+      <div class="practice-shortcuts">
+        <button id="btn-practice-tray" class="btn" type="button">Luyện theo lỗi</button>
+        <button id="btn-judge-demo" class="btn" type="button">Demo cho giám khảo</button>
+      </div>
+
+      <div class="setup" aria-label="Thiết lập Code Rescue">
+        <div class="setup-group">
+          <span class="setup-l">Cấp độ</span>
+          <div class="keyrow">
+            <label class="key keyopt"><input class="sr-only" type="radio" name="level" value="beginner" checked><span class="cap-top"><span class="kb-label">Beginner</span></span></label>
+            <label class="key keyopt"><input class="sr-only" type="radio" name="level" value="intermediate"><span class="cap-top"><span class="kb-label">Intermediate</span></span></label>
+            <label class="key keyopt"><input class="sr-only" type="radio" name="level" value="advanced"><span class="cap-top"><span class="kb-label">Advanced</span></span></label>
+          </div>
+        </div>
+        <div class="setup-group">
+          <span class="setup-l">Chế độ Code Rescue</span>
+          <div class="switch">
+            <label class="key keyopt"><input class="sr-only" type="radio" name="mode" value="rescue" checked><span class="cap-top"><span class="kb-label">Rescue</span></span></label>
+            <label class="key keyopt"><input class="sr-only" type="radio" name="mode" value="practice"><span class="cap-top"><span class="kb-label">Luyện tập</span></span></label>
+          </div>
+          <p class="setup-note">Rescue: 1 lần trả lời mỗi câu, sai 2 lần là thua. Luyện tập: không thua, 3 lần trả lời mỗi câu.</p>
+        </div>
+      </div>
+      <p id="hs-line" class="hs"></p>
+    </div>
+  </section>
+
+  <section id="screen-practice" class="screen end" hidden>
+    <div class="end-card">
+      <h1 id="practice-title" tabindex="-1">Luyện theo lỗi</h1>
+      <p id="practice-focus" class="end-sub"></p>
+      <ol id="practice-items" class="practice-list"></ol>
+      <button id="practice-home" class="btn" type="button">Về màn hình chính</button>
+    </div>
+  </section>
+
+  <!-- CODE RESCUE -->
+  <section id="screen-game" class="screen game-screen" hidden>
+    <main class="game">
+      <div class="board-col">
+        <div class="board-case">
+          <div id="board" class="board" role="grid" aria-label="Lưới 8×8" tabindex="0"></div>
+        </div>
+        <p id="board-hint" class="board-hint">Kéo khối vào lưới, hoặc chọn khối rồi chạm vào ô. Phím mũi tên + Enter để đặt.</p>
+      </div>
+      <aside class="side">
+        <div id="tray-zone" class="tray-zone">
+          <div id="tray" class="tray" aria-label="Khay khối"></div>
+          <div id="lock-banner" class="lock-banner" hidden></div>
+        </div>
+        <div id="items" class="items" aria-label="Vật phẩm"></div>
+        <ul class="topic-legend" aria-label="Màu khối và chủ đề" id="legend"></ul>
+      </aside>
+    </main>
+  </section>
+
+  <!-- RESCUE END -->
+  <section id="screen-end" class="screen end" hidden>
+    <div class="end-card">
+      <div id="end-badge" class="end-badge"></div>
+      <h1 id="end-title" tabindex="-1">Hết ván</h1>
+      <p id="end-sub" class="end-sub"></p>
+      <div class="end-score"><span class="es-l">ĐIỂM</span><b id="end-score" class="es-n">0</b></div>
+      <p id="end-hs" class="hs"></p>
+      <dl class="receipt" aria-label="Thống kê ván chơi">
+        <div><dt>streak_max</dt><dd id="end-streak">0</dd></div>
+        <div><dt>bugs_fixed</dt><dd id="end-bugs">0</dd></div>
+        <div><dt>mistakes</dt><dd id="end-mist">0</dd></div>
+      </dl>
+      <h2 class="report-h">Báo cáo lỗi</h2>
+      <ul id="end-report" class="report"></ul>
+      <div id="end-practice" class="practice-row"></div>
+      <div class="end-actions">
+        <button id="btn-again" class="key key-btn enter-key t-neutral" type="button"><span class="cap-top"><span class="kb-label">Chơi lại</span><span class="ret" aria-hidden="true">↵</span></span></button>
+        <button id="btn-menu" class="btn" type="button">Về màn hình chính</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SYNTAX ROWS: LEVEL SELECT -->
+  <section id="screen-rows-select" class="screen rows-select" hidden>
+    <div class="rs-wrap">
+      <div class="rs-head">
+        <div>
+          <h1 class="rs-title">Syntax Rows</h1>
+          <p class="rs-sub">Chọn một màn. Hoàn thành màn trước để mở màn sau.</p>
+        </div>
+        <div id="rs-progress" class="rs-progress"></div>
+      </div>
+      <ol id="rs-levels" class="rs-levels"></ol>
+      <p id="rs-error" class="rs-error" role="alert" hidden></p>
+      <section class="rs-rules" aria-label="Cách chơi và cách tính sao">
+        <div>
+          <h2 class="report-h">Cách chơi</h2>
+          <ol class="rs-steps">
+            <li><b>01</b><span>Kéo mảnh mã từ khay lên bàn. Mỗi hàng là một dòng lệnh, hai cột đầu là cột thụt lề.</span></li>
+            <li><b>02</b><span>Nhấn Chạy kiểm tra (phím Enter). Hàng chỉ biến mất khi chương trình chạy đúng.</span></li>
+            <li><b>03</b><span>Thử lại không giới hạn. Gợi ý có 3 cấp, mở lần lượt.</span></li>
+          </ol>
+        </div>
+        <div>
+          <h2 class="report-h">Cách tính sao</h2>
+          <ul id="rs-stars" class="rs-stars">
+            <li data-n="3"><span>Đạt ngay lần chạy đầu, không dùng gợi ý.</span></li>
+            <li data-n="2"><span>Đạt trong tối đa 3 lần chạy và dùng tối đa Gợi ý 1.</span></li>
+            <li data-n="1"><span>Đạt.</span></li>
+          </ul>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <!-- SYNTAX ROWS: GAME -->
+  <section id="screen-rows" class="screen rows-screen" hidden>
+    <main class="game rows-game">
+      <div class="rg-main">
+        <div class="rg-goal">
+          <div class="rg-goal-top"><span id="rg-num" class="chip"></span><h1 id="rg-title" class="rg-title"></h1></div>
+          <p id="rg-goal" class="rg-goal-text"></p>
+        </div>
+        <div class="rows-case" id="rows-case">
+          <div class="rows-inner" id="rows-inner">
+            <div id="rows-board" class="rows-board" role="grid" aria-label="Bàn Syntax Rows" tabindex="0"></div>
+            <div class="rows-tray-wrap">
+              <div class="rows-tray-l"><span>Khay mảnh mã</span><span id="rows-tray-count"></span></div>
+              <div id="rows-tray" class="rows-tray" aria-label="Khay mảnh mã"></div>
+            </div>
+          </div>
+        </div>
+        <p class="board-hint rows-hint">Kéo mảnh lên hàng, hoặc chạm mảnh rồi chạm ô. Chạm mảnh trên lưới để trả về khay.</p>
+      </div>
+      <aside class="rg-side" id="rg-side"></aside>
+    </main>
+  </section>
+</div>
+
+<div id="modal-root"></div>
+<div id="dialog-root"></div>
+<div id="toast-root" aria-live="polite"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

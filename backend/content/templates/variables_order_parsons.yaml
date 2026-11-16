@@ -1,0 +1,102 @@
+id: variables_order_parsons
+topic: variables
+type: parsons
+hints:
+  - "Một biến phải được gán giá trị trước khi dùng nó ở dòng khác."
+  - "Tìm dòng không phụ thuộc vào ai (gán số cụ thể) để đặt đầu tiên, và dòng print() thường đứng cuối."
+  - "Mỗi dòng dùng biến nào thì biến đó phải được tạo ở dòng đứng trước nó. Sắp xếp theo chuỗi phụ thuộc đó."
+explanation: "Chương trình chạy từng dòng từ trên xuống, nên biến phải được tạo trước khi dùng và print() đứng sau khi đã tính xong. Đầu ra đúng là {expected_inline}."
+tiers:
+  1:
+    - count: 8
+      prompt: "Sắp xếp các dòng để chương trình in ra {expected_inline}."
+      code: |
+        {n1} = {p}
+        {n2} = {n1} + {q}
+        print({n2})
+      params:
+        names: [[diem, tong], [gia, moi], [so, kq], [tuoi, sau], [dem, tiep]]
+        p: [2, 3, 4, 5, 6, 7, 8, 9]
+        q: [2, 3, 4, 5, 6, 7, 8, 9]
+      derived:
+        n1: "names[0]"
+        n2: "names[1]"
+      distractors:
+        - name: print_first
+          code: |
+            print({n2})
+            {n1} = {p}
+            {n2} = {n1} + {q}
+        - name: used_before_created
+          code: |
+            {n2} = {n1} + {q}
+            {n1} = {p}
+            print({n2})
+  2:
+    - count: 12
+      prompt: "Sắp xếp các dòng để hoán đổi hai biến rồi in ra {expected_inline}."
+      code: |
+        {n1} = {p}
+        {n2} = {q}
+        {t} = {n1}
+        {n1} = {n2}
+        {n2} = {t}
+        print({n1}, {n2})
+      params:
+        pair: [[a, b], [x, y], [so1, so2], [dau, cuoi]]
+        t: [tam, tmp, luu]
+        p: [2, 3, 4, 5, 6, 7, 8, 9]
+        q: [2, 3, 4, 5, 6, 7, 8, 9]
+      where: ["p != q"]
+      derived:
+        n1: "pair[0]"
+        n2: "pair[1]"
+      distractors:
+        - name: swap_before_saving
+          code: |
+            {n1} = {p}
+            {n2} = {q}
+            {n1} = {n2}
+            {t} = {n1}
+            {n2} = {t}
+            print({n1}, {n2})
+        - name: print_too_early
+          code: |
+            {n1} = {p}
+            {n2} = {q}
+            print({n1}, {n2})
+            {t} = {n1}
+            {n1} = {n2}
+            {n2} = {t}
+  3:
+    - count: 10
+      prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      code: |
+        {n1} = {p}
+        {n2} = {q}
+        for i in range({r}):
+            {n1} = {n1} + {n2}
+        print({n1})
+      params:
+        pair: [[tong, buoc], [diem, thuong], [gia, phi]]
+        p: [0, 1, 2, 3, 4, 5]
+        q: [2, 3, 4, 5]
+        r: [2, 3, 4]
+      derived:
+        n1: "pair[0]"
+        n2: "pair[1]"
+      distractors:
+        - name: body_not_indented
+          code: |
+            {n1} = {p}
+            {n2} = {q}
+            for i in range({r}):
+            {n1} = {n1} + {n2}
+            print({n1})
+        - name: print_inside_loop
+          code: |
+            {n1} = {p}
+            {n2} = {q}
+            for i in range({r}):
+                {n1} = {n1} + {n2}
+                print({n1})

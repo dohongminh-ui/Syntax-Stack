@@ -1,0 +1,102 @@
+id: variables_reassign_predict
+topic: variables
+type: predict_output
+hints:
+  - "Python chạy từng dòng từ trên xuống; mỗi lần gán sẽ ghi đè giá trị cũ của biến."
+  - "Viết ra giá trị của biến sau mỗi dòng thay vì chỉ nhìn dòng cuối."
+  - "Khi gặp x = x + 2, vế phải dùng giá trị cũ của x, rồi kết quả mới thay thế giá trị cũ. Với chuỗi, phép * lặp lại chuỗi."
+explanation: "Theo dõi từng dòng: mỗi phép gán ghi đè giá trị cũ, và print() in ra giá trị tại thời điểm nó chạy. Kết quả đúng là {expected_inline}."
+tiers:
+  1:
+    - count: 8
+      prompt: "Chương trình này in ra gì?"
+      code: |
+        {v} = {a}
+        {v} = {v} + {b}
+        print({v})
+      params:
+        v: [x, diem, so, tong, gia]
+        a: [2, 3, 4, 5, 6, 7, 8, 9]
+        b: [2, 3, 4, 5, 6, 7, 8, 9]
+      where: ["a != b", "a != 2*b"]
+      distractors:
+        - {name: forgot_reassign, out: "{a}"}
+        - {name: took_last_number, out: "{b}"}
+        - {name: wrong_operator, out: "{a*b}"}
+        - {name: subtracted_instead, out: "{a-b}"}
+    - count: 6
+      prompt: "Chương trình này in ra gì?"
+      code: |
+        {v} = "{s}"
+        print({v} * {k})
+      params:
+        v: [loi, tu, ky_tu, chuoi]
+        s: [ha, la, na, xo, ab, ok]
+        k: [2, 3, 4]
+      distractors:
+        - {name: repeated_one_more, out: "{s*(k+1)}"}
+        - {name: repeated_one_less, out: "{s*(k-1)}"}
+        - {name: printed_expression, out: "{s}*{k}"}
+        - {name: multiplied_length, out: "{k*len(s)}"}
+  2:
+    - count: 8
+      prompt: "Chương trình này in ra gì? (print có hai giá trị sẽ in cách nhau một dấu cách.)"
+      code: |
+        {v} = {a}
+        {w} = {v} * {b}
+        {v} = {w} - {c}
+        print({v}, {w})
+      params:
+        v: [x, so, diem]
+        w: [y, kq, tich]
+        a: [2, 3, 4, 5, 6]
+        b: [2, 3, 4]
+        c: [1, 2, 3, 4, 5]
+      derived:
+        w1: "a*b"
+        v2: "a*b-c"
+      distractors:
+        - {name: forgot_reassign, out: "{a} {w1}"}
+        - {name: swapped_print_order, out: "{w1} {v2}"}
+        - {name: linked_variables, out: "{v2} {v2}"}
+        - {name: confused_old_new, out: "{v2} {a}"}
+    - count: 6
+      prompt: "Chương trình này in ra gì? (Chú ý thứ tự ưu tiên của các phép toán.)"
+      code: |
+        {v} = "{s1}"
+        {w} = "{s2}"
+        print({v} + {w} * {k})
+      params:
+        v: [ten, tu1]
+        w: [duoi, tu2]
+        pair: [["Py", "ab"], ["Hi", "oh"], ["Xin", "a"], ["Go", "la"], ["Ca", "ke"]]
+        k: [2, 3]
+      derived:
+        s1: "pair[0]"
+        s2: "pair[1]"
+      distractors:
+        - {name: precedence_ignored, out: "{(s1+s2)*k}"}
+        - {name: no_repeat, out: "{s1+s2}"}
+        - {name: repeated_first, out: "{s1*k+s2}"}
+        - {name: only_repeated_second, out: "{s2*k}"}
+  3:
+    - count: 12
+      prompt: "Chương trình này in ra những gì? (Mỗi lần print là một dòng.)"
+      code: |
+        {v} = {a}
+        for i in range({r}):
+            {v} = {v} + {b}
+            print({v})
+      params:
+        v: [tong, so, diem]
+        a: [0, 1, 2, 3, 4]
+        b: [2, 3, 4, 5]
+        r: [3, 4]
+      derived:
+        seq: "[a + b*(j+1) for j in range(r)]"
+        seq0: "[a + b*j for j in range(r)]"
+      distractors:
+        - {name: printed_before_adding, out: "{J(seq0)}"}
+        - {name: only_last_value, out: "{J(seq[-1:])}"}
+        - {name: no_accumulation, out: "{J([a+b]*r)}"}
+        - {name: step_of_one, out: "{J([a+j+1 for j in range(r)])}"}

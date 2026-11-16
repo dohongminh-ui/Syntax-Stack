@@ -1,0 +1,149 @@
+id: functions_return_fill
+topic: functions
+type: fill_blank
+hints:
+  - "return gửi một giá trị từ trong hàm ra cho nơi gọi hàm."
+  - "Thay giá trị truyền vào cho tham số, tính biểu thức, rồi so với đầu ra cần có."
+  - "Biểu thức sau return phải biến giá trị đầu vào thành đúng giá trị đầu ra. Thử từng lựa chọn với số được truyền vào."
+explanation: "Hàm nhận đầu vào, tính biểu thức sau return và trả kết quả về cho print(). Chỉ biểu thức đúng mới cho ra {expected_inline}."
+tiers:
+  1:
+    - count: 5
+      prompt: "Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      code: |
+        def {f}({x}):
+            return ___
+        print({f}({a}))
+      params:
+        f: [gap_doi, nhan_doi, x2]
+        x: [x, n, so]
+        a: [3, 4, 5, 6, 7, 8, 9]
+      answer: "{x} * 2"
+      distractors:
+        - {name: added_instead_of_multiplied, frag: "{x} + 2"}
+        - {name: wrong_factor, frag: "{x} * 3"}
+        - {name: returned_argument, frag: "{x}"}
+        - {name: returned_constant, frag: "2"}
+      explanation: "{f}({a}) thay {x} = {a} vào biểu thức sau return. Muốn có {expected_inline} thì biểu thức phải là {answer}."
+    - count: 6
+      prompt: "Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      code: |
+        def {f}({x}):
+            return ___
+        print({f}({a}))
+      params:
+        f: [tang, cong_them, them]
+        x: [x, n, so]
+        a: [3, 4, 5, 6, 7, 8, 9]
+        k: [2, 3, 4, 5]
+      answer: "{x} + {k}"
+      distractors:
+        - {name: multiplied_instead_of_added, frag: "{x} * {k}"}
+        - {name: subtracted_instead_of_added, frag: "{x} - {k}"}
+        - {name: returned_constant, frag: "{k}"}
+        - {name: returned_argument, frag: "{x}"}
+      explanation: "{f}({a}) thay {x} = {a} vào biểu thức sau return. Muốn có {expected_inline} thì biểu thức phải là {answer}."
+    - count: 4
+      prompt: "Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      code: |
+        def {f}({x}):
+            return ___
+        print({f}({a}))
+      params:
+        f: [binh_phuong, vuong, tinh]
+        x: [x, n, so]
+        a: [3, 4, 5, 6, 7]
+      answer: "{x} * {x}"
+      distractors:
+        - {name: added_instead_of_multiplied, frag: "{x} + {x}"}
+        - {name: doubled_instead_of_squared, frag: "{x} * 2"}
+        - {name: returned_argument, frag: "{x}"}
+        - {name: cubed_instead_of_squared, frag: "{x} * {x} * {x}"}
+      explanation: "Bình phương của {a} là {a} * {a} = {expected_inline}, nên biểu thức sau return phải là {answer}."
+  2:
+    - count: 6
+      prompt: "Hàm có hai tham số. Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      code: |
+        def {f}({p}, {q}):
+            return ___
+        print({f}({a}, {b}))
+      params:
+        f: [dien_tich, nhan, tinh_tich]
+        names: [[dai, rong], [a, b], [x, y]]
+        a: [3, 4, 5, 6, 7]
+        b: [2, 3, 4, 5, 6]
+      where: ["a != b"]
+      derived:
+        p: "names[0]"
+        q: "names[1]"
+      answer: "{p} * {q}"
+      distractors:
+        - {name: added_instead_of_multiplied, frag: "{p} + {q}"}
+        - {name: subtracted_instead_of_multiplied, frag: "{p} - {q}"}
+        - {name: squared_first, frag: "{p} * {p}"}
+        - {name: returned_second, frag: "{q}"}
+      explanation: "{f}({a}, {b}) gán {p} = {a} và {q} = {b}. Cần {expected_inline} nên biểu thức là {answer}."
+    - count: 6
+      prompt: "Hàm có hai tham số. Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      code: |
+        def {f}({p}, {q}):
+            return ___
+        print({f}({a}, {b}))
+      params:
+        f: [giam_gia, con_lai, tru]
+        names: [[gia, giam], [tien, chi], [x, y]]
+        a: [6, 7, 8, 9]
+        b: [2, 3, 4, 5]
+      derived:
+        p: "names[0]"
+        q: "names[1]"
+      answer: "{p} - {q}"
+      distractors:
+        - {name: added_instead_of_subtracted, frag: "{p} + {q}"}
+        - {name: swapped_operands, frag: "{q} - {p}"}
+        - {name: multiplied_instead_of_subtracted, frag: "{p} * {q}"}
+        - {name: returned_first, frag: "{p}"}
+      explanation: "{f}({a}, {b}) gán {p} = {a} và {q} = {b}. Cần {expected_inline} nên biểu thức là {answer}; thứ tự trừ quan trọng."
+  3:
+    - count: 6
+      prompt: "Hàm được gọi trong vòng lặp. Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      code: |
+        def {f}({x}):
+            return ___
+        for {i} in range({a}, {b}):
+            print({f}({i}))
+      params:
+        f: [binh_phuong, vuong, tinh]
+        x: [x, n, so]
+        i: [i, j, k]
+        a: [1, 2, 3]
+        b: [4, 5, 6]
+      where: ["3 <= b - a <= 4"]
+      answer: "{x} * {x}"
+      distractors:
+        - {name: added_instead_of_multiplied, frag: "{x} + {x}"}
+        - {name: returned_argument, frag: "{x}"}
+        - {name: cubed_instead_of_squared, frag: "{x} * {x} * {x}"}
+        - {name: wrong_factor, frag: "{x} * 3"}
+      explanation: "Hàm được gọi lần lượt với {i} từ {a} đến {b-1} và mỗi lần in kết quả trả về. Với kết quả {expected_inline}, biểu thức phải là {answer}."
+    - count: 6
+      prompt: "Hàm được gọi trong vòng lặp. Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      code: |
+        def {f}({x}):
+            return ___
+        for {i} in range({a}, {b}):
+            print({f}({i}))
+      params:
+        f: [tinh, ham, nhan_them]
+        x: [x, n, so]
+        i: [i, j, k]
+        a: [1, 2, 3]
+        b: [4, 5, 6]
+      where: ["3 <= b - a <= 4"]
+      answer: "{x} * 2 + 1"
+      distractors:
+        - {name: forgot_constant, frag: "{x} * 2"}
+        - {name: wrong_operator, frag: "{x} + 2"}
+        - {name: wrong_factor, frag: "{x} * 3"}
+        - {name: forgot_factor, frag: "{x} + 1"}
+      explanation: "Với mỗi giá trị {i}, hàm trả về nhân đôi rồi cộng 1. Các kết quả in ra là {expected_inline}."

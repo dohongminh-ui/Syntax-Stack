@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8">
+<title>Syntax Stack social card 1200x630</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600&family=Bricolage+Grotesque:wght@800&family=JetBrains+Mono:wght@500;700&display=swap&subset=vietnamese" rel="stylesheet">
+<!-- Real tokens, grain and keycap component from the app. -->
+<link rel="stylesheet" href="../../frontend/css/base.css">
+<style>
+  html, body { width: 1200px; height: 630px; margin: 0; overflow: hidden; min-height: 0; }
+  .card { position: relative; z-index: 1; width: 1200px; height: 630px; padding: 60px; display: grid; grid-template-columns: 620px 1fr; column-gap: 40px; grid-template-rows: 1fr auto; }
+  .left { display: flex; flex-direction: column; justify-content: center; gap: 28px; }
+  .keys { --tu: 84px; display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; gap: 6px; }
+  .keys .key { width: var(--tu); height: calc(var(--tu) + 4px); --u: var(--tu); }
+  .keys .legend { position: static; margin: auto; font: 800 42px/1 var(--f-display); letter-spacing: -0.02em; }
+  h1 { font: 800 40px/1.12 var(--f-display); letter-spacing: -0.02em; color: var(--text); max-width: 620px; text-wrap: balance; }
+  .sub { font: 400 22px/1.35 var(--f-ui); color: var(--muted); }
+  .right { display: flex; flex-direction: column; justify-content: center; gap: 18px; }
+  .case { --u: 48px; --gap: 4px; background: var(--case); border-radius: var(--r-case); padding: 14px; box-shadow: inset 0 1px 0 var(--case-hi), 0 30px 60px -20px rgba(0,0,0,.6); display: grid; gap: var(--gap); }
+  .brow { display: grid; grid-template-columns: repeat(8, var(--u)); grid-auto-rows: var(--u); gap: var(--gap); }
+  .brow .key { height: var(--u); }
+  .brow .cap-top { align-items: center; justify-content: center; }
+  .brow .legend { position: static; margin: auto; font: 700 18px/1 var(--f-mono); }
+  .brow .sock { border-radius: 6px; }
+  .brow .sock.indent { border: 1px dashed var(--line-2); }
+  .term { background: var(--plate); border-radius: 14px; padding: 16px 20px; font: 500 22px/1.4 var(--f-mono); color: var(--muted); box-shadow: inset 0 2px 6px rgba(0,0,0,.6); }
+  .term b { display: block; color: var(--matcha); font-weight: 700; }
+  .foot { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: flex-end; font: 500 18px/1 var(--f-mono); color: var(--muted); }
+  .foot .caret { animation: none; color: var(--mustard); font-weight: 700; }
+</style></head>
+<body>
+<div class="card">
+  <div class="left">
+    <div class="keys" role="img" aria-label="Syntax Stack">
+      <div class="row">
+        <span class="key t-neutral"><span class="cap-top"><span class="legend">S</span></span></span>
+        <span class="key t-conditions"><span class="cap-top"><span class="legend">Y</span></span></span>
+        <span class="key t-neutral"><span class="cap-top"><span class="legend">N</span></span></span>
+        <span class="key t-neutral"><span class="cap-top"><span class="legend">T</span></span></span>
+        <span class="key t-functions"><span class="cap-top"><span class="legend">A</span></span></span>
+        <span class="key t-neutral"><span class="cap-top"><span class="legend">X</span></span></span>
+      </div>
+      <div class="row">
+        <span class="key t-neutral"><span class="cap-top"><span class="legend">S</span></span></span>
+        <span class="key t-variables"><span class="cap-top"><span class="legend">T</span></span></span>
+        <span class="key t-neutral"><span class="cap-top"><span class="legend">A</span></span></span>
+        <span class="key t-loops"><span class="cap-top"><span class="legend">C</span></span></span>
+        <span class="key t-neutral"><span class="cap-top"><span class="legend">K</span></span></span>
+      </div>
+    </div>
+    <h1>Học Python bằng cách xếp mã thật</h1>
+    <p class="sub">Hàng chỉ biến mất khi chương trình chạy đúng.</p>
+  </div>
+  <div class="right">
+    <div class="case">
+      <div class="brow">
+        <span class="key t-neutral"><span class="cap-top"><span class="legend">for</span></span></span>
+        <span class="key t-neutral"><span class="cap-top"><span class="legend">i</span></span></span>
+        <span class="key t-neutral"><span class="cap-top"><span class="legend">in</span></span></span>
+        <span class="key t-loops" style="grid-column: span 3"><span class="cap-top"><span class="legend">range(3)</span></span></span>
+        <span class="key t-neutral"><span class="cap-top"><span class="legend">:</span></span></span>
+      </div>
+      <div class="brow">
+        <i class="sock indent"></i>
+        <span class="key t-loops" style="grid-column: span 3"><span class="cap-top"><span class="legend">print(i)</span></span></span>
+        <i class="sock"></i><i class="sock"></i><i class="sock"></i><i class="sock"></i>
+      </div>
+    </div>
+    <div class="term"><span>$ python main.py</span><b>0</b><b>1</b><b>2</b></div>
+  </div>
+  <div class="foot"><span>syntax<span class="caret">_</span>stack</span><span>BTEC Best Coder 2026 · Nhóm Le Rouge</span></div>
+</div>
+</body></html>

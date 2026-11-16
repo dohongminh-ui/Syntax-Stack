@@ -1,0 +1,19 @@
+services:
+  game:
+    build: .
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      SYNTAX_STACK_TUTOR_URL: http://127.0.0.1:5678/webhook/syntax-stack-tutor
+      SYNTAX_STACK_TUTOR_TOKEN: ${SYNTAX_STACK_TUTOR_TOKEN:-}
+    command:
+      - python
+      - -m
+      - uvicorn
+      - app.main:app
+      - --app-dir
+      - backend
+      - --host
+      - ${SYNTAX_STACK_BIND:-127.0.0.1}
+      - --port
+      - "8000"

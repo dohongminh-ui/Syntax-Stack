@@ -1,0 +1,121 @@
+id: functions_call_predict
+topic: functions
+type: predict_output
+hints:
+  - "Gọi hàm là thay các giá trị truyền vào cho tham số rồi chạy phần thân hàm; giá trị sau return là kết quả của lời gọi."
+  - "Viết ra giá trị của từng tham số, tính biểu thức sau return theo đúng thứ tự ưu tiên, và kiểm tra hàm có return hay không."
+  - "Hàm không có return trả về None. Tham số được gán theo thứ tự truyền vào: đối số đầu cho tham số đầu."
+explanation: "Gọi hàm gán đối số cho tham số theo thứ tự, chạy thân hàm và dùng giá trị return làm kết quả. Hàm không có return trả về None. Kết quả đúng là {expected_inline}."
+tiers:
+  1:
+    - count: 10
+      prompt: "Chương trình này in ra gì?"
+      code: |
+        def {f}({x}):
+            return {x} * {k} + {c}
+        print({f}({a}))
+      params:
+        f: [tinh, kq, ham]
+        x: [x, n, so]
+        a: [2, 3, 4, 5, 6, 7]
+        k: [2, 3, 4]
+        c: [1, 2, 3, 5]
+      distractors:
+        - {name: forgot_constant, out: "{a*k}"}
+        - {name: precedence_wrong, out: "{(a+c)*k}"}
+        - {name: wrong_operator, out: "{a+k+c}"}
+        - {name: returned_argument, out: "{a}"}
+  2:
+    - count: 6
+      prompt: "Chương trình này in ra những gì? (Mỗi lần print là một dòng.)"
+      code: |
+        def {f}({p}, {q}):
+            return {p} - {q}
+        print({f}({a}, {b}))
+        print({f}({b}, {a}))
+      params:
+        f: [hieu, tru, tinh]
+        names: [[x, y], [a, b], [dau, cuoi]]
+        a: [5, 6, 7, 8, 9]
+        b: [2, 3, 4]
+      derived:
+        p: "names[0]"
+        q: "names[1]"
+      distractors:
+        - {name: swapped_arguments, out: "{b-a}\n{a-b}"}
+        - {name: ignored_argument_order, out: "{a-b}\n{a-b}"}
+        - {name: both_reversed, out: "{b-a}\n{b-a}"}
+        - {name: added_instead_of_subtracted, out: "{a+b}\n{a+b}"}
+    - count: 8
+      prompt: "Chương trình này in ra gì?"
+      code: |
+        def {f}({x}):
+            {r} = {x} * {k}
+        print({f}({a}))
+      params:
+        f: [tinh, nhan, ham]
+        x: [x, n]
+        r: [kq, y, tich]
+        a: [3, 4, 5, 6, 7, 8]
+        k: [2, 3, 4, 5]
+      distractors:
+        - {name: assumed_return_value, out: "{a*k}"}
+        - {name: returned_argument, out: "{a}"}
+        - {name: returned_factor, out: "{k}"}
+        - {name: assumed_zero, out: "0"}
+  3:
+    - count: 10
+      prompt: "Chương trình này in ra gì?"
+      code: |
+        def {f}({x}):
+            return {x} * {k}
+        {t} = 0
+        for {i} in range({a}, {b}):
+            {t} = {t} + {f}({i})
+        print({t})
+      params:
+        f: [gap, nhan, tinh]
+        x: [x, n]
+        t: [tong, kq]
+        i: [i, j]
+        k: [2, 3]
+        a: [1, 2]
+        b: [4, 5]
+      derived:
+        seq: "list(range(a, b))"
+      distractors:
+        - {name: forgot_to_apply_function, out: "{sum(seq)}"}
+        - {name: only_last_call, out: "{k*seq[-1]}"}
+        - {name: range_includes_end, out: "{k*(sum(seq)+b)}"}
+        - {name: only_first_call, out: "{k*seq[0]}"}
+    - count: 6
+      prompt: "Chương trình này in ra những gì? (Mỗi lần print là một dòng.)"
+      code: |
+        def {f}({x}):
+            if {x} > {t}:
+                return "{big}"
+            return "{small}"
+        for {i} in range({a}, {b}):
+            print({f}({i}))
+      params:
+        f: [phan_loai, kiem_tra]
+        x: [x, n]
+        i: [i, j]
+        pair: [["lớn", "nhỏ"], ["cao", "thấp"], ["đậu", "trượt"]]
+        a: [1, 2]
+        b: [5, 6]
+        t: [2, 3]
+      where: ["a < t < b - 1"]
+      derived:
+        big: "pair[0]"
+        small: "pair[1]"
+        seq: "[big if j > t else small for j in range(a, b)]"
+        swapped: "[small if j > t else big for j in range(a, b)]"
+        incl: "[big if j >= t else small for j in range(a, b)]"
+        all_big: "[big] * (b - a)"
+        all_small: "[small] * (b - a)"
+      distractors:
+        - {name: swapped_labels, out: "{J(swapped)}"}
+        - {name: boundary_off_by_one, out: "{J(incl)}"}
+        - {name: only_second_return, out: "{J(all_small)}"}
+        - {name: only_first_return, out: "{J(all_big)}"}

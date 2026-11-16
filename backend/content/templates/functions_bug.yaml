@@ -1,0 +1,102 @@
+id: functions_bug
+topic: functions
+type: find_bug
+hints:
+  - "Hàm không có return sẽ trả về None; và đối số khi gọi hàm phải đúng thứ tự, đúng số lượng."
+  - "Nhìn kết quả thực tế: nếu in None thì thiếu return; nếu số sai thì xem thứ tự hoặc giá trị đối số truyền vào."
+  - "Kiểm tra từng dòng: thân hàm có trả kết quả bằng return không, và lời gọi hàm có truyền đúng giá trị theo đúng thứ tự không?"
+explanation: "Hàm chỉ gửi kết quả ra ngoài khi dùng return; nếu không, nơi gọi nhận None. Ngoài ra đối số khi gọi hàm phải đúng giá trị và đúng thứ tự."
+tiers:
+  1:
+    - count: 12
+      prompt: "Chương trình in ra None thay vì kết quả. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        def {f}({x}):
+            {x} * {k}
+        print({f}({a}))
+      bug_line: 2
+      fix: "return {x} * {k}"
+      params:
+        f: [gap, nhan, tinh]
+        x: [x, n, so]
+        r: [kq, y]
+        a: [3, 4, 5, 6, 7, 8, 9]
+        k: [2, 3, 4, 5]
+      distractors:
+        - {name: assigned_not_returned, rep: "{r} = {x} * {k}"}
+        - {name: printed_instead_of_returned, rep: "print({x} * {k})"}
+        - {name: returned_argument, rep: "return {x}"}
+        - {name: returned_factor, rep: "return {k}"}
+      explanation: "Dòng {x} * {k} chỉ tính rồi bỏ đi. Hàm cần return để gửi kết quả ra cho print(); thiếu return thì in None."
+  2:
+    - count: 12
+      prompt: "Chương trình in ra kết quả sai. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        def {f}({p}, {q}):
+            return {p} - {q}
+        print({f}({b}, {a}))
+      bug_line: 3
+      fix: "print({f}({a}, {b}))"
+      params:
+        f: [hieu, tru, tinh]
+        names: [[x, y], [a, b], [dau, cuoi]]
+        a: [5, 6, 7, 8, 9]
+        b: [2, 3, 4]
+      derived:
+        p: "names[0]"
+        q: "names[1]"
+      distractors:
+        - {name: missing_argument, rep: "print({f}({a}))"}
+        - {name: same_argument_twice, rep: "print({f}({a}, {a}))"}
+        - {name: wrong_arguments, rep: "print({f}({b}, {b}))"}
+        - {name: argument_expression, rep: "print({f}({a} - {b}))"}
+      explanation: "Đối số được gán theo thứ tự: đối số đầu cho {p}, đối số thứ hai cho {q}. {a} - {b} cần truyền {a} trước rồi mới tới {b}."
+  3:
+    - count: 8
+      prompt: "Chương trình in ra kết quả sai. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        def {f}({x}):
+            return {x} * {k}
+        for {i} in range({a}, {b}):
+            print({f}({k}))
+      bug_line: 4
+      fix: "print({f}({i}))"
+      params:
+        f: [gap, nhan, tinh]
+        x: [x, n]
+        i: [i, j]
+        k: [2, 3, 4]
+        a: [1, 2, 3]
+        b: [4, 5]
+      where: ["3 <= b - a <= 4"]
+      distractors:
+        - {name: constant_argument, rep: "print({f}({a}))"}
+        - {name: wrong_final_argument, rep: "print({f}({b}))"}
+        - {name: shifted_argument, rep: "print({f}({i} + 1))"}
+        - {name: missing_argument, rep: "print({f}())"}
+      explanation: "Lời gọi {f}({k}) luôn truyền cùng một số nên mọi dòng giống nhau. Phải truyền biến vòng lặp {i} để mỗi lần một giá trị khác."
+    - count: 6
+      prompt: "Chương trình in ra kết quả sai. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        def {f}({x}):
+            return {x} * {k}
+        {t} = 0
+        for {i} in range({a}, {b}):
+            {t} = {f}({i})
+        print({t})
+      bug_line: 5
+      fix: "{t} = {t} + {f}({i})"
+      params:
+        f: [gap, nhan, tinh]
+        x: [x, n]
+        t: [tong, kq]
+        i: [i, j]
+        k: [2, 3]
+        a: [1, 2]
+        b: [4, 5]
+      distractors:
+        - {name: off_by_one_added, rep: "{t} = {f}({i}) + 1"}
+        - {name: multiplied_instead_of_added, rep: "{t} = {t} * {f}({i})"}
+        - {name: no_assignment, rep: "{t} + {f}({i})"}
+        - {name: added_argument_not_result, rep: "{t} = {t} + {i}"}
+      explanation: "{t} = {f}({i}) ghi đè {t} mỗi lần lặp, chỉ giữ kết quả cuối. Muốn cộng dồn phải viết {t} = {t} + {f}({i})."

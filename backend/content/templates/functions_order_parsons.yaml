@@ -1,0 +1,131 @@
+id: functions_order_parsons
+topic: functions
+type: parsons
+hints:
+  - "Một hàm phải được định nghĩa bằng def trước khi bạn gọi nó."
+  - "Thân hàm (kể cả return) phải thụt vào một mức dưới dòng def; lời gọi hàm thẳng hàng với def."
+  - "Thứ tự thường là: def, các dòng thân hàm thụt vào (return ở cuối), rồi phần gọi hàm và in kết quả."
+explanation: "Hàm phải được định nghĩa trước khi gọi. Thân hàm thụt vào dưới def, còn lời gọi hàm và print thẳng hàng với def. Đầu ra đúng là {expected_inline}."
+tiers:
+  1:
+    - count: 8
+      prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      code: |
+        def {f}({x}):
+            return {x} * {k}
+        print({f}({a}))
+      params:
+        f: [gap_doi, nhan, tinh, ham]
+        x: [x, n, so]
+        k: [2, 3, 4]
+        a: [3, 4, 5, 6]
+      distractors:
+        - name: call_before_definition
+          code: |
+            print({f}({a}))
+            def {f}({x}):
+                return {x} * {k}
+        - name: return_not_indented
+          code: |
+            def {f}({x}):
+            return {x} * {k}
+            print({f}({a}))
+  2:
+    - count: 12
+      prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      code: |
+        def {f}({p}, {q}):
+            {r} = {p} + {q}
+            return {r}
+        print({f}({a}, {b}))
+      params:
+        f: [cong, tong, tinh]
+        names: [[x, y], [a, b], [dai, rong]]
+        r: [kq, s, tong_so]
+        a: [2, 3, 4, 5, 6]
+        b: [3, 4, 5, 6, 7]
+      where: ["a != b"]
+      derived:
+        p: "names[0]"
+        q: "names[1]"
+      distractors:
+        - name: return_before_assignment
+          code: |
+            def {f}({p}, {q}):
+                return {r}
+                {r} = {p} + {q}
+            print({f}({a}, {b}))
+        - name: call_inside_function
+          code: |
+            def {f}({p}, {q}):
+                {r} = {p} + {q}
+                return {r}
+                print({f}({a}, {b}))
+        - name: body_not_indented
+          code: |
+            def {f}({p}, {q}):
+            {r} = {p} + {q}
+            return {r}
+            print({f}({a}, {b}))
+  3:
+    - count: 6
+      prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      code: |
+        def {f}({x}):
+            return {x} * {k}
+        for {i} in range({a}, {b}):
+            print({f}({i}))
+      params:
+        f: [gap, nhan, tinh]
+        x: [x, n]
+        i: [i, j]
+        k: [2, 3, 4]
+        a: [1, 2]
+        b: [4, 5]
+      distractors:
+        - name: loop_before_definition
+          code: |
+            for {i} in range({a}, {b}):
+                print({f}({i}))
+            def {f}({x}):
+                return {x} * {k}
+        - name: print_not_indented
+          code: |
+            def {f}({x}):
+                return {x} * {k}
+            for {i} in range({a}, {b}):
+            print({f}({i}))
+    - count: 6
+      prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      code: |
+        def {f}({x}):
+            return {x} * {k}
+        {t} = 0
+        for {i} in range({a}, {b}):
+            {t} = {t} + {f}({i})
+        print({t})
+      params:
+        f: [gap, nhan, tinh]
+        x: [x, n]
+        t: [tong, kq]
+        i: [i, j]
+        k: [2, 3]
+        a: [1, 2]
+        b: [4, 5]
+      distractors:
+        - name: print_inside_loop
+          code: |
+            def {f}({x}):
+                return {x} * {k}
+            {t} = 0
+            for {i} in range({a}, {b}):
+                {t} = {t} + {f}({i})
+                print({t})
+        - name: reset_inside_loop
+          code: |
+            def {f}({x}):
+                return {x} * {k}
+            for {i} in range({a}, {b}):
+                {t} = 0
+                {t} = {t} + {f}({i})
+            print({t})

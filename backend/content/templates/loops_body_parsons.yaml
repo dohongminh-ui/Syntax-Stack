@@ -1,0 +1,101 @@
+id: loops_body_parsons
+topic: loops
+type: parsons
+hints:
+  - "Các dòng cần lặp lại phải thụt vào dưới dòng for. Dòng không thụt chỉ chạy một lần."
+  - "Dòng for kết thúc bằng dấu hai chấm. Mọi dòng thụt vào sau nó là thân vòng lặp; dòng thẳng hàng với for chạy sau khi vòng lặp kết thúc."
+  - "Khởi tạo biến trước vòng lặp, đặt phép cập nhật thụt vào trong vòng lặp, và print kết quả cuối thẳng hàng với for."
+explanation: "Chỉ những dòng thụt vào dưới for mới được lặp lại. Dòng khởi tạo đứng trước vòng lặp và dòng in kết quả thẳng hàng với for nên chỉ chạy một lần. Đầu ra đúng là {expected_inline}."
+tiers:
+  1:
+    - count: 8
+      prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      code: |
+        for {i} in range({n}):
+            print({i})
+        print("{end}")
+      params:
+        i: [i, j, k, so, dem]
+        n: [2, 3, 4]
+        end: ["Xong", "Hết", "Kết thúc", "Hoàn tất"]
+      distractors:
+        - name: end_inside_loop
+          code: |
+            for {i} in range({n}):
+                print({i})
+                print("{end}")
+        - name: body_not_indented
+          code: |
+            for {i} in range({n}):
+            print({i})
+            print("{end}")
+  2:
+    - count: 12
+      prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      code: |
+        {t} = 0
+        for {i} in range({a}, {b}):
+            {t} = {t} + {i}
+        print({t})
+      params:
+        t: [tong, s, kq]
+        i: [i, j, k]
+        a: [1, 2, 3]
+        b: [4, 5, 6]
+      where: ["b - a >= 2"]
+      distractors:
+        - name: print_inside_loop
+          code: |
+            {t} = 0
+            for {i} in range({a}, {b}):
+                {t} = {t} + {i}
+                print({t})
+        - name: reset_inside_loop
+          code: |
+            for {i} in range({a}, {b}):
+                {t} = 0
+                {t} = {t} + {i}
+            print({t})
+        - name: print_before_loop
+          code: |
+            {t} = 0
+            print({t})
+            for {i} in range({a}, {b}):
+                {t} = {t} + {i}
+  3:
+    - count: 10
+      prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      code: |
+        {t} = 0
+        for {i} in range({a}, {b}):
+            if {i} % 2 == 0:
+                {t} = {t} + {i}
+        print({t})
+      params:
+        t: [tong, s, kq]
+        i: [i, j, k]
+        a: [1, 2, 3]
+        b: [6, 7, 8]
+      where: ["b - a >= 4"]
+      distractors:
+        - name: print_inside_loop
+          code: |
+            {t} = 0
+            for {i} in range({a}, {b}):
+                if {i} % 2 == 0:
+                    {t} = {t} + {i}
+                print({t})
+        - name: if_not_nested
+          code: |
+            {t} = 0
+            for {i} in range({a}, {b}):
+            if {i} % 2 == 0:
+                {t} = {t} + {i}
+            print({t})
+        - name: add_not_in_if
+          code: |
+            {t} = 0
+            for {i} in range({a}, {b}):
+                if {i} % 2 == 0:
+                {t} = {t} + {i}
+            print({t})

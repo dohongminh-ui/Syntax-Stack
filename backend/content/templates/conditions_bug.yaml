@@ -1,0 +1,97 @@
+id: conditions_bug
+topic: conditions
+type: find_bug
+hints:
+  - "Mỗi lệnh if cần đúng cú pháp: một phép so sánh bằng == (không phải =) và kết thúc bằng dấu hai chấm."
+  - "Nhìn kỹ dòng if: dấu = dùng để gán giá trị, còn so sánh bằng phải là ==; và đừng quên dấu : ở cuối."
+  - "Đọc từng ký tự của dòng if / elif: có thiếu dấu hai chấm, hoặc dùng = thay cho == không?"
+explanation: "Trong điều kiện, = là phép gán còn == mới là so sánh bằng. Ngoài ra dòng if / elif / else phải kết thúc bằng dấu hai chấm."
+tiers:
+  1:
+    - count: 10
+      prompt: "Chương trình báo lỗi cú pháp. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        {var} = {t}
+        if {var} = {t}:
+            print("{pass_l}")
+        else:
+            print("{fail_l}")
+      bug_line: 2
+      fix: "if {var} == {t}:"
+      params:
+        var: [so, dem, diem, gia, x]
+        t: [3, 5, 7, 10, 12]
+        pair: [["Đúng", "Sai"], ["Bằng nhau", "Khác nhau"], ["Trúng", "Trượt"]]
+      derived:
+        pass_l: "pair[0]"
+        fail_l: "pair[1]"
+      distractors:
+        - {name: not_equal, rep: "if {var} != {t}:"}
+        - {name: arrow_operator, rep: "if {var} => {t}:"}
+        - {name: compared_with_text, rep: 'if {var} == "{t}":'}
+        - {name: missing_colon, rep: "if {var} == {t}"}
+      explanation: "if {var} = {t}: dùng dấu = (gán) nên Python báo lỗi. So sánh bằng phải viết là if {var} == {t}:."
+  2:
+    - count: 12
+      prompt: "Chương trình báo lỗi cú pháp. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        {var} = {t}
+        if {var} >= {t}
+            print("{pass_l}")
+        else:
+            print("{fail_l}")
+      bug_line: 2
+      fix: "if {var} >= {t}:"
+      params:
+        var: [so, dem, diem, gia, x]
+        t: [3, 5, 7, 10, 12]
+        pair: [["Đủ", "Thiếu"], ["Đạt", "Chưa đạt"], ["Đậu", "Trượt"], ["Qua", "Chưa qua"]]
+      derived:
+        pass_l: "pair[0]"
+        fail_l: "pair[1]"
+      distractors:
+        - {name: semicolon_instead_of_colon, rep: "if {var} >= {t};"}
+        - {name: strict_comparison, rep: "if {var} > {t}:"}
+        - {name: elif_instead_of_if, rep: "elif {var} >= {t}:"}
+        - {name: parentheses_only, rep: "if ({var} >= {t})"}
+      explanation: "Dòng if phải kết thúc bằng dấu hai chấm ':' để mở khối lệnh. Thiếu dấu này Python báo lỗi cú pháp."
+  3:
+    - count: 6
+      prompt: "Chương trình báo lỗi cú pháp. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        for {i} in range({a}, {b}):
+            if {i} % 2 = 0:
+                print({i})
+      bug_line: 2
+      fix: "if {i} % 2 == 0:"
+      params:
+        i: [i, j, k, so]
+        a: [1, 2, 3]
+        b: [6, 7, 8, 9]
+      where: ["4 <= b - a <= 6"]
+      distractors:
+        - {name: not_equal, rep: "if {i} % 2 != 0:"}
+        - {name: wrong_remainder, rep: "if {i} % 2 == 1:"}
+        - {name: wrong_operator, rep: "if {i} / 2 == 0:"}
+        - {name: missing_colon, rep: "if {i} % 2 == 0"}
+      explanation: "Kiểm tra số chẵn là {i} % 2 == 0. Dùng một dấu = là phép gán nên không hợp lệ trong điều kiện."
+    - count: 6
+      prompt: "Chương trình báo lỗi cú pháp. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        for {i} in range({a}, {b}):
+            if {i} >= {t}
+                print({i})
+      bug_line: 2
+      fix: "if {i} >= {t}:"
+      params:
+        i: [i, j, k, so]
+        a: [0, 1, 2]
+        b: [5, 6]
+        t: [2, 3]
+      where: ["a < t < b - 1"]
+      distractors:
+        - {name: strict_comparison, rep: "if {i} > {t}:"}
+        - {name: equality_only, rep: "if {i} == {t}:"}
+        - {name: semicolon_instead_of_colon, rep: "if {i} >= {t};"}
+        - {name: elif_instead_of_if, rep: "elif {i} >= {t}:"}
+      explanation: "Dòng if nằm trong vòng lặp vẫn phải kết thúc bằng dấu hai chấm ':' trước khi viết khối lệnh thụt vào bên dưới."

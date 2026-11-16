@@ -1,0 +1,43 @@
+id: r1
+order: 1
+title: "Biến đầu tiên"
+concept: variables
+goal: "Tạo biến diem rồi in giá trị của nó để chương trình in ra 7."
+expected_output: "7"
+twist_output: "8"
+practice: {replace: t5, with: t3}
+rows: 4
+cols: 10
+indent_cols: 2
+tokens:
+  - {id: t1, text: "=", w: 1, topic: syntax, is_distractor: false}
+  - {id: t2, text: "print(diem)", w: 3, topic: variables, is_distractor: false}
+  - {id: t3, text: "8", w: 1, topic: variables, is_distractor: true}
+  - {id: t4, text: "diem", w: 2, topic: variables, is_distractor: false}
+  - {id: t5, text: "7", w: 1, topic: variables, is_distractor: false}
+  - {id: t6, text: "print(\"diem\")", w: 3, topic: variables, is_distractor: true}
+solution:
+  - {indent: 0, tokens: [t4, t1, t5]}
+  - {indent: 0, tokens: [t2]}
+required_constructs: [Assign]
+hints:
+  - "Biến là một cái tên giữ một giá trị. Dòng đầu tạo biến, dòng sau in giá trị của nó ra."
+  - "Cần hai dòng: một dòng gán giá trị cho biến diem và một dòng in ra giá trị đó. Đầu ra phải là số 7."
+  - "Dòng 1 gồm tên biến, dấu = rồi con số. Dòng 2 chỉ có một mảnh print mà không đặt tên biến trong dấu nháy."
+group_hints:
+  output_mismatch:
+    - "Chương trình chạy được nhưng in ra khác yêu cầu."
+    - "Đầu ra phải là số 7. Kiểm tra lại số bạn gán cho biến và mảnh print bạn đã chọn."
+    - "print(\"diem\") in ra chữ diem chứ không phải giá trị của biến. Hãy chọn mảnh print đúng và gán đúng số."
+  wrong_order:
+    - "Biến phải được tạo trước khi dùng."
+    - "Dòng gán giá trị phải nằm ở hàng phía trên dòng print."
+    - "Đặt dòng tạo biến ở hàng trên cùng, dòng print ở hàng ngay dưới."
+  bad_indent:
+    - "Chương trình này không cần thụt lề."
+    - "Chỉ những dòng nằm bên trong if, for hay def mới thụt vào."
+    - "Đặt mảnh đầu tiên của mỗi hàng sát cột 0."
+  missing_construct:
+    - "Màn này yêu cầu tạo biến bằng phép gán."
+    - "Cần một dòng có dạng tên biến, dấu =, giá trị."
+    - "Ghép các mảnh diem, = và 7 vào cùng một hàng."

@@ -1,0 +1,109 @@
+id: conditions_indent_parsons
+topic: conditions
+type: parsons
+hints:
+  - "Các dòng nằm bên trong if hoặc else phải được thụt vào một mức so với dòng if / else."
+  - "Dòng kết thúc bằng dấu hai chấm mở ra một khối; dòng ngay sau nó phải thụt lề vào trong khối đó."
+  - "Đặt dòng gán biến lên đầu, rồi if, rồi các dòng của nhánh (thụt vào một mức). else thẳng hàng với if."
+explanation: "Thụt lề cho Python biết dòng nào thuộc về khối nào: các dòng sau if hoặc else phải thụt vào một mức, còn else thẳng hàng với if. Đầu ra đúng là {expected_inline}."
+tiers:
+  1:
+    - count: 8
+      prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      code: |
+        {var} = {d}
+        if {var} >= {t}:
+            print("{pass_l}")
+      params:
+        story: [["diem", 5, "Đậu"], ["diem", 8, "Giỏi"], ["tuoi", 18, "Đủ tuổi"], ["nhiet_do", 30, "Nóng"], ["tien", 100, "Đủ tiền"], ["dem", 10, "Đủ số"]]
+        delta: [0, 1, 2, 3]
+      derived:
+        var: "story[0]"
+        t: "story[1]"
+        pass_l: "story[2]"
+        d: "t + delta"
+      distractors:
+        - name: print_not_indented
+          code: |
+            {var} = {d}
+            if {var} >= {t}:
+            print("{pass_l}")
+        - name: used_before_created
+          code: |
+            if {var} >= {t}:
+                print("{pass_l}")
+            {var} = {d}
+  2:
+    - count: 12
+      prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      code: |
+        {var} = {d}
+        if {var} >= {t}:
+            print("{pass_l}")
+        else:
+            print("{fail_l}")
+      params:
+        story: [["diem", 5, "Đậu", "Trượt"], ["diem", 8, "Giỏi", "Chưa giỏi"], ["tuoi", 18, "Đủ tuổi", "Chưa đủ tuổi"], ["nhiet_do", 30, "Nóng", "Mát"], ["tien", 100, "Đủ tiền", "Thiếu tiền"]]
+        dl: [-3, -2, -1, 1, 2, 3]
+      derived:
+        var: "story[0]"
+        t: "story[1]"
+        pass_l: "story[2]"
+        fail_l: "story[3]"
+        d: "t + dl"
+      distractors:
+        - name: swapped_branches
+          code: |
+            {var} = {d}
+            if {var} >= {t}:
+                print("{fail_l}")
+            else:
+                print("{pass_l}")
+        - name: else_body_not_indented
+          code: |
+            {var} = {d}
+            if {var} >= {t}:
+                print("{pass_l}")
+            else:
+            print("{fail_l}")
+        - name: else_indented
+          code: |
+            {var} = {d}
+            if {var} >= {t}:
+                print("{pass_l}")
+                else:
+                print("{fail_l}")
+  3:
+    - count: 10
+      prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      code: |
+        for {i} in range({a}, {b}):
+            if {i} >= {t}:
+                print({i})
+        print("{end}")
+      params:
+        i: [i, j, k, so]
+        a: [0, 1, 2]
+        b: [5, 6]
+        t: [1, 2, 3, 4]
+        end: ["Xong", "Hết", "Kết thúc"]
+      where: ["a < t < b - 1", "b - t <= 3"]
+      distractors:
+        - name: end_inside_loop
+          code: |
+            for {i} in range({a}, {b}):
+                if {i} >= {t}:
+                    print({i})
+                print("{end}")
+        - name: if_not_nested
+          code: |
+            for {i} in range({a}, {b}):
+            if {i} >= {t}:
+                print({i})
+            print("{end}")
+        - name: print_outside_if
+          code: |
+            for {i} in range({a}, {b}):
+                if {i} >= {t}:
+                print({i})
+            print("{end}")

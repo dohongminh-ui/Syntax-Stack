@@ -1,0 +1,52 @@
+id: r5
+order: 5
+title: "Hàm nhân đôi"
+concept: functions
+goal: "Viết hàm gap_doi nhân đôi một số rồi gọi nó với số 4 để in ra 8."
+expected_output: "8"
+twist_output: "6"
+practice: {replace: t5, with: t7}
+rows: 5
+cols: 10
+indent_cols: 2
+tokens:
+  - {id: t1, text: "return", w: 2, topic: syntax, is_distractor: false}
+  - {id: t2, text: "x", w: 1, topic: functions, is_distractor: false}
+  - {id: t3, text: "print(x * 2)", w: 3, topic: functions, is_distractor: true}
+  - {id: t4, text: "def", w: 1, topic: syntax, is_distractor: false}
+  - {id: t5, text: "*", w: 1, topic: syntax, is_distractor: false}
+  - {id: t6, text: "gap_doi(x)", w: 3, topic: functions, is_distractor: false}
+  - {id: t7, text: "+", w: 1, topic: syntax, is_distractor: true}
+  - {id: t8, text: ":", w: 1, topic: syntax, is_distractor: false}
+  - {id: t9, text: "2", w: 1, topic: functions, is_distractor: false}
+  - {id: t10, text: "print(gap_doi(4))", w: 3, topic: functions, is_distractor: false}
+solution:
+  - {indent: 0, tokens: [t4, t6, t8]}
+  - {indent: 1, tokens: [t1, t2, t5, t9]}
+  - {indent: 0, tokens: [t10]}
+required_constructs: [FunctionDef, Return]
+hints:
+  - "Hàm đóng gói một đoạn mã để dùng lại. return gửi kết quả ra cho nơi gọi hàm."
+  - "Định nghĩa hàm gap_doi bằng def, thụt vào một dòng return trả về x nhân 2, rồi gọi hàm với số 4 trong print."
+  - "Thân hàm cần return x * 2 (không dùng print bên trong hàm). Dòng print(gap_doi(4)) thẳng hàng với def."
+group_hints:
+  output_mismatch:
+    - "Chương trình chạy nhưng in ra khác 8."
+    - "Hàm phải nhân đôi x, không phải cộng thêm 2. Kiểm tra phép toán bạn đã chọn."
+    - "Dùng mảnh * để có x * 2, vì x = 4 thì 4 * 2 = 8, còn 4 + 2 = 6."
+  wrong_order:
+    - "Hàm phải được định nghĩa trước khi gọi."
+    - "Dòng def và thân hàm nằm trên, lời gọi print(gap_doi(4)) nằm dưới cùng."
+    - "Thứ tự từ trên xuống: def gap_doi(x) :, return thụt vào, rồi print(gap_doi(4))."
+  bad_indent:
+    - "Thân hàm phải thụt vào một mức dưới dòng def."
+    - "Dòng return thụt vào cột 1; dòng def và dòng print(gap_doi(4)) sát cột 0."
+    - "Đặt hàng return ở cột 1 ngay dưới dòng def, và print(gap_doi(4)) ở cột 0."
+  missing_colon:
+    - "Dòng def phải kết thúc bằng dấu hai chấm."
+    - "Mảnh ':' nằm cuối dòng def, sau gap_doi(x)."
+    - "Thêm mảnh ':' vào cuối hàng chứa def gap_doi(x)."
+  missing_construct:
+    - "Màn này yêu cầu định nghĩa hàm bằng def và trả kết quả bằng return."
+    - "print bên trong hàm chỉ in ra màn hình, chưa gửi kết quả về cho nơi gọi."
+    - "Dùng def gap_doi(x) :, rồi dòng return x * 2 thụt vào, rồi gọi hàm trong print."

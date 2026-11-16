@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8">
+<!-- Usage: icon.html?s=512[&mask=1]   s = pixel size, mask=1 shrinks the keycap into the 80% safe zone. -->
+<link rel="stylesheet" href="../../frontend/css/base.css">
+<style>
+  html, body { margin: 0; width: 100vw; height: 100vh; overflow: hidden; background: #141518; }
+  body::before { display: none; }
+  .stage { position: fixed; inset: 0; display: grid; place-items: center; }
+  .key { width: var(--w); height: calc(var(--w) * 1.08); padding-bottom: calc(var(--w) * 0.1); border-radius: calc(var(--w) * 0.22); }
+  .key::before { box-shadow: 0 calc(var(--w) * .03) 0 rgba(0,0,0,.35), 0 calc(var(--w) * .1) calc(var(--w) * .2) rgba(0,0,0,.3); }
+  .cap-top { border-radius: calc(var(--w) * 0.19); align-items: center; justify-content: center; }
+  svg { width: 46%; height: 46%; margin-left: 2%; }
+</style></head>
+<body>
+<div class="stage"><span class="key t-neutral" id="k"><span class="cap-top">
+  <svg viewBox="8.5 12 10 10" aria-hidden="true"><path d="M11 13l5 4-5 4" fill="none" stroke="#24231F" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</span></span></div>
+<script>
+  const q = new URLSearchParams(location.search);
+  document.getElementById('k').style.setProperty('--w', (q.get('mask') ? 0.5 : 0.64) * 100 + 'vmin');
+</script>
+</body></html>

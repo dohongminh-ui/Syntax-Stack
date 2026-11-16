@@ -1,0 +1,73 @@
+id: variables_bug
+topic: variables
+type: find_bug
+hints:
+  - "Python không tự ghép chuỗi với số bằng dấu +."
+  - "Tìm dòng có dấu + nối một chuỗi với một biến chứa số."
+  - "Số phải được đổi thành chuỗi trước khi nối. Hàm str() làm việc đó."
+explanation: "Toán tử + chỉ nối được chuỗi với chuỗi. Muốn ghép chữ với một số, phải đổi số thành chuỗi bằng str() trước."
+tiers:
+  1:
+    - count: 10
+      prompt: "Chương trình báo lỗi khi chạy. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        {v} = {n}
+        print("{label}: " + {v})
+      bug_line: 2
+      fix: 'print("{label}: " + str({v}))'
+      params:
+        story: [["diem", "Điểm"], ["tuoi", "Tuổi"], ["sl", "Số lượng"], ["gia", "Giá"], ["tong", "Tổng"]]
+        n: [3, 5, 7, 8, 9, 12, 15, 18, 20, 25]
+      derived:
+        v: "story[0]"
+        label: "story[1]"
+      distractors:
+        - {name: int_instead_of_str, rep: 'print("{label}: " + int({v}))'}
+        - {name: repeated_text, rep: 'print("{label}: " * {v})'}
+        - {name: minus_instead_of_plus, rep: 'print("{label}: " - {v})'}
+        - {name: still_not_converted, rep: 'print("{label}: " + {v} + "")'}
+  2:
+    - count: 12
+      prompt: "Chương trình báo lỗi khi chạy. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        {n1} = {p}
+        {n2} = {q}
+        print("{label}: " + {n1} + {n2})
+      bug_line: 3
+      fix: 'print("{label}: " + str({n1} + {n2}))'
+      params:
+        label: ["Tổng", "Kết quả", "Tổng tiền", "Tổng điểm"]
+        pair: [[a, b], [x, y], [so1, so2], [gia, phi]]
+        p: [2, 3, 4, 5, 6, 7]
+        q: [2, 3, 4, 5, 6, 7]
+      where: ["p != q"]
+      derived:
+        n1: "pair[0]"
+        n2: "pair[1]"
+      distractors:
+        - {name: joined_digits, rep: 'print("{label}: " + str({n1}) + str({n2}))'}
+        - {name: partly_converted, rep: 'print("{label}: " + str({n1}) + {n2})'}
+        - {name: only_first_number, rep: 'print("{label}: " + str({n1}))'}
+        - {name: int_instead_of_str, rep: 'print("{label}: " + int({n1} + {n2}))'}
+  3:
+    - count: 12
+      prompt: "Chương trình báo lỗi khi chạy. Chọn cách sửa đúng để in ra {expected_inline}."
+      code: |
+        {v} = 0
+        for i in range({r}):
+            {v} = {v} + {b}
+        print("{label}: " + {v})
+      bug_line: 4
+      fix: 'print("{label}: " + str({v}))'
+      params:
+        story: [["tong", "Tổng"], ["diem", "Điểm"], ["tien", "Tiền"], ["dem", "Đếm"]]
+        b: [2, 3, 4, 5, 6]
+        r: [2, 3, 4]
+      derived:
+        v: "story[0]"
+        label: "story[1]"
+      distractors:
+        - {name: int_instead_of_str, rep: 'print("{label}: " + int({v}))'}
+        - {name: repeated_text, rep: 'print("{label}: " * {v})'}
+        - {name: minus_instead_of_plus, rep: 'print("{label}: " - {v})'}
+        - {name: still_not_converted, rep: 'print("{label}: " + {v} + "")'}

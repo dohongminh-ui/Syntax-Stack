@@ -1,0 +1,148 @@
+id: conditions_cmp_fill
+topic: conditions
+type: fill_blank
+hints:
+  - "Toán tử so sánh quyết định nhánh nào chạy: > là lớn hơn, >= là lớn hơn hoặc bằng, < là nhỏ hơn, == là bằng."
+  - "Nhìn giá trị của biến và ngưỡng, rồi hỏi: điều kiện phải đúng hay sai thì mới in ra được kết quả cần có?"
+  - "Thử từng lựa chọn trong đầu với các số trong chương trình, và chú ý trường hợp hai số bằng nhau."
+explanation: "Điều kiện sau if quyết định nhánh nào chạy. Với các số trong chương trình, chỉ có toán tử đã chọn mới cho ra {expected_inline}."
+tiers:
+  1:
+    - count: 5
+      prompt: "Giá trị của biến đúng bằng ngưỡng. Điền toán tử so sánh để chương trình in ra {expected_inline}."
+      code: |
+        {var} = {t}
+        if {var} ___ {t}:
+            print("{pass_l}")
+        else:
+            print("{fail_l}")
+      params:
+        story: [["diem", 5, "Đậu", "Trượt"], ["diem", 8, "Giỏi", "Chưa giỏi"], ["tuoi", 18, "Đủ tuổi", "Chưa đủ tuổi"], ["nhiet_do", 30, "Nóng", "Mát"], ["tien", 100, "Đủ tiền", "Thiếu tiền"], ["dem", 10, "Đủ số", "Chưa đủ"]]
+      derived:
+        var: "story[0]"
+        t: "story[1]"
+        pass_l: "story[2]"
+        fail_l: "story[3]"
+      answer: ">="
+      distractors:
+        - {name: strict_comparison, frag: ">"}
+        - {name: flipped_direction, frag: "<"}
+        - {name: not_equal, frag: "!="}
+      explanation: "Hai số bằng nhau. Chỉ >= (lớn hơn hoặc bằng) cho kết quả đúng khi hai vế bằng nhau, còn > và < thì sai khi bằng nhau."
+    - count: 6
+      prompt: "Giá trị của biến lớn hơn ngưỡng. Điền toán tử so sánh để chương trình in ra {expected_inline}."
+      code: |
+        {var} = {d}
+        if {var} ___ {t}:
+            print("{pass_l}")
+        else:
+            print("{fail_l}")
+      params:
+        story: [["diem", 5, "Đậu", "Trượt"], ["diem", 8, "Giỏi", "Chưa giỏi"], ["tuoi", 18, "Đủ tuổi", "Chưa đủ tuổi"], ["nhiet_do", 30, "Nóng", "Mát"], ["tien", 100, "Đủ tiền", "Thiếu tiền"], ["dem", 10, "Đủ số", "Chưa đủ"]]
+        delta: [1, 2, 3]
+      derived:
+        var: "story[0]"
+        t: "story[1]"
+        pass_l: "story[2]"
+        fail_l: "story[3]"
+        d: "t + delta"
+      answer: ">"
+      distractors:
+        - {name: flipped_direction, frag: "<"}
+        - {name: equality_only, frag: "=="}
+        - {name: flipped_inclusive, frag: "<="}
+      explanation: "{var} là {d}, lớn hơn {t}, nên điều kiện cần đúng. Toán tử > cho kết quả đúng; <, == và <= cho kết quả sai."
+    - count: 5
+      prompt: "Giá trị của biến nhỏ hơn ngưỡng. Điền toán tử so sánh để chương trình in ra {expected_inline}."
+      code: |
+        {var} = {d}
+        if {var} ___ {t}:
+            print("{pass_l}")
+        else:
+            print("{fail_l}")
+      params:
+        story: [["diem", 5, "Dưới trung bình", "Đạt"], ["diem", 8, "Chưa giỏi", "Giỏi"], ["tuoi", 18, "Chưa đủ tuổi", "Đủ tuổi"], ["nhiet_do", 30, "Mát", "Nóng"], ["tien", 100, "Thiếu tiền", "Đủ tiền"], ["dem", 10, "Chưa đủ", "Đủ số"]]
+        delta: [1, 2, 3]
+      derived:
+        var: "story[0]"
+        t: "story[1]"
+        pass_l: "story[2]"
+        fail_l: "story[3]"
+        d: "t - delta"
+      answer: "<"
+      distractors:
+        - {name: flipped_direction, frag: ">"}
+        - {name: equality_only, frag: "=="}
+        - {name: flipped_inclusive, frag: ">="}
+      explanation: "{var} là {d}, nhỏ hơn {t}, nên điều kiện cần đúng. Toán tử < cho kết quả đúng; >, == và >= cho kết quả sai."
+  2:
+    - count: 12
+      prompt: "Chọn ngưỡng cho nhánh elif để chương trình in ra {expected_inline}."
+      code: |
+        {var} = {d}
+        if {var} >= {t1}:
+            print("{l1}")
+        elif {var} >= ___:
+            print("{l2}")
+        else:
+            print("{l3}")
+      params:
+        story: [["diem", "Giỏi", "Khá", "Chưa đạt"], ["tuoi", "Người lớn", "Thiếu niên", "Trẻ em"], ["nhiet_do", "Nóng", "Ấm", "Lạnh"], ["tien", "Nhiều", "Đủ dùng", "Ít"]]
+        t1: [7, 8, 9]
+        t2: [3, 4, 5, 6]
+        d: [3, 4, 5, 6, 7, 8]
+      where: ["t2 <= d < t1"]
+      derived:
+        var: "story[0]"
+        l1: "story[1]"
+        l2: "story[2]"
+        l3: "story[3]"
+      answer: "{t2}"
+      distractors:
+        - {name: threshold_too_high, frag: "{d+1}"}
+        - {name: threshold_too_high, frag: "{d+2}"}
+        - {name: copied_first_threshold, frag: "{t1}"}
+        - {name: threshold_far_too_high, frag: "{d+3}"}
+      explanation: "{var} = {d} không đạt điều kiện đầu ({d} < {t1}). Để elif chạy thì ngưỡng phải không lớn hơn {d}; chỉ có {t2} thoả điều đó."
+  3:
+    - count: 8
+      prompt: "Vòng lặp chỉ in ra một số số. Điền toán tử để chương trình in ra {expected_inline}."
+      code: |
+        for {i} in range({a}, {b}):
+            if {i} ___ {t}:
+                print({i})
+      params:
+        i: [i, j, k, so]
+        a: [0, 1, 2]
+        b: [5, 6, 7]
+        t: [1, 2, 3, 4, 5]
+        opset: [[">", ">=", "<", "=="], [">=", ">", "<", "=="], ["<", "<=", ">", "=="], ["<=", "<", ">", "=="]]
+      where: ["a < t < b - 1"]
+      derived:
+        op: "opset[0]"
+        d1: "opset[1]"
+        d2: "opset[2]"
+        d3: "opset[3]"
+      answer: "{op}"
+      distractors:
+        - {name: boundary_off_by_one, frag: "{d1}"}
+        - {name: flipped_direction, frag: "{d2}"}
+        - {name: equality_only, frag: "{d3}"}
+      explanation: "Vòng lặp thử từng giá trị của {i} từ {a} đến {b-1}; chỉ những số thoả điều kiện {i} {op} {t} mới được in ra, tức là {expected_inline}."
+    - count: 4
+      prompt: "Vòng lặp chỉ in ra các số chẵn. Điền toán tử để chương trình in ra {expected_inline}."
+      code: |
+        for {i} in range({a}, {b}):
+            if {i} % 2 ___ 0:
+                print({i})
+      params:
+        i: [i, j, k, so]
+        a: [1, 2, 3]
+        b: [6, 7, 8, 9]
+      where: ["4 <= b - a <= 6"]
+      answer: "=="
+      distractors:
+        - {name: not_equal, frag: "!="}
+        - {name: wrong_comparison, frag: ">"}
+        - {name: wrong_comparison, frag: ">="}
+      explanation: "Số chẵn chia hết cho 2, tức là i % 2 bằng 0. Phải dùng == để kiểm tra phần dư bằng 0."
