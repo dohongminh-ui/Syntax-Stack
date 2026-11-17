@@ -2,11 +2,17 @@
 
 Every tutor attempt ends in exactly one outcome: ``ai`` (fresh reply), ``cached`` (reply served from
 the in-process cache, no outbound call) or ``canned:<reason>`` with reason ``not_configured``,
-``busy``, ``limit`` or ``error``. One INFO line is logged per attempt (task, outcome, latency in
-ms); the context and the reply text are never logged.
+``busy``, ``limit``, ``client_limit`` or ``error``. One INFO line is logged per attempt (task,
+outcome, latency in ms); the context, the reply text and the client are never logged.
+
+Two daily quotas count real outbound calls (cache hits are free): a global one
+(``SYNTAX_STACK_TUTOR_DAILY_LIMIT``, protects cost) and a per-client one
+(``SYNTAX_STACK_TUTOR_CLIENT_LIMIT``, stops one visitor from using up the global quota for everyone).
+Clients are identified by a hash of their IP that is kept in memory only and forgotten at midnight.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -23,11 +29,14 @@ _slots = BoundedSemaphore(2)
 
 CACHE_SIZE = 128
 DEFAULT_DAILY_LIMIT = 500
+DEFAULT_CLIENT_LIMIT = 40
+MAX_TRACKED_CLIENTS = 20_000  # memory bound; beyond it new clients are treated as over quota
 
 _lock = Lock()
 _cache: "OrderedDict[tuple[str, str], str]" = OrderedDict()
 _day: date = date.today()
 _calls = _ai = _fallback = 0
+_per_client: dict[str, int] = {}
 
 
 def request_tutor(url: str, payload: str, *, timeout: float) -> dict:
@@ -51,14 +60,29 @@ def _ask(url: str, payload: str) -> str:
     return text.strip()
 
 
-def daily_limit() -> int:
-    raw = os.getenv("SYNTAX_STACK_TUTOR_DAILY_LIMIT")
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
     if raw is None or not raw.strip():
-        return DEFAULT_DAILY_LIMIT
+        return default
     try:
         return max(0, int(raw))
     except ValueError:
-        return DEFAULT_DAILY_LIMIT
+        return default
+
+
+def daily_limit() -> int:
+    return _env_int("SYNTAX_STACK_TUTOR_DAILY_LIMIT", DEFAULT_DAILY_LIMIT)
+
+
+def client_limit() -> int:
+    return _env_int("SYNTAX_STACK_TUTOR_CLIENT_LIMIT", DEFAULT_CLIENT_LIMIT)
+
+
+def client_key(ip: Optional[str]) -> Optional[str]:
+    """Opaque per-day key for a client IP (never stored or logged in clear)."""
+    if not ip:
+        return None
+    return hashlib.sha256(f"{date.today().isoformat()}|{ip}".encode()).hexdigest()[:20]
 
 
 def configured() -> bool:
@@ -71,13 +95,15 @@ def _roll_day() -> None:
     today = date.today()
     if today != _day:
         _day, _calls, _ai, _fallback = today, 0, 0, 0
+        _per_client.clear()
 
 
 def stats() -> dict:
     with _lock:
         _roll_day()
         return {"configured": configured(), "calls_today": _calls, "ai_today": _ai,
-                "fallback_today": _fallback, "limit": daily_limit()}
+                "fallback_today": _fallback, "limit": daily_limit(),
+                "client_limit": client_limit()}
 
 
 def reset() -> None:
@@ -85,6 +111,7 @@ def reset() -> None:
     global _day, _calls, _ai, _fallback
     with _lock:
         _cache.clear()
+        _per_client.clear()
         _day, _calls, _ai, _fallback = date.today(), 0, 0, 0
 
 
@@ -102,8 +129,10 @@ def _finish(task: str, started: float, outcome: str, text: str, fallback: str) -
     return {"text": text, "source": source}
 
 
-def feedback(task: str, context: dict, fallback: str) -> dict:
+def feedback(task: str, context: dict, fallback: str, client: Optional[str] = None) -> dict:
+    """Ask the tutor; ``client`` is the requester's IP (used only for the per-client quota)."""
     global _calls, _ai
+    who = client_key(client)
     started = time.monotonic()
     url = os.getenv("SYNTAX_STACK_TUTOR_URL")
     if not (url and os.getenv("SYNTAX_STACK_TUTOR_TOKEN")):
@@ -125,14 +154,21 @@ def feedback(task: str, context: dict, fallback: str) -> dict:
     if not _slots.acquire(blocking=False):
         return _finish(task, started, "canned:busy", "", fallback)
     try:
+        per_client = client_limit()
         with _lock:
             _roll_day()
+            used = _per_client.get(who, 0) if who else 0
             if _calls >= limit:
-                over = True
+                over = "canned:limit"
+            elif who and (used >= per_client
+                          or (who not in _per_client and len(_per_client) >= MAX_TRACKED_CLIENTS)):
+                over = "canned:client_limit"
             else:
-                over, _calls = False, _calls + 1
+                over, _calls = "", _calls + 1
+                if who:
+                    _per_client[who] = used + 1
         if over:
-            return _finish(task, started, "canned:limit", "", fallback)
+            return _finish(task, started, over, "", fallback)
         try:
             text = _ask(url, payload)
         except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError) as exc:

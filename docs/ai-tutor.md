@@ -168,6 +168,7 @@ is ignored (the reference workflow also returns `status`, `error_category`, `fin
 | `SYNTAX_STACK_TUTOR_URL` | n8n production webhook URL | Read with `os.getenv` at each call. Unset or empty means canned only. |
 | `SYNTAX_STACK_TUTOR_TOKEN` | the shared secret | Sent as `X-Syntax-Stack-Token`. Both variables must be non-empty, or the tutor is skipped. |
 | `SYNTAX_STACK_TUTOR_DAILY_LIMIT` | integer, default `500` | Real calls per local day (resets at local midnight, in process). `0` disables the tutor (always canned, reason `limit`). Cache hits do not count. |
+| `SYNTAX_STACK_TUTOR_CLIENT_LIMIT` | integer, default `40` | Real calls per visitor per local day. A visitor is a SHA-256 of the date and their IP (`CF-Connecting-IP`, else the direct peer), kept in memory only. Over it: canned, reason `client_limit`. Cache hits do not count. Stops one visitor exhausting the daily limit for everyone. |
 | Request timeout | 38 s (`_ask`) | 80 s for `review_content.py`. |
 | Reply limit | 1 to 750 characters after `strip()` | Violations raise `ValueError` and fall back. |
 | Cache | manual 128-entry LRU dict keyed by `(url, payload)` in `feedback()` | See below. |
@@ -256,6 +257,8 @@ Things to be aware of:
 | At most 2 simultaneous webhook calls per process; extra requests are answered canned, not queued | `_slots` |
 | 128-entry cache for identical requests | `tutor._cache` |
 | Daily cap on real calls (`SYNTAX_STACK_TUTOR_DAILY_LIMIT`, default 500) and usage counters in `/api/health` | `tutor.feedback`, `tutor.stats` |
+| Per-visitor daily cap (`SYNTAX_STACK_TUTOR_CLIENT_LIMIT`, default 40), IPs hashed and never logged | `tutor.feedback`, `tutor.client_key`, `main._client_ip` |
+| Learner text (teach-back `reflection`) can contain instructions aimed at the model. It is only ever rendered as plain text, but the n8n prompt should treat it as data to evaluate, never as instructions | n8n workflow prompt |
 | Short replies: 750-character limit in Python; in the reference workflow `maxOutputTokens` is 512 for tutoring and 1900 for drafting | `tutor.py`, `n8n-tutor.json` |
 | Input limits: `prediction` 240, `reflection` 400 characters | `main.py` models |
 | Model tiering in the reference workflow: board coaching uses the larger model, other tasks use the lite model; a second Developer-API model and a paid Vertex model are tried only on quota or availability errors | `n8n-tutor.json` |

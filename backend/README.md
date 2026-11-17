@@ -66,6 +66,8 @@ Tutor environment variables (read on every call):
 | `SYNTAX_STACK_TUTOR_URL` | unset | n8n webhook URL. Tutor is off unless URL and token are both set. |
 | `SYNTAX_STACK_TUTOR_TOKEN` | unset | Shared secret sent as `X-Syntax-Stack-Token`. |
 | `SYNTAX_STACK_TUTOR_DAILY_LIMIT` | `500` | Real tutor calls per local day (in-process, resets at midnight). `0` disables the tutor. Cache hits do not count. |
+| `SYNTAX_STACK_TUTOR_CLIENT_LIMIT` | `40` | Real tutor calls per visitor (IP) per day. |
+| `SYNTAX_STACK_API_DOCS` | off | `1` serves `/docs`, `/redoc`, `/openapi.json` (keep off in production). |
 
 Each tutor attempt logs one INFO line (task, outcome `ai`/`cached`/`canned:<reason>`, latency in ms)
 and never the context or reply text. The coach context carries `hint_level`; `tier` is a deprecated

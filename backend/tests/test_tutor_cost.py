@@ -56,7 +56,7 @@ def test_daily_cap_returns_canned_without_calling_out(monkeypatch):
     assert sources == ["ai", "ai", "canned", "canned"]
     assert len(calls) == 2
     assert tutor.stats() == {"configured": True, "calls_today": 2, "ai_today": 2,
-                             "fallback_today": 2, "limit": 2}
+                             "fallback_today": 2, "limit": 2, "client_limit": 40}
 
 
 def test_limit_zero_disables_the_tutor(monkeypatch):
@@ -129,7 +129,7 @@ def test_health_reports_tutor_counters(client, monkeypatch):
     body = client.get("/api/health").json()
     assert body["ok"] is True and body["puzzles"] > 0
     assert body["tutor"] == {"configured": True, "calls_today": 1, "ai_today": 1,
-                             "fallback_today": 0, "limit": 7}
+                             "fallback_today": 0, "limit": 7, "client_limit": 40}
 
 
 def test_coach_context_has_hint_level_and_deprecated_tier(client, monkeypatch):

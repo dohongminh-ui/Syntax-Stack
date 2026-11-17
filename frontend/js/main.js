@@ -322,7 +322,7 @@ async function fetchPuzzle(p) {
         level: G.level,
         kind: p.kind,
         template_id: p.template_id ?? null,
-        exclude_ids: G.seenIds,
+        exclude_ids: G.seenIds.slice(-500), // the server caps this list at 1000
         exclude_templates: G.recentTemplates.slice(-3),
       });
       Game.noteSeen(G, puzzle);

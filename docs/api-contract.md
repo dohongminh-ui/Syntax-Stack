@@ -20,7 +20,7 @@ All user-facing strings (prompt, message, explanation, hints) are Vietnamese wit
 { "ok": true, "puzzles": 559,
   "tutor": { "configured": true, "calls_today": 12, "ai_today": 10, "fallback_today": 3, "limit": 500 } }
 ```
-`puzzles` counts playable rows only; the debug-only `find_bug` forms are not included. `tutor` reports the AI tutor since local midnight (in-process, reset on restart): `configured` = URL and token are set; `calls_today` = real outbound calls (cache hits are not counted); `ai_today` = those that produced an AI reply; `fallback_today` = canned replies for any reason; `limit` = `SYNTAX_STACK_TUTOR_DAILY_LIMIT` (default 500, `0` = tutor disabled).
+`puzzles` counts playable rows only; the debug-only `find_bug` forms are not included. `tutor` reports the AI tutor since local midnight (in-process, reset on restart): `configured` = URL and token are set; `calls_today` = real outbound calls (cache hits are not counted); `ai_today` = those that produced an AI reply; `fallback_today` = canned replies for any reason; `limit` = `SYNTAX_STACK_TUTOR_DAILY_LIMIT` (default 500, `0` = tutor disabled); `client_limit` = `SYNTAX_STACK_TUTOR_CLIENT_LIMIT` (default 40 real calls per visitor per day).
 
 ## POST /api/puzzle/next
 Request:
@@ -187,4 +187,4 @@ An empty or passing board or an unavailable tutor returns `"canned"`.
 ---
 
 ## Errors
-`404 { "detail": "..." }` for unknown puzzle id or no puzzle matching the filters, `422` for a malformed body.
+`404 { "detail": "..." }` for unknown puzzle id or no puzzle matching the filters, `422` for a malformed body (including lists over their caps: `exclude_ids` 1000, `exclude_templates` 50, `order` 30, `rows`/`baseline` 30, `tokens` per row 30; ids up to 40 characters, `template_id` 80), `413 { "detail": "Yêu cầu quá lớn." }` for a request body over 64 KB.

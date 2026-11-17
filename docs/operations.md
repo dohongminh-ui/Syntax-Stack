@@ -74,6 +74,8 @@ Do not use `--reload` in production: Syntax Rows levels are cached after first u
 | `SYNTAX_STACK_TUTOR_URL` | `app/tutor.py` (read on every call) | unset | n8n webhook URL. With the token unset the tutor is off. |
 | `SYNTAX_STACK_TUTOR_TOKEN` | `app/tutor.py` (read on every call) | unset | Shared secret, sent as header `X-Syntax-Stack-Token`. |
 | `SYNTAX_STACK_TUTOR_DAILY_LIMIT` | `app/tutor.py` (read on every call) | `500` | Maximum real tutor calls per local day, counted in process. `0` turns the tutor off (always canned). An unparsable value falls back to 500. |
+| `SYNTAX_STACK_TUTOR_CLIENT_LIMIT` | `app/tutor.py` (read on every call) | `40` | Maximum real tutor calls per visitor (IP) per local day, so one visitor cannot use up the daily limit for everyone. Over it: canned text (reason `client_limit`). |
+| `SYNTAX_STACK_API_DOCS` | `app/main.py` (at startup) | off | `1` turns the interactive API docs (`/docs`, `/redoc`, `/openapi.json`) back on. Leave off in production. |
 | `SYNTAX_STACK_BIND` | `compose.yaml` only | `127.0.0.1` | Address uvicorn binds to inside the compose service. Use the host's LAN address to allow LAN access. |
 | `PYTHONDONTWRITEBYTECODE` | `Dockerfile` | `1` | Avoids `.pyc` files in the image. |
 
@@ -227,8 +229,20 @@ relative URLs and is served by the same app, no CORS setup is needed.
 - **Statelessness.** There is no session or database for players, so any number of workers or
   instances can serve any request. Each worker has its own tutor cache and its own 2 tutor slots, and
   its own cached level files.
-- **No authentication and no rate limiting** on the API. Run behind the school or LAN network, or add a
-  proxy-level limit, if it will be public.
+- **Abuse limits built in.** Request bodies over 64 KB get `413`, lists in requests are capped (`422`
+  past the cap), each visitor gets `SYNTAX_STACK_TUTOR_CLIENT_LIMIT` AI calls a day, and the API docs are
+  off. There is **no general rate limiting** in the app: on the live site add a Cloudflare rate-limiting
+  rule for `/api/*` (*Security > WAF > Rate limiting rules*; the free plan includes one rule), e.g. 60
+  requests per 10 seconds per IP.
+- **Browser security headers** on every response: HSTS, `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`. The page also gets a strict
+  Content-Security-Policy (`content_security_policy` in `app/main.py`): scripts only from this site
+  plus the inline import map by its exact SHA-256 hash, fonts only from Google Fonts. If Cloudflare
+  injects its own inline script (bot-detection *JavaScript detections*), the browser blocks it and logs
+  a CSP message; the game is unaffected.
+- **Visitor IPs** are read from Cloudflare's `CF-Connecting-IP` header (else the direct peer). They are
+  only used, hashed with the date, for the per-visitor tutor quota, kept in memory and never logged. A
+  device that reaches the app directly (LAN, bypassing Cloudflare) can fake that header.
 - **The validator runs player-assembled programs in the web process.** Read
   [validator-and-safety.md](validator-and-safety.md#5-threat-model) before changing what can reach it.
 - **Secrets.** Keep `SYNTAX_STACK_TUTOR_TOKEN` out of git; the default in `compose.yaml` is the empty

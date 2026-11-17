@@ -1,6 +1,7 @@
 """Syntax Stack backend: FastAPI app. API under /api, static frontend at / (if ../frontend exists)."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -9,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -21,7 +22,12 @@ if sys.version_info < (3, 12):  # the validator reads ast node.type_params (3.12
     raise RuntimeError(
         f"Syntax Stack needs Python 3.12 or newer; this is {sys.version.split()[0]}.")
 
-app = FastAPI(title="Syntax Stack API", version="1.0")
+# The interactive API docs (/docs, /redoc, /openapi.json) are a free map of the API, so they are off
+# unless SYNTAX_STACK_API_DOCS=1 (handy locally).
+_DOCS = os.getenv("SYNTAX_STACK_API_DOCS", "").strip() in ("1", "true", "yes")
+app = FastAPI(title="Syntax Stack API", version="1.0",
+              docs_url="/docs" if _DOCS else None, redoc_url="/redoc" if _DOCS else None,
+              openapi_url="/openapi.json" if _DOCS else None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,6 +35,47 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Largest request body accepted. Real requests are a few KB (the biggest is a Code Rescue
+# /next with every puzzle seen this game); without a limit a single 100 MB body would be parsed
+# into memory before validation even starts.
+MAX_BODY_BYTES = 64 * 1024
+
+
+class _BodyLimit:
+    """Pure ASGI middleware: 413 for a declared Content-Length over the limit; a body streamed
+    without one is cut off at the limit (FastAPI then answers 400)."""
+
+    def __init__(self, app, limit: int):
+        self.app, self.limit = app, limit
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] in ("GET", "HEAD", "OPTIONS"):
+            return await self.app(scope, receive, send)
+        declared = dict(scope.get("headers") or []).get(b"content-length", b"")
+        if declared.isdigit() and int(declared) > self.limit:
+            response = JSONResponse({"detail": "Yêu cầu quá lớn."}, status_code=413)
+            return await response(scope, receive, send)
+        seen = 0
+
+        async def limited():
+            nonlocal seen
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > self.limit:
+                    raise ValueError("request body over the size limit")
+            return message
+
+        return await self.app(scope, limited, send)
+
+
+app.add_middleware(_BodyLimit, limit=MAX_BODY_BYTES)  # added last = runs first
+
+
+def _client_ip(request: Request) -> Optional[str]:
+    """The visitor's IP: Cloudflare's CF-Connecting-IP when present, else the direct peer."""
+    return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else None)
 
 
 # Cache policy for responses that pass through a CDN (Cloudflare caches .css/.js by default and
@@ -40,9 +87,22 @@ _REVALIDATE = (".html", ".css", ".js", ".json", ".xml", ".txt")
 _CACHE_A_DAY = (".png", ".ico", ".svg")
 
 
+# Browser hardening sent on every response. The page itself also gets a Content-Security-Policy
+# (see _index), which needs the import map's hash.
+_SECURITY_HEADERS = {
+    "Strict-Transport-Security": "max-age=31536000",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+}
+
+
 @app.middleware("http")
 async def _cache_headers(request, call_next):
     response = await call_next(request)
+    for name, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
     path = request.url.path
     if path.startswith("/api/"):
         response.headers.setdefault("Cache-Control", "no-store")
@@ -83,35 +143,36 @@ class NextRequest(BaseModel):
     tier: Optional[Literal[1, 2, 3]] = None
     level: Level = "intermediate"
     kind: Kind = "rescue"
-    template_id: Optional[str] = None
-    exclude_ids: list[str] = Field(default_factory=list)
-    exclude_templates: list[str] = Field(default_factory=list)
+    template_id: Optional[str] = Field(default=None, max_length=80)
+    # list caps: far above real play (a game sees well under 200 puzzles; the client sends the last 500)
+    exclude_ids: list[str] = Field(default_factory=list, max_length=1000)
+    exclude_templates: list[str] = Field(default_factory=list, max_length=50)
 
 
 class OrderItem(BaseModel):
-    line_id: str
+    line_id: str = Field(max_length=40)
     indent: int
 
 
 class AnswerRequest(BaseModel):
-    option_id: Optional[str] = None
-    order: Optional[list[OrderItem]] = None
-    line_id: Optional[str] = None
+    option_id: Optional[str] = Field(default=None, max_length=40)
+    order: Optional[list[OrderItem]] = Field(default=None, max_length=30)
+    line_id: Optional[str] = Field(default=None, max_length=40)
     reveal: bool = False
 
 
 class TokenPlacement(BaseModel):
-    id: str
+    id: str = Field(max_length=40)
     col: int
 
 
 class RowPlacement(BaseModel):
     row: int
-    tokens: list[TokenPlacement] = Field(default_factory=list)
+    tokens: list[TokenPlacement] = Field(default_factory=list, max_length=30)
 
 
 class RunRequest(BaseModel):
-    rows: list[RowPlacement] = Field(default_factory=list)
+    rows: list[RowPlacement] = Field(default_factory=list, max_length=30)
     trace: bool = False
     prediction: Optional[str] = Field(default=None, max_length=240)
 
@@ -121,7 +182,7 @@ class RowsHintRequest(RunRequest):
 
 
 class RowsTwistRequest(RunRequest):
-    baseline: list[RowPlacement]
+    baseline: list[RowPlacement] = Field(max_length=30)
 
 
 class TeachBackRequest(RunRequest):
@@ -164,7 +225,7 @@ def puzzle_hint(puzzle_id: str, level: int = Query(..., ge=1, le=3)):
 
 
 @app.post("/api/puzzle/{puzzle_id}/explain")
-def puzzle_explain(puzzle_id: str, req: AnswerRequest):
+def puzzle_explain(puzzle_id: str, req: AnswerRequest, request: Request):
     puzzle = bank.get_puzzle(puzzle_id)
     order = [item.model_dump() for item in req.order] if req.order is not None else None
     result = bank.check_answer(puzzle, option_id=req.option_id, order=order, reveal=True)
@@ -188,11 +249,11 @@ def puzzle_explain(puzzle_id: str, req: AnswerRequest):
         "choice": choice, "diagnosis": result["message"], "actual_output": result["actual_output"],
         "expected_output": puzzle["expected_output"], "reference": result["explanation"],
         "solution": result["solution_code"],
-    }, result["explanation"] or result["message"])
+    }, result["explanation"] or result["message"], client=_client_ip(request))
 
 
 @app.get("/api/puzzle/{puzzle_id}/rematch")
-def puzzle_rematch(puzzle_id: str, level: Level = "intermediate"):
+def puzzle_rematch(puzzle_id: str, request: Request, level: Level = "intermediate"):
     original = bank.get_puzzle(puzzle_id)
     followup = bank.select_puzzle(
         kind="rescue", topic=original["topic"], tier=original["tier"], level=level,
@@ -201,7 +262,7 @@ def puzzle_rematch(puzzle_id: str, level: Level = "intermediate"):
     intro = tutor.feedback("rematch", {
         "previous_prompt": original["prompt"], "next_prompt": followup["prompt"],
         "topic": original["topic"], "hint": followup["hints"][0],
-    }, "Thử áp dụng lại quy tắc vừa gặp vào câu đố mới này.")
+    }, "Thử áp dụng lại quy tắc vừa gặp vào câu đố mới này.", client=_client_ip(request))
     return {**intro, "puzzle": bank.public_puzzle(followup, level)}
 
 
@@ -238,7 +299,7 @@ def rows_twist(level_id: str, req: RowsTwistRequest):
 
 
 @app.post("/api/rows/levels/{level_id}/teach-back")
-def rows_teach_back(level_id: str, req: TeachBackRequest):
+def rows_teach_back(level_id: str, req: TeachBackRequest, request: Request):
     lv = rows.get_level(level_id)
     reflection = req.reflection.strip()
     if not reflection:
@@ -249,7 +310,8 @@ def rows_teach_back(level_id: str, req: TeachBackRequest):
     return tutor.feedback("teach_back", {
         "goal": lv["goal"], "code": result["code"], "output": result["actual_output"],
         "learner_explanation": reflection,
-    }, "Nếu đổi đúng một mảnh mã, đầu ra sẽ thay đổi thế nào? / What would change in the output if you swapped one tile?")
+    }, "Nếu đổi đúng một mảnh mã, đầu ra sẽ thay đổi thế nào? / What would change in the output if you swapped one tile?",
+        client=_client_ip(request))
 
 
 @app.get("/api/rows/levels/{level_id}/hint")
@@ -261,7 +323,8 @@ def rows_hint(level_id: str, level: int = Query(..., ge=1, le=3),
 
 
 @app.post("/api/rows/levels/{level_id}/hint")
-def rows_coach(level_id: str, req: RowsHintRequest, level: int = Query(..., ge=1, le=3)):
+def rows_coach(level_id: str, req: RowsHintRequest, request: Request,
+               level: int = Query(..., ge=1, le=3)):
     config = rows.get_level(level_id)
     diagnosis = rows.run_level(config, [row.model_dump() for row in req.rows],
                                include_trace=req.trace_step is not None)
@@ -282,7 +345,7 @@ def rows_coach(level_id: str, req: RowsHintRequest, level: int = Query(..., ge=1
         if req.trace_step >= len(steps):
             raise HTTPException(422, "Bước chạy này không có trong chương trình.")
         context["current_step"] = {"step": req.trace_step + 1, **steps[req.trace_step]}
-    return {"level": level, **tutor.feedback("coach", context, hint["text"])}
+    return {"level": level, **tutor.feedback("coach", context, hint["text"], client=_client_ip(request))}
 
 
 # --------------------------------------------------------------------------- static frontend
@@ -322,14 +385,38 @@ def render_index(build: str) -> str:
     return html.replace('<script type="module"', tag + '<script type="module"', 1)
 
 
+def content_security_policy(html: str) -> str:
+    """CSP for the page: own scripts plus the inline import map (allowed by its exact hash), Google
+    Fonts, nothing else. The JSON-LD block is data, not script, so CSP does not apply to it."""
+    hashes = [
+        "'sha256-" + base64.b64encode(hashlib.sha256(body.encode()).digest()).decode() + "'"
+        for body in re.findall(r'<script type="importmap">(.*?)</script>', html, re.S)
+    ]
+    return "; ".join([
+        "default-src 'self'",
+        "script-src 'self' " + " ".join(hashes),
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  # inline style="--c:..." on LEDs
+        "font-src 'self' https://fonts.gstatic.com",
+        "img-src 'self' data:",
+        "connect-src 'self'",
+        "manifest-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+    ])
+
+
 if FRONTEND_DIR.is_dir():
     BUILD_ID = build_id()
     _INDEX_HTML = render_index(BUILD_ID)
+    _INDEX_CSP = content_security_policy(_INDEX_HTML)
 
     @app.get("/", include_in_schema=False)
     @app.get("/index.html", include_in_schema=False)
     def _index() -> HTMLResponse:
-        return HTMLResponse(_INDEX_HTML, headers={"Cache-Control": "no-cache", "X-Build": BUILD_ID})
+        return HTMLResponse(_INDEX_HTML, headers={"Cache-Control": "no-cache", "X-Build": BUILD_ID,
+                                                  "Content-Security-Policy": _INDEX_CSP})
 
     # mounted last so it never shadows /api or the rendered index above
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

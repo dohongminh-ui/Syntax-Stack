@@ -42,7 +42,7 @@ Open **http://localhost:8000/**. API explorer: http://localhost:8000/docs. Healt
 .venv/bin/python -m pytest -q        # Windows: .venv\Scripts\python -m pytest -q
 ```
 
-Expected: `161 passed`.
+Expected: `179 passed`.
 
 The tutor is optional. To enable it, set `SYNTAX_STACK_TUTOR_URL` and `SYNTAX_STACK_TUTOR_TOKEN` in the
 server's environment ([docs/ai-tutor.md](docs/ai-tutor.md)). Without them everything works with
