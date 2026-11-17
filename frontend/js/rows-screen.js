@@ -9,6 +9,7 @@ import { keycap } from './keycap.js';
 import { titleBar, codeBlock, terminal, comment, tutorNote } from './editor.js';
 import { showStrip, setMode, setScore, setStatus, setStreak, setLedMode } from './strip.js';
 import { setLevelTitle } from './title.js';
+import { sfx } from './sound.js';
 
 const $ = (id) => document.getElementById(id);
 let nav = { show: () => {}, home: () => {} };
@@ -59,12 +60,14 @@ function terminalInput(attrs) {
   return ta;
 }
 
-/** kind: true (correct) | false (wrong) | 'none' (could not compare) | null (clear). */
+/** kind: 'bonus' | 'ok' (correct) | 'bad' (wrong) | 'none' (could not compare) | null (clear). */
 function setPrediction(node, kind) {
-  node.className = 'rg-prediction' + (kind === true ? ' ok' : kind === false ? ' bad' : '');
+  if (kind === 'bonus') sfx('chime');
+  node.className = 'rg-prediction' + (kind === 'ok' || kind === 'bonus' ? ' ok' : kind === 'bad' ? ' bad' : '');
   if (kind == null) node.replaceChildren();
-  else if (kind === true) node.replaceChildren(icon('check', { size: 16 }), el('span', { text: 'Dự đoán đúng' }));
-  else if (kind === false) node.replaceChildren(icon('x', { size: 16 }), el('span', { text: 'Dự đoán chưa đúng, so sánh với đầu ra thực tế' }));
+  else if (kind === 'bonus') node.replaceChildren(icon('check', { size: 16 }), el('span', {}, 'Dự đoán đúng. ', el('b', { class: 'rg-bonus', text: `+${R.PREDICT_BONUS} Đọc code` })));
+  else if (kind === 'ok') node.replaceChildren(icon('check', { size: 16 }), el('span', { text: 'Dự đoán đúng' }));
+  else if (kind === 'bad') node.replaceChildren(icon('x', { size: 16 }), el('span', { text: 'Dự đoán chưa đúng, so sánh với đầu ra thực tế' }));
   else node.replaceChildren(el('span', { text: 'Chương trình chưa chạy xong để đối chiếu dự đoán.' }));
 }
 
@@ -256,7 +259,9 @@ function buildSide() {
     el('button', { type: 'button', class: 'btn', text: guess.replaceAll('\n', ' · '),
       onclick: () => { if (!p.predictInput.disabled) { p.predictInput.value = guess; autoGrow(p.predictInput); } } }));
   p.predict = disclosure('Dự đoán đầu ra',
-    el('div', { class: 'rg-trace-body' }, options.length ? el('div', { class: 'rg-trace-controls' }, options) : null,
+    el('div', { class: 'rg-trace-body' },
+      comment(`Đoán chương trình của bạn sẽ in gì trước khi chạy. Đoán đúng đầu ra của một chương trình chưa đạt: +${R.PREDICT_BONUS} điểm Đọc code (1 lần mỗi màn).`),
+      options.length ? el('div', { class: 'rg-trace-controls' }, options) : null,
       el('div', { class: 'rg-field' }, el('div', { class: 'term-ps', text: '$ dự đoán' }), p.predictInput)));
   p.predict.hidden = !!G.baseline;
   p.predict.addEventListener('toggle', () => autoGrow(p.predictInput));
@@ -432,6 +437,7 @@ function onFail(resp, { local = false } = {}) {
   R.setHintContext(s, resp.error_group);
   board.render(s, { errorRow: s.errorRow });
   board.flagError(s.errorRow);
+  if (!local) sfx('bzzt');
   renderBar();
   renderCode();
   showValidator(resp);
@@ -450,6 +456,7 @@ async function typeInto(node, text) {
   const per = Math.min(20, 600 / Math.max(1, chars.length));
   for (const ch of chars) {
     node.textContent += ch;
+    sfx('type');
     await wait(per);
   }
 }
@@ -458,11 +465,11 @@ async function onPass(resp) {
   const game = G;
   const s = game.state;
   const stars = R.starsFor(s.runs, s.hintsMax);
-  const score = R.scoreFor(stars, resp.unused_distractors || 0);
+  const score = R.scoreFor(stars, resp.unused_distractors || 0, s.readBonus);
   if (!game.baseline && !game.returnTo) progress = store.recordRowsResult(s.level.id, stars, score);
   s.passed = true;
   s.errorRow = null;
-  s.result = { stars, score, unused: resp.unused_distractors || 0, runs: s.runs, hints: s.hintsMax };
+  s.result = { stars, score, unused: resp.unused_distractors || 0, runs: s.runs, hints: s.hintsMax, read: s.readBonus };
   G.view = 'pass';
   setTrace(resp.trace);
   G.parts.vwrap.replaceChildren();
@@ -470,6 +477,7 @@ async function onPass(resp) {
   renderCode(true);
   renderActions();
   setStatus('pass');
+  if (s.runs > 1) sfx('resolve');
   const term = terminal('', { label: 'đầu ra', cls: 'is-ok' });
   G.passTerm = term;
   renderPane();
@@ -540,7 +548,7 @@ function showResult() {
     stars,
     el('h2', { text: r.stars === 3 ? 'Hoàn hảo!' : 'Hoàn thành!' }),
     el('dl', { class: 'receipt', 'aria-label': 'Kết quả màn chơi' },
-      ...[['stars', `${r.stars}/3`], ['runs', r.runs], ['hints_used', r.hints], ['unused_distractors', r.unused], ['level_score', r.score]].map(([k, v]) => el('div', {}, el('dt', { text: k }), el('dd', { text: String(v) })))),
+      ...[['stars', `${r.stars}/3`], ['runs', r.runs], ['hints_used', r.hints], ['unused_distractors', r.unused], ['read_code', r.read ? `+${R.PREDICT_BONUS}` : '0'], ['level_score', r.score]].map(([k, v]) => el('div', {}, el('dt', { text: k }), el('dd', { text: String(v) })))),
     r.stars < 3 ? comment('Chơi lại để lấy thêm sao: đạt ngay lần chạy đầu, không dùng gợi ý.') : null,
     teachBackPanel(game),
     el('div', { class: 'res-actions' },
@@ -553,9 +561,16 @@ function showResult() {
   anim(reveal, [{ transform: 'translateY(8px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 240, easing: EASE.out });
   const icons = [...stars.querySelectorAll('.ico.on')];
   icons.forEach((ic, i) => {
+    starSfx(i, r.stars);
     anim(ic, [{ transform: 'scale(.9)', opacity: 0.2 }, { transform: 'scale(1.15)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)', opacity: 1 }], { duration: 320, delay: 120 + i * 140, easing: EASE.out, fill: 'backwards' });
   });
   reveal.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
+}
+
+function starSfx(i, total) {
+  const at = 120 + i * 140;
+  setTimeout(() => sfx('star', { i }), at);
+  if (total === 3 && i === 2) setTimeout(() => sfx('perfect'), at + 160);
 }
 
 async function run() {
@@ -566,8 +581,10 @@ async function run() {
   const local = R.localCheck(s);
   if (local) {
     game.lastAttempt = null;
+    sfx('nope');
     return onFail({ ...local, actual_output: null, expected_output: null }, { local: true });
   }
+  sfx('enter');
   G.busy = true;
   G.note = '';
   setStatus('run', { blink: false });
@@ -591,9 +608,8 @@ async function run() {
   }
   if (game !== G) return;
   game.lastAttempt = attempt;
-  if (resp.prediction) {
-    setPrediction(game.parts.predictionResult, resp.prediction.correct === true ? true : resp.prediction.correct === false ? false : 'none');
-  }
+  const verdict = R.notePrediction(s, attempt, resp);
+  if (verdict) setPrediction(game.parts.predictionResult, verdict === 'bonus' && game.baseline ? 'ok' : verdict);
   R.recordRun(s);
   if (resp.passed) await onPass(resp);
   else onFail(resp);

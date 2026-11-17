@@ -1,6 +1,7 @@
 // The indicator strip (header): wordmark, mode label, streak, BUILD/WARN/CRASH LEDs, score.
 import { icon } from './icons.js';
 import { rollNumber, reducedMotion } from './ui.js';
+import { isMuted, setMuted, sfx } from './sound.js';
 
 const $ = (id) => document.getElementById(id);
 let backFn = null;
@@ -10,6 +11,19 @@ export function initStrip() {
   const back = $('strip-back');
   back.append(icon('chevron-left', { size: 22 }));
   back.addEventListener('click', () => backFn && backFn());
+  const snd = $('strip-sound');
+  const paint = () => {
+    const m = isMuted();
+    snd.replaceChildren(icon(m ? 'volume-x' : 'volume', { size: 20 }));
+    snd.setAttribute('aria-pressed', m ? 'true' : 'false');
+    snd.setAttribute('aria-label', m ? 'Bật âm thanh' : 'Tắt âm thanh');
+  };
+  paint();
+  snd.addEventListener('click', () => {
+    setMuted(!isMuted());
+    paint();
+    if (!isMuted()) sfx('drop', { cells: 2 });
+  });
 }
 
 export function showStrip(on, { back = null, backLabel = 'Quay lại' } = {}) {

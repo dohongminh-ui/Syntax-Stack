@@ -15,6 +15,41 @@
 
 /* ---------------- start screen ---------------- */
 .start { padding: 32px var(--gutter) 64px; display: flex; justify-content: center; }
+
+/* ---------------- home backdrop (only while the start screen is shown) ---------------- */
+.home-bg {
+  display: none;
+  position: fixed; inset: 0; z-index: 0;
+  overflow: hidden; pointer-events: none;
+  background:
+    radial-gradient(55% 42% at 50% 8%, rgba(255, 232, 196, 0.075), transparent 72%),   /* desk-lamp spotlight over the title */
+    radial-gradient(130% 95% at 50% 35%, transparent 52%, rgba(0, 0, 0, 0.38));         /* vignette */
+}
+body:has(#screen-start:not([hidden])) .home-bg { display: block; }
+.home-bg::before {                     /* socket grid: the board's "+" crosshair, fading out toward the edges */
+  content: ''; position: absolute; inset: 0;
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='56'><path d='M28 24.5v7M24.5 28h7' stroke='%23ece8df' stroke-opacity='.11' stroke-width='1'/></svg>") center top / 56px 56px;
+  -webkit-mask-image: radial-gradient(75% 65% at 50% 30%, #000 25%, transparent 78%);
+  mask-image: radial-gradient(75% 65% at 50% 30%, #000 25%, transparent 78%);
+}
+.home-tok {
+  position: absolute;
+  height: var(--th); padding-bottom: calc(var(--th) * 0.09);
+  translate: -50% -50%;
+  animation: home-drift var(--dur) var(--delay) ease-in-out infinite alternate;
+}
+.home-tok .cap-top { align-items: center; padding: 0 calc(var(--th) * 0.3); }
+.home-tok .legend { font-size: calc(var(--th) * 0.32); white-space: nowrap; }
+.home-tok.near { --th: 46px; opacity: 0.2; }
+.home-tok.far { --th: 32px; opacity: 0.11; filter: blur(1.2px); }
+@keyframes home-drift {
+  from { transform: translate(0, 0) rotate(var(--r0)); }
+  to { transform: translate(var(--dx), var(--dy)) rotate(var(--r1)); }
+}
+@media (max-width: 719px) { .home-tok { display: none; } }   /* no free edges on phones: tokens would only peek out behind the cards */
+@media (prefers-reduced-motion: reduce) {
+  .home-tok { animation: none; transform: rotate(var(--r0)); }
+}
 .start-wrap { width: min(100%, 920px); display: flex; flex-direction: column; align-items: center; gap: 28px; }
 .title-keys {
   --tu: min(76px, calc((100vw - 2 * var(--gutter) - 5 * 6px) / 6));
@@ -97,6 +132,8 @@
 }
 @media (min-width: 720px) { .board { --gap: 6px; --u: calc((100cqw - 7 * var(--gap)) / 8); } }
 .board.shaking { will-change: transform; }
+/* crash: falling caps paint over the tray (board-case's container query traps them otherwise); per-row z-index is set inline */
+.board-col.crashing { position: relative; z-index: 20; }
 
 .cell {
   position: relative;
@@ -122,6 +159,9 @@
 }
 .cell.pv-ok::after { opacity: 0.35; }
 .cell.pv-bomb::after { --pv: var(--crash); opacity: 0.3; }
+.cell > .key { transition: filter 120ms var(--ease-out); }
+.cell.pv-line > .key { filter: brightness(1.15); }
+.cell.pv-line > .key .cap-top { transform: translateY(-1px); transition-duration: 120ms; }
 .cell.locked > .key .cap-top { transform: translateY(2px); }
 .cell.locked > .key::before { opacity: 0.45; }
 .cell.tappable { cursor: pointer; }
@@ -134,7 +174,10 @@
 }
 .game-screen.dim .board::before { opacity: 0.55; }
 .cell.locked { z-index: 4; }
-.board .lock-frame, .board .lock-sweep { z-index: 5; }
+.board .lock-frame, .board .lock-sweep, .board .pv-frame { z-index: 5; }
+.pv-frame { pointer-events: none; border-radius: 8px; margin: -3px; border: 2px solid var(--mustard); box-shadow: 0 0 14px -2px currentColor, inset 0 0 10px -4px currentColor; opacity: 0.95; animation: pv-in 120ms var(--ease-out); }
+@keyframes pv-in { from { opacity: 0; } to { opacity: 0.95; } }
+.board:has(.pv-frame) .cell.pv-ok::after { opacity: 0.55; }
 
 .lock-frame, .lock-sweep { pointer-events: none; border-radius: 8px; margin: -3px; }
 .lock-frame { border: 2px solid var(--tcap, var(--mustard)); opacity: 0.85; }
@@ -151,8 +194,10 @@
   position: fixed; left: 0; top: 0; z-index: 80;
   pointer-events: none;
   display: grid;
+  transform-origin: 0 0;
   will-change: transform;
 }
+.ghost-in { display: grid; transform-origin: 50% 50%; }
 .ghost .key { width: var(--u); height: var(--u); }
 .ghost .key::before { box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35), 0 16px 26px rgba(0, 0, 0, 0.45); }
 .ghost.bad .cap-top::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: rgba(255, 93, 93, 0.22); }

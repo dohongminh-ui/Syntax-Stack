@@ -3,6 +3,9 @@
 export const DEFAULT_INDENT_COLS = 2;
 export const STAR_BASE = 300;
 export const DISTRACTOR_BONUS = 50;
+// "Đọc code": once per level, for correctly predicting what a not-yet-correct program prints.
+// Smaller than one star (100), so failing on purpose to earn it never pays.
+export const PREDICT_BONUS = 50;
 
 export function newState(level) {
   return {
@@ -16,6 +19,8 @@ export function newState(level) {
     errorRow: null,
     passed: false,
     result: null,
+    readBonus: false, // earned the PREDICT_BONUS this attempt
+    seenRuns: [], // board signatures already run: their output is known, so predicting it is not reading code
   };
 }
 
@@ -112,8 +117,31 @@ export function starsFor(runs, hintsMax) {
   return 1;
 }
 
-export function scoreFor(stars, unusedDistractors) {
-  return Math.round((STAR_BASE * stars) / 3) + DISTRACTOR_BONUS * (unusedDistractors || 0);
+export function scoreFor(stars, unusedDistractors, readBonus = false) {
+  return Math.round((STAR_BASE * stars) / 3) + DISTRACTOR_BONUS * (unusedDistractors || 0) + (readBonus ? PREDICT_BONUS : 0);
+}
+
+const normOut = (t) => String(t ?? '').replace(/\r/g, '').split('\n').map((l) => l.trimEnd()).join('\n').trimEnd();
+
+/**
+ * Call after every server run. Records the board as seen and grades the prediction:
+ * 'bonus' (first correct read of a program whose output is not the goal), 'ok', 'bad', 'none' (could not compare),
+ * or null (no prediction sent). The expected output is on screen, so predicting it earns nothing; neither does
+ * predicting a board that already ran (its output was just shown).
+ */
+export function notePrediction(s, attempt, resp) {
+  const sig = JSON.stringify(attempt.rows);
+  const fresh = !s.seenRuns.includes(sig);
+  if (fresh) s.seenRuns.push(sig);
+  if (!resp.prediction) return null;
+  if (resp.prediction.correct == null) return 'none';
+  if (!resp.prediction.correct) return 'bad';
+  const notGoal = !resp.passed && resp.actual_output != null && normOut(resp.actual_output) !== normOut(s.level.expected_output);
+  if (fresh && notGoal && !s.readBonus) {
+    s.readBonus = true;
+    return 'bonus';
+  }
+  return 'ok';
 }
 
 export function recordRun(s) {

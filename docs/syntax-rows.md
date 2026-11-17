@@ -242,8 +242,9 @@ The learner may type what they think the program prints *before* running it.
   prediction with the **actual** output, not with the goal. It is `null` if the program did not
   finish (empty board or any failure that stops execution). The key is absent when no prediction was
   sent.
-- It never changes `passed`, `error_group`, `row`, stars or score
-  (`test_prediction_is_compared_with_actual_output_separately_from_grade`).
+- On the server it never changes `passed`, `error_group`, `row` or anything else in the grade
+  (`test_prediction_is_compared_with_actual_output_separately_from_grade`). The browser may add the
+  "Đọc code" score bonus from it (section 10).
 
 ```json
 {"passed": false, "...": "...", "prediction": {"correct": false}}
@@ -347,7 +348,10 @@ stars = 3  if runs <= 1 and hintsMax == 0
         2  if runs <= 3 and hintsMax <= 1
         1  otherwise
 
-score = round(300 * stars / 3) + 50 * unused_distractors
+readBonus = true once per level attempt when a prediction (section 5) was correct for a program
+            that had not run before and whose actual output is not the goal (notePrediction)
+
+score = round(300 * stars / 3) + 50 * unused_distractors + (50 if readBonus)
 ```
 
 | Stars | Score from stars | Bonus |
@@ -355,6 +359,12 @@ score = round(300 * stars / 3) + 50 * unused_distractors
 | 3 | 300 | +50 for each distractor not used |
 | 2 | 200 | same |
 | 1 | 100 | same |
+
+Plus **+50 "Đọc code"** (`PREDICT_BONUS`) once per level for reading a not-yet-correct program right.
+Predicting the goal output earns nothing, because it is shown on screen, and neither does predicting a
+board that already ran, because its output was just shown. The bonus (50) is smaller than one star
+(100), so failing on purpose to earn it never pays. It is added only when the level is passed, and
+the result receipt shows it as `read_code`.
 
 The first hint button says "tối đa 2 sao", later ones "tối đa 1 sao", matching the rules. Stars and
 score are stored per level as the best seen (`recordRowsResult`). A level unlocks when the previous

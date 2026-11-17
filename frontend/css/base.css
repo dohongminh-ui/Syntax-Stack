@@ -291,6 +291,8 @@ label.key:active::before,
 @keyframes caret { 0%, 55% { opacity: 1; } 56%, 100% { opacity: 0; } }
 .strip-c { display: none; font: 700 12px/1 var(--f-mono); letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; }
 .strip-r { display: flex; align-items: center; gap: 14px; }
+.strip-r .strip-sound { width: 36px; height: 36px; margin: 0 -6px 0 0; flex: none; }
+.strip-r .strip-sound:focus-visible { outline: 2px solid var(--mustard); outline-offset: 0; }
 .streak { display: flex; align-items: center; gap: 4px; font: 700 14px/1 var(--f-mono); color: var(--muted); }
 .streak.hot { color: var(--mustard); }
 .leds { display: flex; gap: 10px; align-items: center; }

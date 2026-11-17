@@ -78,6 +78,25 @@ export function canPlace(grid, piece, r, c) {
   });
 }
 
+/** Rows/cols that would become a lock (full, no bug cells: same rule as findLock) if `piece` lands at (r0, c0). */
+export function completedLines(grid, piece, r0, c0) {
+  const added = new Set(piece.cells.map(([dr, dc]) => (r0 + dr) * SIZE + (c0 + dc)));
+  const ok = (r, c) => added.has(r * SIZE + c) || (grid[r][c] && !grid[r][c].bug);
+  const rows = [];
+  const cols = [];
+  for (let r = 0; r < SIZE; r++) {
+    let full = true;
+    for (let c = 0; c < SIZE && full; c++) full = !!ok(r, c);
+    if (full) rows.push(r);
+  }
+  for (let c = 0; c < SIZE; c++) {
+    let full = true;
+    for (let r = 0; r < SIZE && full; r++) full = !!ok(r, c);
+    if (full) cols.push(c);
+  }
+  return { rows, cols };
+}
+
 export function fitsAnywhere(grid, piece) {
   for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (canPlace(grid, piece, r, c)) return true;
   return false;

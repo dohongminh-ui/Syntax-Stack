@@ -99,6 +99,14 @@
   box-shadow: none;
   border: 1px dashed var(--line-2);
 }
+.rows-board:has(.indent-cap) { padding-top: 18px; }
+.indent-cap {                         /* "— THỤT LỀ —" caption over the indent columns */
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 5px);
+  display: flex; align-items: center; gap: 5px;
+  font: 600 10px/1 var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--faint); white-space: nowrap; pointer-events: none;
+}
+.indent-cap::before, .indent-cap::after { content: ''; flex: 1 1 0; min-width: 4px; border-top: 1px dashed var(--line-2); }
 .sock.indent::before {
   content: '⇥';
   position: absolute; inset: 0; display: grid; place-items: center;
@@ -180,6 +188,7 @@
 .rg-prediction.bad { color: var(--coral); background: rgba(242, 135, 106, 0.1); }
 .rg-prediction .ico { margin-top: 2px; align-self: flex-start; }
 .rg-prediction:empty { display: none; }
+.rg-prediction .rg-bonus { font: 700 13px/1 var(--f-mono); color: var(--mustard); white-space: nowrap; }
 .rg-teach-reply { margin: 0; overflow-wrap: anywhere; }
 .rg-privacy { margin: 0; font: 400 12px/1.5 var(--f-ui); color: var(--muted); }
 .rg-teach-reply:empty { display: none; }

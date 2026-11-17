@@ -1,7 +1,8 @@
 // Syntax Rows board + token tray: rendering, pointer drag (tray <-> board, board <-> board), tap, keyboard, motion.
 import * as R from './rows-game.js';
-import { el, anim, EASE, wait } from './ui.js';
+import { el, anim, EASE, wait, reducedMotion } from './ui.js';
 import { keycap } from './keycap.js';
+import { sfx } from './sound.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const capVar = (topic) => (topic === 'syntax' || !topic ? '#e6e0d2' : `var(--cap-${topic})`);
@@ -24,6 +25,8 @@ export class RowsBoard {
     this.kb = { r: 0, c: 0 };
     this.drag = null;
     this.ghost = null;
+    this.settling = false;
+    this.settled = false;
     boardEl.addEventListener('click', (e) => this.onSockClick(e));
     boardEl.addEventListener('focus', () => { boardEl.classList.add('kbd'); this.paintKb(); });
     boardEl.addEventListener('blur', () => { boardEl.classList.remove('kbd'); this.paintKb(); });
@@ -48,6 +51,13 @@ export class RowsBoard {
     this.socks = [];
     this.gut = [];
     this.hl = [];
+    const ic = state.level.indent_cols ?? 2;
+    if (ic > 0) {
+      const cap = el('span', { class: 'indent-cap', 'aria-hidden': 'true', text: 'thụt lề' });
+      cap.style.gridRow = '1';
+      cap.style.gridColumn = `2 / span ${ic}`;
+      this.boardEl.append(cap);
+    }
     for (let r = 0; r < rows; r++) {
       const hl = el('i', { class: 'row-hl', 'aria-hidden': 'true' });
       hl.style.gridRow = String(r + 1);
@@ -58,7 +68,7 @@ export class RowsBoard {
       this.boardEl.append(hl, rn);
       const row = [];
       for (let c = 0; c < cols; c++) {
-        const s = el('div', { class: 'sock' + (c < (state.level.indent_cols ?? 2) ? ' indent' : ''), role: 'gridcell', dataset: { r, c }, 'aria-label': `Hàng ${r + 1}, cột ${c + 1}${c < 2 ? ', cột thụt lề' : ''}` });
+        const s = el('div', { class: 'sock' + (c < ic ? ' indent' : ''), role: 'gridcell', dataset: { r, c }, 'aria-label': `Hàng ${r + 1}, cột ${c + 1}${c < ic ? ', cột thụt lề' : ''}` });
         s.style.gridRow = String(r + 1);
         s.style.gridColumn = String(c + 2);
         row.push(s);
@@ -140,12 +150,33 @@ export class RowsBoard {
     const c = R.fitCol(s, id, row, col, maxDist);
     if (c == null) {
       this.shake();
+      sfx('nope');
       this.h.onHint?.('Không đặt được mảnh ở vị trí này: hàng đã có mảnh, hoặc mảnh đầu tiên phải nằm trong 3 cột đầu.');
       return false;
     }
-    this.selected = null;
-    this.h.onPlace(id, row, c);
+    this.place(id, row, c);
     return true;
+  }
+
+  place(id, row, col) {
+    this.selected = null;
+    this.h.onPlace(id, row, col);
+    this.placeSound(id);
+  }
+
+  remove(id) {
+    sfx('pickup');
+    this.h.onRemove(id);
+  }
+
+  /** Neighbour flush against the token on the same row: brighter click, else a weighted drop. */
+  placeSound(id) {
+    const s = this.h.getState();
+    const p = s.placed[id];
+    if (!p) return;
+    const w = R.tokenOf(s, id).w;
+    const adj = R.rowTokens(s, p.row, id).some((o) => o.col + o.w === p.col || o.col === p.col + w);
+    sfx(adj ? 'click' : 'drop', { cells: w });
   }
 
   onSockClick(e) {
@@ -156,7 +187,7 @@ export class RowsBoard {
 
   onKeyboardActivate(id) {
     const s = this.h.getState();
-    if (s.placed[id]) return this.h.onRemove(id);
+    if (s.placed[id]) return this.remove(id);
     this.select(this.selected === id ? null : id);
     if (this.selected) this.boardEl.focus();
   }
@@ -174,7 +205,7 @@ export class RowsBoard {
       e.preventDefault();
       if (this.selected) return void this.tryPlace(this.selected, this.kb.r, this.kb.c);
       const hit = R.rowTokens(s, this.kb.r).find((t) => this.kb.c >= t.col && this.kb.c < t.col + t.w);
-      if (hit) this.h.onRemove(hit.id);
+      if (hit) this.remove(hit.id);
     } else if (e.key === 'Escape' && this.selected) {
       this.select(null);
     }
@@ -187,7 +218,7 @@ export class RowsBoard {
 
   // ---- pointer drag ----------------------------------------------------------------------------------
   onDown(e, id) {
-    if (e.button > 0) return;
+    if (e.button > 0 || this.settling) return;
     // See board.js: a mouse press must not start a text selection / native drag-and-drop.
     if (e.pointerType === 'mouse') e.preventDefault();
     window.getSelection()?.removeAllRanges();
@@ -231,10 +262,13 @@ export class RowsBoard {
       d.started = true;
       this.startGhost();
     }
-    const lift = d.touch ? 52 : 0;
+    // Touch lift eases in over the pickup (120ms) so the piece does not jump away from the finger.
+    const liftMax = d.touch ? Math.max(52, d.h / 2 + 28) : 0;
+    const k = reducedMotion() ? 1 : Math.min(1, (performance.now() - d.t0) / 120);
+    const lift = liftMax * (1 - Math.pow(1 - k, 3));
     const left = e.clientX - d.gx;
     const top = e.clientY - d.gy - lift;
-    this.ghost.style.transform = `translate(${left}px, ${top}px) scale(1.04)`;
+    this.ghost.style.transform = `translate(${left}px, ${top}px)`;
     const m = this.m;
     const s = this.h.getState();
     const cy = top + d.h / 2;
@@ -280,7 +314,19 @@ export class RowsBoard {
     g.tabIndex = -1;
     document.body.append(g);
     this.ghost = g;
+    d.t0 = performance.now();
+    // Pickup scale uses the independent `scale` property so it never fights the translate set in onMove.
+    g.style.scale = '1.04';
+    if (!reducedMotion()) g.animate([{ scale: '1' }, { scale: '1.04' }], { duration: 120, easing: EASE.out });
+    sfx('pickup');
     d.k.classList.add('dragging');
+  }
+
+  /** Flies the ghost to a viewport top-left point while easing its pickup scale back to 1; resolves when done. */
+  flyGhost(g, x, y, ms) {
+    const from = g.style.transform || 'translate(0px, 0px)';
+    const a = g.animate([{ transform: from, scale: '1.04' }, { transform: `translate(${x}px, ${y}px)`, scale: '1' }], { duration: ms, easing: EASE.out, fill: 'forwards' });
+    return a.finished.catch(() => {});
   }
 
   onUp(e, cancelled) {
@@ -288,21 +334,47 @@ export class RowsBoard {
     this.drag = null;
     document.documentElement.classList.remove('is-dragging');
     if (!d) return;
-    d.k.classList.remove('dragging');
     if (d.started) {
-      this.ghost?.remove();
+      const ghost = this.ghost;
       this.ghost = null;
       this.clearPreview();
-      if (cancelled || !d.target) return;
-      if (d.target.tray) {
-        if (d.fromBoard) this.h.onRemove(d.id);
-      } else {
-        this.selected = null;
-        this.h.onPlace(d.id, d.target.row, d.target.col);
+      const finish = () => {
+        ghost?.remove();
+        // a new drag of the same token may already have started during the fly-back
+        if (this.drag?.k !== d.k) d.k.classList.remove('dragging');
+      };
+      if (!ghost) return finish();
+      const instant = reducedMotion();
+      if (!cancelled && d.target && !d.target.tray) {
+        // Valid drop: settle onto the socket (90ms), then commit.
+        const { row, col } = d.target;
+        const commit = () => {
+          this.settled = true;
+          try {
+            this.place(d.id, row, col);
+          } finally {
+            this.settled = false;
+            this.settling = false;
+            finish();
+          }
+        };
+        this.settling = true;
+        if (instant) return commit();
+        const r = this.socks[row][col].getBoundingClientRect();
+        this.flyGhost(ghost, r.left, r.top, 90).then(commit);
+        return;
       }
-    } else if (!cancelled) {
+      const toTray = !cancelled && d.target?.tray;
+      if (toTray && d.fromBoard) this.remove(d.id);
+      else if (!cancelled && !toTray) sfx('nope');
+      if (instant || !d.k.isConnected) return finish();
+      const r = d.k.getBoundingClientRect();
+      this.flyGhost(ghost, r.left, r.top, toTray ? 160 : 220).then(finish);
+    } else {
+      d.k.classList.remove('dragging');
+      if (cancelled) return;
       // tap: board token returns to the tray, tray token toggles selection
-      if (d.fromBoard) this.h.onRemove(d.id);
+      if (d.fromBoard) this.remove(d.id);
       else this.select(this.selected === d.id ? null : d.id);
     }
   }
@@ -313,8 +385,9 @@ export class RowsBoard {
   }
 
   thock(k) {
-    anim(k, [{ transform: 'translateY(-6px) scale(1.03)', opacity: 0.5 }, { transform: 'none', opacity: 1 }], { duration: 120, easing: EASE.out, fill: 'backwards' });
-    anim(k.firstElementChild, [{ transform: 'translateY(0)' }, { transform: 'translateY(2px)', offset: 0.4 }, { transform: 'translateY(0)' }], { duration: 90, delay: 100, easing: EASE.out });
+    // After a settled drag the piece already landed: skip the drop-in, press only.
+    if (!this.settled) anim(k, [{ transform: 'translateY(-6px) scale(1.03)', opacity: 0.5 }, { transform: 'none', opacity: 1 }], { duration: 120, easing: EASE.out, fill: 'backwards' });
+    anim(k.firstElementChild, [{ transform: 'translateY(0)' }, { transform: 'translateY(2px)', offset: 0.4 }, { transform: 'translateY(0)' }], { duration: 90, delay: this.settled ? 0 : 100, easing: EASE.out });
   }
 
   rise(k) {
@@ -336,6 +409,7 @@ export class RowsBoard {
     lines.forEach((ln, i) => {
       const t0 = i * 200;
       setTimeout(() => {
+        sfx('line', { i });
         this.hl[ln.row]?.classList.add('ok');
         this.gut[ln.row]?.classList.add('ok');
       }, t0);
@@ -350,6 +424,7 @@ export class RowsBoard {
         jobs.push(a.finished);
       }
     });
+    if (lines.length) setTimeout(() => sfx('compile'), (lines.length - 1) * 200 + 120);
     await Promise.all(jobs);
     await wait(60);
   }

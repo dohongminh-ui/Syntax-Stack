@@ -1,5 +1,6 @@
 // Code Rescue board + tray + items: rendering, input (pointer drag, tap-to-place, keyboard) and the motion table.
-import { SIZE, canPlace, fitsAnywhere } from './game.js';
+import { SIZE, canPlace, fitsAnywhere, completedLines } from './game.js';
+import { sfx } from './sound.js';
 import { TOPIC_NAMES, TOPIC_GLYPH } from './pieces.js';
 import { el, wait, anim, EASE, floatText, reducedMotion } from './ui.js';
 import { icon } from './icons.js';
@@ -29,6 +30,11 @@ export class Board {
     this.lockKey = '';
     this.lockEls = [];
     this.lastPlaced = null;
+    this.pvEls = [];
+    this.pvCells = [];
+    this.pvKey = '';
+    this.settled = false;
+    this.settling = false;
     this.build();
   }
 
@@ -82,6 +88,7 @@ export class Board {
   // ---- rendering -----------------------------------------------------------------------------
   render(s, ui = {}) {
     this.cancelFx();
+    this.clearLines(); // the cell classes below are rewritten; the next showPreview rebuilds the frames
     const locked = new Set((s.lock ? s.lock.cells : []).map(([r, c]) => r * SIZE + c));
     for (let r = 0; r < SIZE; r++)
       for (let c = 0; c < SIZE; c++) {
@@ -108,7 +115,7 @@ export class Board {
     this.paintKb();
     if (ui.dropped && ui.dropped.length) {
       this.lastPlaced = ui.dropped;
-      this.animatePlace(ui.dropped);
+      this.animatePlace(ui.dropped, { settled: this.settled, lock: !!ui.lock });
     }
   }
 
@@ -136,7 +143,11 @@ export class Board {
       const btn = slot.firstElementChild;
       if (btn) {
         btn.classList.toggle('selected', ui.selected === i);
-        btn.classList.toggle('nofit', !fitsAnywhere(s.grid, p));
+        const nofit = !fitsAnywhere(s.grid, p);
+        const prev = btn.dataset.fit;
+        btn.classList.toggle('nofit', nofit);
+        btn.dataset.fit = nofit ? '0' : '1';
+        if (prev === '1' && nofit) anim(btn, [{ rotate: '0deg' }, { rotate: '-3deg' }, { rotate: '3deg' }, { rotate: '-2deg' }, { rotate: '0deg' }], { duration: 300, delay: 150, easing: EASE.out });
         btn.setAttribute('aria-pressed', ui.selected === i ? 'true' : 'false');
         btn.disabled = s.phase !== 'play';
       }
@@ -228,13 +239,61 @@ export class Board {
   // ---- previews ------------------------------------------------------------------------------
   clearPreview() {
     for (const c of this.cells) c.classList.remove('pv-ok', 'pv-bomb');
+    this.clearLines();
     this.hover = null;
+  }
+
+  clearLines() {
+    for (const n of this.pvEls) n.remove();
+    for (const c of this.pvCells) c.classList.remove('pv-line');
+    this.pvEls = [];
+    this.pvCells = [];
+    this.pvKey = '';
+  }
+
+  /** Frames + brightened caps for rows/cols this placement would complete. Rebuilt only when the target changes. */
+  syncLines(piece, r0, c0) {
+    const grid = this.h.getState().grid;
+    const { rows, cols } = completedLines(grid, piece, r0, c0);
+    const key = JSON.stringify([rows, cols, piece.topic]);
+    if (key === this.pvKey) return;
+    this.clearLines();
+    this.pvKey = key;
+    const mk = (row, col) => {
+      const n = el('i', { class: 'pv-frame', 'aria-hidden': 'true' });
+      n.style.gridRow = row;
+      n.style.gridColumn = col;
+      n.style.color = `var(--cap-${piece.topic})`;
+      n.style.borderColor = "currentColor";
+      this.boardEl.append(n);
+      this.pvEls.push(n);
+    };
+    const lit = new Set();
+    for (const r of rows) {
+      mk(`${r + 1}`, '1 / -1');
+      for (let c = 0; c < SIZE; c++) lit.add(r * SIZE + c);
+    }
+    for (const c of cols) {
+      mk('1 / -1', `${c + 1}`);
+      for (let r = 0; r < SIZE; r++) lit.add(r * SIZE + c);
+    }
+    for (const k of lit) {
+      const r = Math.floor(k / SIZE);
+      const c = k % SIZE;
+      if (!grid[r][c]) continue; // only already-filled cells; the piece's own cells keep the socket glow
+      this.cells[k].classList.add('pv-line');
+      this.pvCells.push(this.cells[k]);
+    }
   }
 
   showPreview(piece, r0, c0) {
     for (const c of this.cells) c.classList.remove('pv-ok', 'pv-bomb');
     const ok = canPlace(this.h.getState().grid, piece, r0, c0);
-    if (!ok) return false; // invalid: no ghost (the dragged piece tints red instead)
+    if (!ok) {
+      this.clearLines();
+      return false; // invalid: no ghost (the dragged piece tints red instead)
+    }
+    this.syncLines(piece, r0, c0);
     for (const [dr, dc] of piece.cells) {
       const r = r0 + dr;
       const c = c0 + dc;
@@ -276,14 +335,14 @@ export class Board {
     if (g && g.bug) return this.h.onBugTap(g.bugId);
     const p = ui.selected != null ? s.tray[ui.selected] : null;
     if (!p) return this.h.onHint('Chọn một khối ở khay trước, rồi chạm vào ô trên lưới.');
-    const r0 = r - Math.floor(p.h / 2);
-    const c0 = c - Math.floor(p.w / 2);
-    if (!canPlace(s.grid, p, r0, c0)) {
+    const t = this.resolveTarget(p, r - Math.floor(p.h / 2), c - Math.floor(p.w / 2));
+    if (!t) {
       this.shake();
       return this.h.onHint('Không đặt được khối ở vị trí này.');
     }
     this.clearPreview();
-    this.h.onPlace(ui.selected, r0, c0);
+    sfx('drop', { cells: p.cells.length });
+    this.h.onPlace(ui.selected, t[0], t[1]);
   }
 
   onKey(e) {
@@ -308,12 +367,13 @@ export class Board {
   }
 
   shake() {
+    sfx('nope');
     anim(this.boardEl, [{ transform: 'translateX(0)' }, { transform: 'translateX(-5px)' }, { transform: 'translateX(5px)' }, { transform: 'translateX(-4px)' }, { transform: 'translateX(4px)' }, { transform: 'translateX(0)' }], { duration: 260, easing: EASE.out });
   }
 
   // ---- drag ----------------------------------------------------------------------------------
   onDown(e, idx, btn) {
-    if (e.button > 0 || this.h.getState().phase !== 'play') return;
+    if (e.button > 0 || this.settling || this.h.getState().phase !== 'play') return;
     // A mouse press must not start a text selection: the browser would turn it into a native
     // drag-and-drop, steal the pointer, and leave this drag half-finished.
     if (e.pointerType === 'mouse') e.preventDefault();
@@ -358,40 +418,83 @@ export class Board {
     }
     const m = this.m;
     const p = this.h.getState().tray[d.idx];
-    const lift = d.touch ? 64 : 0;
     const gap = m.sx - m.size;
     const gw = p.w * m.size + (p.w - 1) * gap;
     const gh = p.h * m.size + (p.h - 1) * gap;
+    // Touch lift eases in over the pickup (120ms) so the piece does not jump away from the finger.
+    const liftMax = d.touch ? Math.max(64, gh / 2 + 28) : 0;
+    const k = reducedMotion() ? 1 : Math.min(1, (performance.now() - d.t0) / 120);
+    const lift = liftMax * (1 - Math.pow(1 - k, 3));
     const left = e.clientX - gw / 2;
     const top = e.clientY - gh / 2 - lift;
-    this.ghost.style.transform = `translate(${left}px, ${top}px) scale(1.04)`;
-    const c0 = Math.round((left - m.left) / m.sx);
-    const r0 = Math.round((top - m.top) / m.sy);
-    d.target = [r0, c0];
-    d.ok = this.showPreview(p, r0, c0);
+    this.ghost.style.transform = `translate(${left}px, ${top}px)`;
+    const fc = (left - m.left) / m.sx;
+    const fr = (top - m.top) / m.sy;
+    const t = this.resolveTarget(p, fr, fc);
+    d.target = t || [Math.round(fr), Math.round(fc)];
+    d.ok = this.showPreview(p, d.target[0], d.target[1]);
     this.ghost.classList.toggle('bad', !d.ok);
+  }
+
+  /** Rounded cell if valid, else the valid neighbour nearest the fractional position (max distance 1.0). */
+  resolveTarget(p, fr, fc) {
+    const grid = this.h.getState().grid;
+    const r0 = Math.round(fr);
+    const c0 = Math.round(fc);
+    if (canPlace(grid, p, r0, c0)) return [r0, c0];
+    let best = null;
+    let bestD = Infinity;
+    for (let dr = -1; dr <= 1; dr++)
+      for (let dc = -1; dc <= 1; dc++) {
+        if (!dr && !dc) continue;
+        if (!canPlace(grid, p, r0 + dr, c0 + dc)) continue;
+        const dist = Math.hypot(r0 + dr - fr, c0 + dc - fc);
+        if (dist < bestD) {
+          bestD = dist;
+          best = [r0 + dr, c0 + dc];
+        }
+      }
+    return best && bestD <= 1 ? best : null;
   }
 
   startGhost() {
     const d = this.drag;
     const p = this.h.getState().tray[d.idx];
     this.m = this.metrics();
+    d.t0 = performance.now();
+    sfx('pickup');
     const gap = this.m.sx - this.m.size;
     const g = el('div', { class: 'ghost', 'aria-hidden': 'true' });
     g.style.setProperty('--u', this.m.size + 'px');
-    g.style.gap = gap + 'px';
-    g.style.gridTemplateColumns = `repeat(${p.w}, ${this.m.size}px)`;
-    g.style.gridTemplateRows = `repeat(${p.h}, ${this.m.size}px)`;
+    const inner = el('div', { class: 'ghost-in' });
+    inner.style.gap = gap + 'px';
+    inner.style.gridTemplateColumns = `repeat(${p.w}, ${this.m.size}px)`;
+    inner.style.gridTemplateRows = `repeat(${p.h}, ${this.m.size}px)`;
     for (const [r, c] of p.cells) {
       const k = keycap({ topic: p.topic, legend: TOPIC_GLYPH[p.topic] });
       k.style.gridRow = String(r + 1);
       k.style.gridColumn = String(c + 1);
-      g.append(k);
+      inner.append(k);
     }
+    g.append(inner);
     document.body.append(g);
     this.ghost = g;
+    if (!reducedMotion()) {
+      const tray = d.btn.firstElementChild?.getBoundingClientRect().width || this.m.size;
+      inner.style.transform = 'scale(1.04)';
+      inner.animate([{ transform: `scale(${tray / this.m.size})` }, { transform: 'scale(1.04)' }], { duration: 120, easing: EASE.out });
+    }
     d.btn.classList.add('dragging');
     this.h.onSelect(d.idx, false, true);
+  }
+
+  /** Animates the ghost (outer translate/scale + inner pickup scale) to `to`; resolves when done. */
+  flyGhost(g, to, ms) {
+    const from = g.style.transform || 'translate(0px, 0px)';
+    const a = g.animate([{ transform: from }, { transform: to }], { duration: ms, easing: EASE.out, fill: 'forwards' });
+    const inner = g.firstElementChild;
+    inner?.animate([{ transform: 'scale(1.04)' }, { transform: 'scale(1)' }], { duration: ms, easing: EASE.out, fill: 'forwards' });
+    return a.finished.catch(() => {});
   }
 
   onUp(e, cancelled) {
@@ -399,16 +502,50 @@ export class Board {
     this.drag = null;
     document.documentElement.classList.remove('is-dragging');
     if (!d) return;
-    d.btn.classList.remove('dragging');
-    if (d.started) {
-      this.ghost?.remove();
-      this.ghost = null;
-      this.clearPreview();
-      if (!cancelled && d.ok) this.h.onPlace(d.idx, d.target[0], d.target[1]);
-      else if (!cancelled) this.shake();
-    } else if (!cancelled) {
-      this.h.onSelect(d.idx, false);
+    if (!d.started) {
+      d.btn.classList.remove('dragging');
+      if (!cancelled) this.h.onSelect(d.idx, false);
+      return;
     }
+    const ghost = this.ghost;
+    this.ghost = null;
+    if (!ghost) {
+      d.btn.classList.remove('dragging');
+      this.clearPreview();
+      return;
+    }
+    if (!cancelled && d.ok) {
+      const place = () => {
+        this.clearPreview();
+        this.settled = true;
+        sfx('drop', { cells: this.h.getState().tray[d.idx]?.cells.length || 1 });
+        try {
+          this.h.onPlace(d.idx, d.target[0], d.target[1]);
+        } finally {
+          this.settled = false;
+          ghost.remove();
+          d.btn.classList.remove('dragging');
+          this.settling = false;
+        }
+      };
+      this.settling = true;
+      if (reducedMotion()) return place();
+      const m = this.metrics();
+      this.flyGhost(ghost, `translate(${m.left + d.target[1] * m.sx}px, ${m.top + d.target[0] * m.sy}px) scale(1)`, 90).then(place);
+      return;
+    }
+    // Failed drop / cancel: the piece flies back to its tray slot.
+    this.clearPreview();
+    const overTray = !cancelled && !!document.elementFromPoint(e.clientX, e.clientY)?.closest('#tray-zone');
+    if (!cancelled && !overTray) sfx('nope');
+    const done = () => {
+      ghost.remove();
+      d.btn.classList.remove('dragging');
+    };
+    const k = d.btn.isConnected ? d.btn.firstElementChild : null;
+    if (reducedMotion() || !k) return done();
+    const r = k.getBoundingClientRect();
+    this.flyGhost(ghost, `translate(${r.left}px, ${r.top}px) scale(${r.width / this.m.size})`, overTray ? 160 : 220).then(done);
   }
 
   // ---- animations (WAAPI one-offs) -------------------------------------------------------------
@@ -417,14 +554,18 @@ export class Board {
   }
 
   /** Caps drop in 120ms then "thock" (2px press and release), 12ms stagger across the cells. */
-  animatePlace(cells) {
+  animatePlace(cells, { settled = false, lock = false } = {}) {
+    const depth = cells.length <= 2 ? 2 : cells.length <= 5 ? 3 : 4;
+    const base = settled ? 0 : 100; // a settled drag already landed: skip the drop-in, thock straight away
     cells.forEach(([r, c], i) => {
       const key = this.keyOf(r, c);
       const delay = i * 12;
-      anim(key, [{ transform: 'translateY(-6px) scale(1.03)', opacity: 0.5 }, { transform: 'none', opacity: 1 }], { duration: 120, delay, easing: EASE.out, fill: 'backwards' });
+      if (!settled) anim(key, [{ transform: 'translateY(-6px) scale(1.03)', opacity: 0.5 }, { transform: 'none', opacity: 1 }], { duration: 120, delay, easing: EASE.out, fill: 'backwards' });
       const top = key.firstElementChild;
-      anim(top, [{ transform: 'translateY(0)' }, { transform: 'translateY(2px)', offset: 0.4 }, { transform: 'translateY(0)' }], { duration: 90, delay: delay + 100, easing: EASE.out });
+      anim(top, [{ transform: 'translateY(0)' }, { transform: `translateY(${depth}px)`, offset: 0.4 }, { transform: 'translateY(0)' }], { duration: 90, delay: delay + base, easing: EASE.out });
+      if (lock) anim(key, [{ transform: 'scale(1.04, .94)' }, { transform: 'none' }], { duration: 160, delay: delay + base, easing: EASE.out });
     });
+    if (lock) anim(this.boardEl, [{ transform: 'translateY(0)' }, { transform: 'translateY(2px)', offset: 0.4 }, { transform: 'translateY(0)' }], { duration: 140, delay: base, easing: EASE.out });
   }
 
   /** Correct: caps pop up and away, staggered from the end nearest the last placed piece. */
@@ -506,9 +647,14 @@ export class Board {
     if (reducedMotion()) return wait(300);
     const root = document.documentElement;
     root.style.overflow = 'hidden';
+    // Lift the board above the tray and every filled cell above the empty sockets, so caps fall in front.
+    const col = this.boardEl.closest('.board-col');
+    col?.classList.add('crashing');
+    this.boardEl.classList.add('crashing');
     for (let r = 0; r < SIZE; r++)
       for (let c = 0; c < SIZE; c++) {
         if (this.cells[r * SIZE + c].classList.contains('empty')) continue;
+        this.cells[r * SIZE + c].style.zIndex = String(6 + SIZE - r); // higher rows over lower sockets
         this.fx.push(anim(this.keyOf(r, c), [
           { transform: 'translateY(0) rotate(0deg)' },
           { transform: `translateY(110vh) rotate(${rand(-25, 25)}deg)` },
@@ -516,5 +662,8 @@ export class Board {
       }
     await wait(700 + (SIZE - 1) * 30 + 60);
     root.style.overflow = '';
+    col?.classList.remove('crashing');
+    this.boardEl.classList.remove('crashing');
+    for (const c of this.cells) c.style.zIndex = '';
   }
 }

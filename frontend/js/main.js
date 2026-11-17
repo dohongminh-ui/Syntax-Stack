@@ -8,9 +8,10 @@ import { openPuzzle } from './puzzle-modal.js';
 import { TOPICS, TOPIC_NAMES, TOPIC_GLYPH } from './pieces.js';
 import { el, toast, confirmDialog, wait } from './ui.js';
 import { icon } from './icons.js';
+import { sfx } from './sound.js';
 import { keycap } from './keycap.js';
 import { initStrip, showStrip, setMode, setScore, setStatus, setStreak, setLedMode } from './strip.js';
-import { buildTitle, playWave, buildPreviews } from './start.js';
+import { buildTitle, playWave, buildPreviews, buildBackdrop } from './start.js';
 import { initRows, openPracticeRows, openSelect, runDemo } from './rows-screen.js';
 import { setScreenTitle } from './title.js';
 
@@ -93,6 +94,7 @@ function initStart() {
   const hs = store.getHighScore();
   $('hs-line').textContent = hs ? `Điểm cao nhất (Rescue): ${hs}` : '';
   buildPreviews();
+  buildBackdrop();
   playWave(buildTitle());
 }
 
@@ -255,9 +257,10 @@ async function onPlace(idx, r, c) {
     return;
   }
   ui.selected = null;
-  render({ dropped: res.placed });
+  render({ dropped: res.placed, lock: !!res.lock });
   if (res.expired.length) toast('Bug line đã tự biến mất.');
   if (res.lock) {
+    setTimeout(() => sfx('lock'), 70);
     G.phase = 'locked';
     render();
     busy = false;
@@ -294,6 +297,7 @@ async function onBomb(r, c) {
   }
   busy = true;
   board.lastPlaced = [[r, c]];
+  sfx('bomb');
   render();
   await board.animateClear(cleared);
   render();
@@ -381,6 +385,7 @@ async function runLock() {
 
   if (!failed) {
     const r = Game.applyCorrect(G, { base, maxHint, free, lines: L.count });
+    sfx('clear', { streak: G.streak });
     await board.animateClear(L.cells, { points: r.points, color: `var(--cap-${L.topic})` });
     Game.finishLock(G);
     render();
@@ -392,6 +397,7 @@ async function runLock() {
     if (w.result === 'crash') {
       await finish('crash');
     } else {
+      sfx('wrong');
       await board.animateBug(L.cells);
       render();
       toast(G.mode === 'rescue' ? 'Hàng này thành bug line. Trạng thái: Cảnh báo.' : 'Hàng này thành bug line, sẽ tự biến mất sau 5 lượt.', 3400);
@@ -429,6 +435,7 @@ async function onBugTap(bugId) {
   });
   if (res.correct) {
     const fx = Game.fixBug(G, bugId);
+    sfx('crack');
     await board.animateCrack(fx.cells);
     render();
     toast(`Đã sửa bug! +${fx.points} điểm. Trạng thái: Ổn định.`);

@@ -50,6 +50,41 @@ export function playWave(keys) {
   });
 }
 
+// ---- home backdrop: desk-lamp spotlight, socket grid, drifting code keycaps ------------------------------------
+// Hand-placed along the edges (x/y in % of the viewport) so nothing sits behind the title or the cards.
+// depth: 'near' = larger, clearer, faster; 'far' = smaller, dimmer, blurred. Hidden on phones (game.css).
+const DRIFT = [
+  { t: 'for', topic: 'loops', x: 6, y: 16, d: 'near' },
+  { t: 'x =', topic: 'variables', x: 93, y: 12, d: 'far' },
+  { t: 'def', topic: 'functions', x: 5, y: 36, d: 'far' },
+  { t: 'print()', topic: 'functions', x: 94, y: 40, d: 'near' },
+  { t: 'if', topic: 'conditions', x: 4, y: 58, d: 'far' },
+  { t: 'while', topic: 'loops', x: 95, y: 62, d: 'far' },
+  { t: 'i', topic: 'variables', x: 7, y: 80, d: 'near' },
+  { t: ':', topic: 'neutral', x: 94, y: 84, d: 'near' },
+  { t: 'range(3)', topic: 'loops', x: 5, y: 94, d: 'far' },
+  { t: 'return', topic: 'functions', x: 93, y: 95, d: 'far' },
+];
+
+export function buildBackdrop() {
+  if (document.querySelector('.home-bg')) return;
+  const bg = el('div', { class: 'home-bg', 'aria-hidden': 'true' });
+  DRIFT.forEach((p, i) => {
+    const k = keycap({ topic: p.topic, legend: p.t, legendClass: 'legend legend-c', cls: 'home-tok ' + p.d });
+    const near = p.d === 'near';
+    const sign = i % 2 ? 1 : -1;
+    Object.assign(k.style, { left: p.x + '%', top: p.y + '%' });
+    k.style.setProperty('--dur', (near ? 22 : 30) + (i % 3) * 4 + 's');
+    k.style.setProperty('--delay', -(i * 3.7) + 's');
+    k.style.setProperty('--dx', sign * (near ? 10 : 6) + 'px');
+    k.style.setProperty('--dy', (near ? -22 : -14) + 'px');
+    k.style.setProperty('--r0', sign * -4 + 'deg');
+    k.style.setProperty('--r1', sign * 3 + 'deg');
+    bg.append(k);
+  });
+  document.body.append(bg);
+}
+
 // ---- previews ------------------------------------------------------------------------------------------------
 export function buildPreviews() {
   // Code Rescue: 4x4 mini plate with a few caps
