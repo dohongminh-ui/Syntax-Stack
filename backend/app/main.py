@@ -387,18 +387,21 @@ def render_index(build: str) -> str:
 
 def content_security_policy(html: str) -> str:
     """CSP for the page: own scripts plus the inline import map (allowed by its exact hash), Google
-    Fonts, nothing else. The JSON-LD block is data, not script, so CSP does not apply to it."""
+    Fonts and Cloudflare Web Analytics, nothing else. The JSON-LD block is data, not script, so
+    CSP does not apply to it. Cloudflare's inline bot-detection snippet stays blocked on purpose:
+    it changes on every request, so it can only be allowed with 'unsafe-inline'."""
     hashes = [
         "'sha256-" + base64.b64encode(hashlib.sha256(body.encode()).digest()).decode() + "'"
         for body in re.findall(r'<script type="importmap">(.*?)</script>', html, re.S)
     ]
     return "; ".join([
         "default-src 'self'",
-        "script-src 'self' " + " ".join(hashes),
+        # Cloudflare Web Analytics: the beacon script, which reports to cloudflareinsights.com
+        "script-src 'self' https://static.cloudflareinsights.com " + " ".join(hashes),
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  # inline style="--c:..." on LEDs
         "font-src 'self' https://fonts.gstatic.com",
         "img-src 'self' data:",
-        "connect-src 'self'",
+        "connect-src 'self' https://cloudflareinsights.com",
         "manifest-src 'self'",
         "object-src 'none'",
         "base-uri 'self'",

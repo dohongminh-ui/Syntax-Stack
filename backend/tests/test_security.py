@@ -80,7 +80,8 @@ def test_page_csp_allows_only_own_scripts_and_the_exact_import_map(client):
     importmap = re.search(r'<script type="importmap">(.*?)</script>', r.text, re.S).group(1)
     digest = base64.b64encode(hashlib.sha256(importmap.encode()).digest()).decode()
     script_src = next(d for d in csp.split("; ") if d.startswith("script-src"))
-    assert script_src == f"script-src 'self' 'sha256-{digest}'"
+    assert script_src == f"script-src 'self' https://static.cloudflareinsights.com 'sha256-{digest}'"
+    assert "connect-src 'self' https://cloudflareinsights.com" in csp
     assert "'unsafe-inline'" not in script_src and "'unsafe-eval'" not in script_src
     assert "frame-ancestors 'none'" in csp and "object-src 'none'" in csp
     assert "https://fonts.gstatic.com" in csp

@@ -237,9 +237,11 @@ relative URLs and is served by the same app, no CORS setup is needed.
 - **Browser security headers** on every response: HSTS, `X-Content-Type-Options: nosniff`,
   `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`. The page also gets a strict
   Content-Security-Policy (`content_security_policy` in `app/main.py`): scripts only from this site
-  plus the inline import map by its exact SHA-256 hash, fonts only from Google Fonts. If Cloudflare
-  injects its own inline script (bot-detection *JavaScript detections*), the browser blocks it and logs
-  a CSP message; the game is unaffected.
+  plus the inline import map by its exact SHA-256 hash and Cloudflare Web Analytics
+  (`static.cloudflareinsights.com`, reporting to `cloudflareinsights.com`), fonts only from Google
+  Fonts. Cloudflare's inline bot-detection snippet (*JavaScript detections*) stays blocked: it changes
+  on every request, so allowing it would need `'unsafe-inline'`. The browser logs one CSP message for
+  it; the game is unaffected.
 - **Visitor IPs** are read from Cloudflare's `CF-Connecting-IP` header (else the direct peer). They are
   only used, hashed with the date, for the per-visitor tutor quota, kept in memory and never logged. A
   device that reaches the app directly (LAN, bypassing Cloudflare) can fake that header.
