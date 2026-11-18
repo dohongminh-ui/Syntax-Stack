@@ -253,7 +253,27 @@ sequenceDiagram
 The hint endpoint does not trust the client's description of the failure. It receives the board,
 re-runs it, and builds the tutor context from the fresh diagnosis (`main.py: rows_coach`).
 
-## 8. Directory map
+## 8. Live classroom
+
+A teacher opens a room (`POST /api/rooms`), students join with a nickname, and a dashboard polls
+`GET /api/rooms/{code}/summary`. The code lives in `backend/app/rooms.py` with its own SQLite file,
+`rooms.sqlite`, in the same folder as `SYNTAX_STACK_CUSTOM_DB` (so on the Docker volume).
+
+- **Verified data.** `/api/puzzle/{id}/answer` checks the answer against the bank as always and then, if the
+  request carries a valid `room` and `player_token`, records the result (`correct`, named mistake or error
+  group) in one cheap insert wrapped in try/except: logging can never fail or slow the answer. Nothing the
+  client says about correctness is ever stored; only the leaderboard (`score`, `status`, `bugs_fixed`) is
+  client-reported, and it is labelled that way.
+- **Privacy.** Nicknames only: no names, accounts, emails or IPs are stored (the IP is hashed in memory
+  for the 5-rooms-per-hour rate limit only). A room expires 12 hours after the last student activity and
+  is purged lazily (on create, join and lookup); the teacher can delete it at once.
+- **Secrets.** The teacher key and each player token are 128-bit random values returned once; only their
+  SHA-256 is stored. The teacher key (header `X-Teacher-Key`) gates summary, close and delete.
+- **Limits.** 60 players per room, 1000 logged answers per player and 20000 per room.
+- **Join link.** `SYNTAX_STACK_PUBLIC_URL`, else the proxy's `X-Forwarded-Proto` / `X-Forwarded-Host`, else
+  the request's own host; `GET /api/rooms/{code}/qr.svg` renders it with `segno` (pure Python).
+
+## 9. Directory map
 
 ```
 sextax/
@@ -269,7 +289,7 @@ sextax/
 │   └── n8n-tutor.json                importable n8n workflow for the tutor webhook
 ├── docs/                             this documentation (see docs/README.md)
 ├── backend/
-│   ├── app/                          FastAPI package (main, validator, bank, rows, hints, tutor)
+│   ├── app/                          FastAPI package (main, validator, bank, rows, hints, tutor, custom, rooms)
 │   ├── content/
 │   │   ├── templates/*.yaml          16 Code Rescue templates
 │   │   ├── mistakes.yaml             named common mistakes -> short Vietnamese notes
@@ -278,7 +298,7 @@ sextax/
 │   │   ├── puzzles.sqlite            generated bank (committed output)
 │   │   └── review/                   sample editorial review packet
 │   ├── scripts/                      generate_bank.py, review_content.py
-│   ├── tests/                        pytest suite (252 tests)
+│   ├── tests/                        pytest suite (296 tests)
 │   ├── requirements.txt, pytest.ini, README.md
 │   └── .venv/                        local virtual environment (not documented here)
 └── frontend/
@@ -287,7 +307,7 @@ sextax/
     └── js/                           ES modules (see frontend.md for the module map)
 ```
 
-## 9. Known limits of this architecture
+## 10. Known limits of this architecture
 
 - Single process, in-process code execution. Throughput is bounded by one Python interpreter (see
   the threat model in [validator-and-safety.md](validator-and-safety.md#5-threat-model)).

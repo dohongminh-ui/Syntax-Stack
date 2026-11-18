@@ -7,6 +7,9 @@ const TITLES = {
   'screen-practice': 'Luyện tập — Syntax Stack',
   'screen-skills': 'Bản đồ kỹ năng — Syntax Stack',
   'screen-custom': 'Tạo câu đố từ code — Syntax Stack',
+  'screen-room-new': 'Lớp học trực tiếp — Syntax Stack',
+  'screen-room-teach': 'Bảng điều khiển lớp — Syntax Stack',
+  'screen-room-join': 'Vào phòng — Syntax Stack',
   'screen-end': 'Kết quả — Syntax Stack',
 };
 

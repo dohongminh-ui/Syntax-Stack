@@ -10,13 +10,13 @@ import sys
 from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import bank, custom, hints, rows, tutor
+from . import bank, custom, hints, rooms, rows, tutor
 from . import validator as V
 
 if sys.version_info < (3, 12):  # the validator reads ast node.type_params (3.12+)
@@ -166,6 +166,25 @@ class AnswerRequest(BaseModel):
     order: Optional[list[OrderItem]] = Field(default=None, max_length=30)
     line_id: Optional[str] = Field(default=None, max_length=40)
     reveal: bool = False
+    # Live classroom: when both are valid the server logs the checked result for the teacher dashboard.
+    room: Optional[str] = Field(default=None, max_length=16)
+    player_token: Optional[str] = Field(default=None, max_length=64)
+
+
+class RoomCreateRequest(BaseModel):
+    level: Level = "intermediate"
+    title: Optional[str] = Field(default=None, max_length=200)  # real limit (40) is a Vietnamese 422 in rooms.py
+
+
+class RoomJoinRequest(BaseModel):
+    nickname: str = Field(max_length=200)  # real limit (20) is a Vietnamese 422 in rooms.py
+
+
+class RoomProgressRequest(BaseModel):
+    player_token: str = Field(max_length=64)
+    score: int = Field(ge=0, le=10_000_000)
+    status: Literal["playing", "crash", "nofit"]
+    bugs_fixed: int = Field(ge=0, le=1_000_000)
 
 
 class TokenPlacement(BaseModel):
@@ -250,10 +269,13 @@ def _diagnoser(puzzle_id: str):
 @app.post("/api/puzzle/{puzzle_id}/answer")
 def puzzle_answer(puzzle_id: str, req: AnswerRequest):
     row = _get_puzzle(puzzle_id)
-    return bank.check_answer(
+    result = bank.check_answer(
         row, option_id=req.option_id,
         order=[o.model_dump() for o in req.order] if req.order is not None else None,
         line_id=req.line_id, reveal=req.reveal, diagnose=_diagnoser(puzzle_id))
+    if req.room and req.player_token and not custom.is_custom_id(puzzle_id):
+        rooms.log_answer(req.room, req.player_token, row, req.option_id, result)  # never raises
+    return result
 
 
 @app.get("/api/puzzle/{puzzle_id}/hint")
@@ -356,6 +378,59 @@ def custom_create(req: CustomSetRequest, request: Request):
 @app.get("/api/custom/sets/{set_id}")
 def custom_get(set_id: str, level: Level = "intermediate"):
     return custom.get_set(set_id, level)
+
+
+# --------------------------------------------------------------------------- live classroom
+
+
+def _join_url(request: Request, code: str) -> str:
+    return rooms.join_url(code, headers=request.headers, scheme=request.url.scheme,
+                          netloc=request.url.netloc)
+
+
+@app.post("/api/rooms")
+def rooms_create(req: RoomCreateRequest, request: Request):
+    made = rooms.create_room(req.level, req.title, _client_ip(request))
+    return {**made, "join_url": _join_url(request, made["code"])}
+
+
+@app.get("/api/rooms/{code}")
+def rooms_get(code: str):
+    return rooms.room_info(code)
+
+
+@app.post("/api/rooms/{code}/join")
+def rooms_join(code: str, req: RoomJoinRequest):
+    return rooms.join_room(code, req.nickname)
+
+
+@app.post("/api/rooms/{code}/progress", status_code=204)
+def rooms_progress(code: str, req: RoomProgressRequest):
+    rooms.record_progress(code, req.player_token, req.score, req.status, req.bugs_fixed)
+    return Response(status_code=204)
+
+
+@app.get("/api/rooms/{code}/summary")
+def rooms_summary(code: str, x_teacher_key: Optional[str] = Header(default=None)):
+    return rooms.summary(code, x_teacher_key)
+
+
+@app.post("/api/rooms/{code}/close")
+def rooms_close(code: str, x_teacher_key: Optional[str] = Header(default=None)):
+    return rooms.close_room(code, x_teacher_key)
+
+
+@app.delete("/api/rooms/{code}", status_code=204)
+def rooms_delete(code: str, x_teacher_key: Optional[str] = Header(default=None)):
+    rooms.delete_room(code, x_teacher_key)
+    return Response(status_code=204)
+
+
+@app.get("/api/rooms/{code}/qr.svg")
+def rooms_qr(code: str, request: Request):
+    info = rooms.room_info(code)
+    svg = rooms.qr_svg(_join_url(request, info["code"]))
+    return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "private, max-age=300"})
 
 
 # --------------------------------------------------------------------------- Syntax Rows

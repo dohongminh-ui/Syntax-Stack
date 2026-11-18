@@ -308,7 +308,7 @@ export function openPuzzle(opts) {
       let res;
       const answer = payload(final);
       try {
-        res = await api.submitAnswer(puzzle.id, answer);
+        res = await api.submitAnswer(puzzle.id, answer, { room: !standalone }); // standalone practice is never logged to the room
       } catch (e) {
         st.attempts--;
         st.phase = 'answer';

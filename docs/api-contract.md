@@ -280,5 +280,87 @@ An empty or passing board or an unavailable tutor returns `"canned"`.
 
 ---
 
+# Live classroom rooms
+
+A teacher opens a room, students join with a nickname and play normally, and the teacher's dashboard
+shows what the class is getting wrong. Data is server-verified: correctness and the mistake are computed
+from the bank when `POST /api/puzzle/{id}/answer` checks an answer, never taken from the client. Only
+nicknames are stored (no other personal data), in `rooms.sqlite` beside the custom-sets file. A room
+expires 12 hours after its last student activity (create, join, answer, progress) and is purged lazily.
+All errors are `{ "detail": "<Vietnamese message>" }`. Room codes are case-insensitive.
+
+## POST /api/rooms
+`{ "level": "beginner"|"intermediate"|"advanced", "title"?: str (max 40, no control characters) }` ->
+```json
+{ "code": "K7M2Q", "teacher_key": "<32 hex, secret>", "join_url": "https://host/?room=K7M2Q",
+  "level": "intermediate", "title": "Lớp 10A" }
+```
+`code` is 5 characters from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`. `title` is `""` when omitted. `join_url` is
+built from the request, honouring `X-Forwarded-Proto` / `X-Forwarded-Host`; the env var
+`SYNTAX_STACK_PUBLIC_URL` (e.g. `https://syntaxstack.example`) overrides it. The teacher key is shown
+only here (the server keeps just its hash). Limit: 5 rooms per hour per client IP, then 429.
+
+## GET /api/rooms/{code}
+-> `{ "code", "level", "title", "open": true, "players": 12 }` (players = count). 404 for an unknown or expired room.
+
+## POST /api/rooms/{code}/join
+`{ "nickname": str }` (trimmed, 1 to 20 characters, no control or invisible-format characters; 422
+otherwise) -> `{ "player_id", "player_token": "<32 hex>", "nickname", "level" }`. A nickname already in
+the room (case-insensitive) gets " 2", " 3", ... appended and `nickname` returns the final one. 404 unknown
+room, 410 closed room, 409 when the room already has 60 players. Keep `player_token`; it is the player's
+only credential.
+
+## POST /api/puzzle/{id}/answer (extended)
+The body gains optional `room: str` and `player_token: str`. When both are valid (open room, token
+belongs to that room) and the id is a bank puzzle (not `c-`), the server also records
+`{room, player, puzzle_id, template_id, topic, type, correct, mistake_key, ts}`. `mistake_key` is the chosen
+option's named mistake if it has one, else the result's `error_group`, else `null` (correct answers).
+Parsons use the `error_group`. An invalid room or token is ignored silently: the response is identical and
+nothing is logged. A failed or malformed check (422) is never logged, and logging can never fail the
+answer. Every call is logged, so send `room` / `player_token` only on the call that is the player's real
+attempt (not on a second `reveal` call for the same attempt).
+
+## POST /api/rooms/{code}/progress
+`{ "player_token", "score": int 0..10000000, "status": "playing"|"crash"|"nofit", "bugs_fixed": int 0..1000000 }`
+-> `204`. Client-reported and used only for the leaderboard. 403 for an unknown token; a closed room
+ignores it (204).
+
+## GET /api/rooms/{code}/summary   (header `X-Teacher-Key`; 403 if wrong or missing)
+```json
+{ "code": "K7M2Q", "title": "Lớp 10A", "level": "intermediate", "open": true, "created_at": 1767225600,
+  "totals": { "players": 12, "answers": 140, "correct": 96 },
+  "players": [ { "nickname": "An", "score": 420, "status": "playing", "answers": 14, "correct": 11, "last_seen_s": 8 } ],
+  "grid": { "loops": { "fill_blank": { "answers": 9, "correct": 6 }, "predict_output": {}, "parsons": {}, "find_bug": {} } },
+  "top_mistakes": [ { "key": "off_by_one_high", "label": "Lệch một đơn vị (thừa)", "count": 7, "topic": "loops", "players": 5 } ],
+  "unsolved": [ { "puzzle_id": "loops_range_fill__003", "prompt": "...", "topic": "loops", "attempts": 4, "players": 3 } ],
+  "recent": [ { "nickname": "An", "topic": "loops", "type": "fill_blank", "correct": false,
+                "mistake_label": "Lệch một đơn vị (thừa)", "ago_s": 12 } ] }
+```
+- `created_at`: Unix seconds. `players` is sorted by `score` descending (ties by nickname); a player who
+  never reported progress has `score` 0, `status` `"playing"`. `last_seen_s`: seconds since their last answer or progress.
+- `grid` always has all 4 topics (`variables`, `conditions`, `loops`, `functions`) x 4 types (`fill_blank`,
+  `predict_output`, `parsons`, `find_bug`); empty cells are `{ "answers": 0, "correct": 0 }`.
+- `top_mistakes`: top 5 wrong-answer keys by count; `topic` is the key's most frequent topic, `players` the
+  number of distinct players. `label` is short Vietnamese: for a named mistake the text of
+  `content/mistakes.yaml` before the first ":" (else its first sentence), at most 60 characters; for error
+  groups `output_mismatch` "Sai kết quả đầu ra", `wrong_order` "Sai thứ tự", `bad_indent` "Sai thụt lề",
+  `syntax` "Lỗi cú pháp", `wrong_fix` "Sửa sai dòng", `wrong_line` "Sửa nhầm dòng", `runtime` "Lỗi khi chạy",
+  anything else (including `wrong_choice` without a named mistake) "Lỗi khác".
+- `unsolved`: puzzles with at least 2 wrong attempts and 0 correct ones, top 5 by `attempts` (wrong attempts).
+- `recent`: the last 10 answers, newest first; `mistake_label` is `null` for correct answers.
+
+## POST /api/rooms/{code}/close   (header `X-Teacher-Key`)
+-> `{ "open": false }`. New joins get 410, answers stop being logged, the summary stays readable.
+
+## DELETE /api/rooms/{code}   (header `X-Teacher-Key`)
+-> `204`. Removes the room, its players and all its answers.
+
+## GET /api/rooms/{code}/qr.svg
+`image/svg+xml` QR code of the room's `join_url`: dark modules `#141518` on white (dark-on-light so phone cameras can scan it),
+quiet zone 2, `Cache-Control: private, max-age=300`. 404 for an unknown room. (The page CSP already
+allows it: `img-src 'self'`.)
+
+---
+
 ## Errors
-`404 { "detail": "..." }` for unknown puzzle id or no puzzle matching the filters (custom sets: see the custom section for 422 and 429), `422` for a malformed body (including lists over their caps: `exclude_ids` 1000, `exclude_templates` 50, `order` 30, `rows`/`baseline` 30, `tokens` per row 30; ids up to 40 characters, `template_id` 80), `413 { "detail": "Yêu cầu quá lớn." }` for a request body over 64 KB.
+`404 { "detail": "..." }` for unknown puzzle id or no puzzle matching the filters (custom sets: see the custom section for 422 and 429; rooms: see the live classroom section for 403, 404, 409, 410 and 429), `422` for a malformed body (including lists over their caps: `exclude_ids` 1000, `exclude_templates` 50, `order` 30, `rows`/`baseline` 30, `tokens` per row 30; ids up to 40 characters, `template_id` 80), `413 { "detail": "Yêu cầu quá lớn." }` for a request body over 64 KB.

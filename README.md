@@ -42,7 +42,7 @@ Open **http://localhost:8000/**. API explorer: http://localhost:8000/docs. Healt
 .venv/bin/python -m pytest -q        # Windows: .venv\Scripts\python -m pytest -q
 ```
 
-Expected: `252 passed`.
+Expected: `296 passed`.
 
 The tutor is optional. To enable it, set `SYNTAX_STACK_TUTOR_URL` and `SYNTAX_STACK_TUTOR_TOKEN` in the
 server's environment ([docs/ai-tutor.md](docs/ai-tutor.md)). Without them everything works with
@@ -96,7 +96,7 @@ sextax/
 │   ├── scripts/
 │   │   ├── generate_bank.py           offline bank generator and verifier
 │   │   └── review_content.py          editorial draft checker (needs the tutor webhook)
-│   ├── tests/                         pytest suite (252 tests)
+│   ├── tests/                         pytest suite (296 tests)
 │   ├── requirements.txt, pytest.ini, README.md
 └── frontend/
     ├── index.html                     all screens; loads js/main.js

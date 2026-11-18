@@ -64,6 +64,7 @@
   <link rel="stylesheet" href="css/rows.css">
   <link rel="stylesheet" href="css/modal.css">
   <link rel="stylesheet" href="css/features.css">
+  <link rel="stylesheet" href="css/rooms.css">
 </head>
 <body>
 <noscript><p class="noscript">Syntax Stack cần JavaScript để chạy. Hãy bật JavaScript trong trình duyệt rồi tải lại trang.</p></noscript>
@@ -74,6 +75,7 @@
     <div class="strip-l">
       <button id="strip-back" class="icon-btn" type="button" aria-label="Quay lại"></button>
       <span class="wordmark" aria-label="syntax_stack">syntax<span class="caret" aria-hidden="true">_</span>stack</span>
+      <span id="strip-room" class="room-chip" hidden></span>
     </div>
     <div id="strip-mode" class="strip-c"></div>
     <div class="strip-r">
@@ -117,6 +119,15 @@
         <button id="btn-skills" class="btn" type="button">Bản đồ kỹ năng</button>
         <button id="btn-custom" class="btn" type="button">Tạo câu đố từ code</button>
         <button id="btn-judge-demo" class="btn" type="button">Demo cho giám khảo</button>
+        <button id="btn-room-new" class="btn" type="button">Lớp học trực tiếp</button>
+      </div>
+      <div class="room-row">
+        <form id="room-code-form" class="room-code-form" autocomplete="off">
+          <label class="sr-only" for="room-code-in">Mã phòng (5 ký tự)</label>
+          <input id="room-code-in" class="room-input room-code-in" type="text" maxlength="5" autocapitalize="characters" spellcheck="false" placeholder="MÃ PHÒNG" aria-describedby="room-code-err">
+          <button class="btn" type="submit">Vào phòng</button>
+        </form>
+        <p id="room-code-err" class="room-code-err" role="alert" hidden></p>
       </div>
 
       <div class="setup" aria-label="Thiết lập Code Rescue">
@@ -161,6 +172,95 @@
       <div id="sk-empty" class="sk-empty" hidden></div>
       <div id="sk-detail" class="sk-detail" aria-live="polite"></div>
     </div>
+  </section>
+
+  <!-- LIVE CLASSROOM: teacher creates a room -->
+  <section id="screen-room-new" class="screen end" hidden>
+    <form id="room-new-form" class="end-card room-card" novalidate>
+      <h1 id="room-new-title" tabindex="-1">Lớp học trực tiếp</h1>
+      <p class="end-sub">Mở một phòng, học sinh quét mã QR và chơi Code Rescue. Bạn xem cả lớp trên một bảng điều khiển.</p>
+      <div class="setup-group">
+        <span class="setup-l" id="room-level-l">Cấp độ</span>
+        <div class="keyrow" role="radiogroup" aria-labelledby="room-level-l">
+          <label class="key keyopt"><input class="sr-only" type="radio" name="room-level" value="beginner" checked><span class="cap-top"><span class="kb-label">Beginner</span></span></label>
+          <label class="key keyopt"><input class="sr-only" type="radio" name="room-level" value="intermediate"><span class="cap-top"><span class="kb-label">Intermediate</span></span></label>
+          <label class="key keyopt"><input class="sr-only" type="radio" name="room-level" value="advanced"><span class="cap-top"><span class="kb-label">Advanced</span></span></label>
+        </div>
+      </div>
+      <div class="setup-group">
+        <label class="setup-l" for="room-title-in">Tên phòng (không bắt buộc)</label>
+        <input id="room-title-in" class="room-input" type="text" maxlength="60" placeholder="Ví dụ: Lớp 10A1, tiết 3">
+      </div>
+      <p id="room-new-err" class="rs-error" role="alert" hidden></p>
+      <div id="room-new-act" class="end-actions"></div>
+    </form>
+  </section>
+
+  <!-- LIVE CLASSROOM: teacher dashboard (projector first) -->
+  <section id="screen-room-teach" class="screen teach" hidden>
+    <div id="teach-denied" class="end-card room-card" hidden>
+      <h1 id="teach-denied-t" tabindex="-1">Không có quyền xem phòng này trên máy này</h1>
+      <p class="end-sub">Bảng điều khiển chỉ mở được trên máy đã tạo phòng. Hãy tạo phòng mới, hoặc mở lại trên máy cũ.</p>
+      <div id="teach-denied-act" class="end-actions"></div>
+    </div>
+    <div id="teach-main" class="teach-grid">
+      <aside class="tp-join panel" aria-label="Thông tin vào phòng">
+        <div class="tp-head"><span class="panel-h">Mã phòng</span><span id="tp-title" class="tp-title"></span></div>
+        <h1 id="tp-code" class="tp-code" tabindex="-1"></h1>
+        <div class="tp-qr"><img id="tp-qr" alt="" width="360" height="360"></div>
+        <p class="tp-scan">Quét mã QR hoặc mở liên kết</p>
+        <p id="tp-url" class="tp-url"></p>
+        <p id="tp-count" class="tp-count" aria-live="polite"></p>
+        <div class="tp-ctl">
+          <button id="tp-fs" class="btn" type="button">Toàn màn hình</button>
+          <button id="tp-close" class="btn" type="button">Đóng phòng</button>
+          <button id="tp-del" class="btn btn-danger" type="button">Xoá dữ liệu phòng</button>
+        </div>
+      </aside>
+      <div class="tp-main">
+        <div class="tp-status">
+          <span id="tp-sync" class="tp-sync" role="status"><i id="tp-sync-led" class="led on" style="--c:var(--ok)"></i><span id="tp-sync-t">đang cập nhật</span></span>
+          <span id="tp-mock" class="tp-mock" hidden>Dữ liệu mô phỏng (mock)</span>
+        </div>
+        <section class="panel tp-heat" aria-labelledby="tp-heat-h">
+          <h2 id="tp-heat-h" class="panel-h">Cả lớp theo chủ đề</h2>
+          <div id="tp-grid"></div>
+          <p id="tp-empty" class="tp-empty">Quét mã QR để vào phòng</p>
+        </section>
+        <section class="panel tp-mist" aria-labelledby="tp-mist-h">
+          <h2 id="tp-mist-h" class="panel-h">Lỗi phổ biến nhất</h2>
+          <div id="tp-mist"></div>
+        </section>
+        <section class="panel tp-board" aria-labelledby="tp-board-h">
+          <h2 id="tp-board-h" class="panel-h">Bảng xếp hạng</h2>
+          <ol id="tp-players" class="tp-players"></ol>
+        </section>
+        <section class="panel tp-uns" aria-labelledby="tp-uns-h">
+          <h2 id="tp-uns-h" class="panel-h">Chưa ai giải được</h2>
+          <ul id="tp-uns" class="tp-uns-list"></ul>
+        </section>
+        <section class="panel tp-recent" aria-labelledby="tp-recent-h">
+          <h2 id="tp-recent-h" class="panel-h">Vừa xảy ra</h2>
+          <ul id="tp-recent" class="tp-recent-list"></ul>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <!-- LIVE CLASSROOM: student joins -->
+  <section id="screen-room-join" class="screen end" hidden>
+    <form id="room-join-form" class="end-card room-card" novalidate>
+      <span id="rj-code" class="chip t-neutral"></span>
+      <h1 id="rj-title" tabindex="-1">Vào phòng</h1>
+      <p id="rj-sub" class="end-sub"></p>
+      <div class="setup-group">
+        <label class="setup-l" for="rj-nick">Biệt danh</label>
+        <input id="rj-nick" class="room-input" type="text" maxlength="20" autocomplete="nickname" spellcheck="false" aria-describedby="rj-note rj-err">
+        <p id="rj-note" class="setup-note">Chỉ dùng biệt danh, không nhập tên thật.</p>
+      </div>
+      <p id="rj-err" class="rs-error" role="alert" hidden></p>
+      <div id="rj-act" class="end-actions"></div>
+    </form>
   </section>
 
   <!-- PASTE YOUR OWN CODE -->
@@ -215,6 +315,7 @@
         <button id="btn-again" class="key key-btn enter-key t-neutral" type="button"><span class="cap-top"><span class="kb-label">Chơi lại</span><span class="ret" aria-hidden="true">↵</span></span></button>
         <button id="btn-end-skills" class="btn" type="button">Xem bản đồ kỹ năng</button>
         <button id="btn-menu" class="btn" type="button">Về màn hình chính</button>
+        <button id="btn-leave-room" class="btn" type="button" hidden>Rời phòng</button>
       </div>
     </div>
   </section>

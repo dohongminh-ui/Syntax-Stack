@@ -8,6 +8,8 @@ COPY backend/app backend/app
 COPY backend/data/puzzles.sqlite backend/data/puzzles.sqlite
 COPY backend/content/levels backend/content/levels
 COPY backend/content/templates backend/content/templates
+# mistake notes and short labels: used by the live-classroom dashboard at runtime
+COPY backend/content/mistakes.yaml backend/content/mistake_labels.yaml backend/content/
 COPY backend/scripts/generate_bank.py backend/scripts/review_content.py backend/scripts/
 COPY frontend/index.html frontend/index.html
 COPY frontend/*.png frontend/favicon.ico frontend/favicon.svg frontend/manifest.json frontend/robots.txt frontend/sitemap.xml frontend/

@@ -17,6 +17,7 @@ import { initRows, openPracticeRows, openSelect, runDemo } from './rows-screen.j
 import { setScreenTitle } from './title.js';
 import { initSkills, openSkills } from './skills.js';
 import { initCustom, openCustom } from './custom.js';
+import * as Rooms from './rooms.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -54,6 +55,7 @@ function show(id) {
   for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
   if (['screen-start', 'screen-end'].includes(id)) showStrip(false);
   $('strip').classList.toggle('strip-plain', ['screen-practice', 'screen-skills', 'screen-custom'].includes(id));
+  Rooms.syncChip(id);
   window.scrollTo(0, 0);
 }
 
@@ -68,6 +70,7 @@ function enterKey(label, onclick, { id } = {}) {
 // ---- start screen -----------------------------------------------------------------------------
 function goHome() {
   G = null;
+  Rooms.leaveAll();
   show('screen-start');
   const hs = store.getHighScore();
   $('hs-line').textContent = hs ? `Điểm cao nhất (Rescue): ${hs}` : '';
@@ -203,6 +206,7 @@ async function exitGame() {
 
 function startGame(opts, setup) {
   ensureBoard();
+  Rooms.resetProgress();
   const rng = params.get('demo') ? mulberry(7) : Math.random;
   G = Game.newGame({ ...opts, rng });
   ui = { selected: null, bomb: false };
@@ -226,6 +230,7 @@ function render(extra = {}) {
 }
 
 function hud() {
+  Rooms.reportProgress(G);
   setScore(G.score);
   setStreak(G.streak);
   setStatus(G.status);
@@ -692,6 +697,11 @@ async function boot() {
   });
   initCustom({ show, home: goHome, level: () => prefs.level });
   initStart();
+  Rooms.initRooms({ show, home: goHome, level: () => prefs.level, play: (level) => startGame({ mode: 'rescue', level: LEVEL_NAME[level] ? level : prefs.level }) });
+  const teach = params.get('teach');
+  if (teach) return Rooms.openTeach(teach);
+  const roomCode = params.get('room');
+  if (roomCode) return Rooms.openJoin(roomCode);
   const setId = params.get('set');
   if (setId) return openCustom({ shared: setId });
   const demo = params.get('demo');
