@@ -18,7 +18,7 @@ returns `{"text": ..., "source": "ai"}`. In every other case (not configured, bu
 error, malformed reply) it returns `{"text": <authored fallback>, "source": "canned"}`. The browser
 shows the `source` so the learner can tell which is which. The tutor's text is only ever displayed.
 
-## 2. The four tasks and the exact request
+## 2. The six tasks and the exact request
 
 Every request body is the JSON object `{"task": "<name>", "context": {...}}` serialised with
 `ensure_ascii=False` (`tutor.feedback`). The context is built in `main.py` from server-side data
@@ -129,6 +129,50 @@ Real shape of a successful response (`level` is added by the endpoint):
 {"level": 1, "text": "Vòng lặp dừng trước số nào?", "source": "ai"}
 ```
 
+### Task `predict`
+
+Endpoint: `POST /api/rows/levels/{id}/explain-prediction` (Syntax Rows). Body: the run body with
+`prediction` required (1 to 240 characters after trimming; `trace` is ignored). The server re-runs the
+board with a trace. If the program did not finish (no output to compare) the answer is 422 "Chương
+trình chưa chạy xong để đối chiếu dự đoán."; a correct prediction is 422 "Dự đoán này đã đúng."; an
+empty prediction is 422. Context:
+
+| Key | Value |
+| --- | --- |
+| `goal` | the level's goal text |
+| `code` | the assembled program of the board |
+| `prediction` | the learner's guess, normalised (the only client-typed field) |
+| `actual_output` | what the program really printed |
+| `expected_output` | the level's target output |
+| `passed` | whether the board passes the level (set by the validator) |
+| `trace` | at most 40 server-built steps `{row, code, scope, bindings, output}` |
+| `trace_truncated` | `true` if the trace was cut (by the validator's own limit or at 40 steps) |
+
+Fallback (plain text, four lines): `Bạn đoán:` / the prediction / `Chương trình in:` / the actual output
+(`(không in gì)` if empty), then "Mở «Theo dõi từng bước» để xem mỗi dòng print chạy lúc nào."
+Response: `{text, source}`.
+
+### Task `debrief`
+
+Endpoint: `POST /api/rescue/debrief` (Code Rescue, end of a run). Body `{level, mode: "rescue" |
+"practice", end_reason: "crash" | "nofit", wrong: [...]}` with 1 to 12 items
+`{puzzle_id, kind, option_id?, order?, line_id?}`. Unknown puzzle ids are skipped; if none remain the
+answer is 422 "Không có lỗi nào để tổng kết.". A valid attempt is checked with
+`bank.check_answer(..., reveal=True)` to get its diagnosis; an invalid or correct one just has none.
+The server counts the topics and picks `focus_topic` (most missed; ties go to the topic seen first).
+Context (the client contributes only ids and enums, no free text):
+
+| Key | Value |
+| --- | --- |
+| `level`, `mode`, `end_reason` | the enums from the request |
+| `topic_counts` | `{topic: n}` in order of first appearance |
+| `focus_topic` | the most-missed topic |
+| `mistakes` | list of `{topic, type, template_id, prompt, diagnosis}` from the bank (`diagnosis` may be `null`) |
+
+Fallback: "Ván này bạn sai nhiều nhất ở chủ đề {Tên chủ đề} ({n} lần). Hãy chơi Luyện tập chủ đề này để
+quen lại quy tắc trước ván sau." plus, when `end_reason` is `crash`, a note that two wrong answers end a
+Rescue run. Response: `{text, source, focus_topic}`.
+
 ### Editorial task `content_review` (not used while playing)
 
 `backend/scripts/review_content.py` sends `{"task": "content_review", "context": {template, reference}}`
@@ -232,8 +276,9 @@ Sent to the webhook (and from there to the model provider):
 - What the learner chose: a bank option, an arrangement of bank lines, or Syntax Rows tokens
   (as the assembled program).
 - The validator's diagnosis: message, error group, row index, outputs, and one trace step if asked.
-- The **learner's free text** in `teach_back` (up to 400 characters). This is the only field a
-  person types.
+- The **learner's free text**: `reflection` in `teach_back` (up to 400 characters) and `prediction` in
+  `predict` (up to 240). These are the only fields a person types. `debrief` sends no client text, only
+  ids that the server resolves against the bank.
 
 Not sent: names, accounts, emails, session or device identifiers, IP addresses (the webhook sees the
 game server's address, not the learner's), the contents of `localStorage` (high score, stars, mistake
@@ -260,7 +305,7 @@ Things to be aware of:
 | Per-visitor daily cap (`SYNTAX_STACK_TUTOR_CLIENT_LIMIT`, default 40), IPs hashed and never logged | `tutor.feedback`, `tutor.client_key`, `main._client_ip` |
 | Learner text (teach-back `reflection`) can contain instructions aimed at the model. It is only ever rendered as plain text, but the n8n prompt should treat it as data to evaluate, never as instructions | n8n workflow prompt |
 | Short replies: 750-character limit in Python; in the reference workflow `maxOutputTokens` is 512 for tutoring and 1900 for drafting | `tutor.py`, `n8n-tutor.json` |
-| Input limits: `prediction` 240, `reflection` 400 characters | `main.py` models |
+| Input limits: `prediction` 240, `reflection` 400 characters, `debrief` 12 wrong items | `main.py` models |
 | Model tiering in the reference workflow: board coaching uses the larger model, other tasks use the lite model; a second Developer-API model and a paid Vertex model are tried only on quota or availability errors | `n8n-tutor.json` |
 | The Python timeout (38 s) is above the reference workflow's worst case (three upstream calls at 12 s each) | both |
 
@@ -305,7 +350,7 @@ What the Python code requires of the webhook (any implementation that satisfies 
 convention):
 
 1. Accepts `POST` with a JSON body `{task, context}`; `task` is one of `explain`, `rematch`,
-   `teach_back`, `coach` (and `content_review` for the editorial script).
+   `teach_back`, `coach`, `predict`, `debrief` (and `content_review` for the editorial script).
 2. Rejects requests that lack the header `X-Syntax-Stack-Token` with the shared secret (a non-2xx
    status makes the game fall back to canned text).
 3. Replies within 38 seconds with HTTP 2xx and a JSON object `{"text": "<1 to 750 characters>"}`.

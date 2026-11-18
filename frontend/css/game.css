@@ -297,6 +297,8 @@ body:has(#screen-start:not([hidden])) .home-bg { display: block; }
 .receipt dt::after { content: ''; flex: 1; margin: 0 8px; border-bottom: 1px dotted var(--faint); transform: translateY(-4px); }
 .receipt dd { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 .report-h { font: 700 12px/1 var(--f-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+.end-debrief { display: flex; flex-direction: column; gap: 10px; }
+.end-debrief .report-h { margin-top: 0; }
 .report { display: flex; flex-direction: column; gap: 10px; }
 .report li { border-left: 3px solid var(--crash); background: var(--case); border-radius: 0 var(--r-ctl) var(--r-ctl) 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
 .report li.empty { border-left-color: var(--ok); color: var(--muted); font-size: 14px; }

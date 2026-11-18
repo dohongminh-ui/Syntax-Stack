@@ -273,5 +273,32 @@ export async function rematch(id, level) {
   return { puzzle, text: 'Thử áp dụng lại quy tắc vừa gặp vào câu đố mới này.', source: 'canned' };
 }
 
+export async function explainPrediction(prediction, actual) {
+  await sleep(300);
+  const show = (t) => (t && t.trim() ? t.trim().replaceAll('\n', ' · ') : '(không có đầu ra)');
+  return {
+    text: `Bạn đoán: ${show(prediction)}. Chương trình thật sự in: ${show(actual)}. Thử đi từng dòng theo thứ tự chạy và ghi lại giá trị của biến sau mỗi bước.`,
+    source: 'canned',
+  };
+}
+
+const MOCK_TOPIC_NAMES = { variables: 'Biến', conditions: 'Điều kiện', loops: 'Vòng lặp', functions: 'Hàm' };
+
+export async function debrief(body) {
+  await sleep(300);
+  const counts = {};
+  for (const w of body.wrong || []) {
+    const topic = byId(w.puzzle_id)?.pub.topic;
+    if (topic) counts[topic] = (counts[topic] || 0) + 1;
+  }
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  const focus = top ? top[0] : null;
+  return {
+    text: `Ván này bạn sai ${(body.wrong || []).length} câu${focus ? `, nhiều nhất ở chủ đề ${MOCK_TOPIC_NAMES[focus] || focus}` : ''}. Hãy đọc lại phần giải thích của từng câu rồi luyện thêm một lượt ngắn.`,
+    source: 'canned',
+    focus_topic: focus,
+  };
+}
+
 // Syntax Rows mock lives in mock-rows.js
 export { rowsLevels, rowsLevel, rowsRun, rowsHint } from './mock-rows.js';

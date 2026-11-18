@@ -251,10 +251,21 @@ export function refreshStatus(s) {
   else s.status = s.bugLines.length ? 'warn' : 'ok';
 }
 
-function logWrong(s, puzzle, response, kind) {
+/** Keep only the fields the debrief endpoint accepts: option_id / order / line_id. */
+function attemptFields(answer) {
+  if (!answer) return {};
+  const out = {};
+  if (answer.option_id) out.option_id = answer.option_id;
+  if (Array.isArray(answer.order)) out.order = answer.order.map((o) => ({ line_id: o.line_id, indent: o.indent }));
+  if (answer.line_id) out.line_id = answer.line_id;
+  return out;
+}
+
+function logWrong(s, puzzle, response, kind, answer) {
   s.streak = 0;
   s.topicMisses[puzzle.topic] = (s.topicMisses[puzzle.topic] || 0) + 1;
   s.wrongLog.push({
+    attempt: attemptFields(answer),
     puzzleId: puzzle.id,
     topic: puzzle.topic,
     templateId: puzzle.template_id,
@@ -266,8 +277,8 @@ function logWrong(s, puzzle, response, kind) {
 }
 
 // Wrong rescue answer. Returns {result: 'bug' | 'crash'}.
-export function applyWrong(s, { puzzle, response }) {
-  logWrong(s, puzzle, response, 'rescue');
+export function applyWrong(s, { puzzle, response, answer }) {
+  logWrong(s, puzzle, response, 'rescue', answer);
   if (s.mode === 'rescue' && s.mistakes >= 1) {
     s.endReason = 'crash';
     s.phase = 'over';
@@ -293,8 +304,8 @@ export function applyWrong(s, { puzzle, response }) {
 }
 
 // Wrong Debug answer: rescue = crash, practice = bug line stays.
-export function applyDebugWrong(s, { puzzle, response }) {
-  logWrong(s, puzzle, response, 'debug');
+export function applyDebugWrong(s, { puzzle, response, answer }) {
+  logWrong(s, puzzle, response, 'debug', answer);
   if (s.mode === 'rescue') {
     s.endReason = 'crash';
     s.phase = 'over';
@@ -326,8 +337,8 @@ export function lastCommitTopic(s) {
   return top[Math.floor(s.rng() * top.length)];
 }
 
-export function failLastCommit(s, { puzzle, response }) {
-  logWrong(s, puzzle, response, 'last_commit');
+export function failLastCommit(s, { puzzle, response, answer }) {
+  logWrong(s, puzzle, response, 'last_commit', answer);
   s.endReason = 'nofit';
   s.phase = 'over';
 }

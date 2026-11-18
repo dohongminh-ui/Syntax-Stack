@@ -96,6 +96,19 @@ The game shows this explanation on the result screen.
 The puzzle is a different verified variant of the same template and tier. Its shape matches
 `POST /api/puzzle/next` and the response contains the same public fields.
 
+## POST /api/rescue/debrief
+End-of-run summary for Code Rescue.
+```json
+{ "level": "intermediate", "mode": "rescue", "end_reason": "crash",
+  "wrong": [ { "puzzle_id": "loops_range_fill__003", "kind": "rescue", "option_id": "b" } ] }
+```
+`mode` is `rescue` or `practice`; `end_reason` is `crash` or `nofit`; `wrong` has 1 to 12 items
+`{ puzzle_id (max 80), kind: rescue|debug|last_commit, option_id?, order?, line_id? }`. Unknown puzzle ids
+are skipped; if none remain the answer is 422 "Không có lỗi nào để tổng kết.". The server builds the
+context from the bank (topic counts, most-missed topic, prompts, diagnoses); the client sends no free text.
+Response: `{ "text": "...", "source": "ai" | "canned", "focus_topic": "loops" }` where `focus_topic` is
+`variables`, `conditions`, `loops` or `functions` (ties go to the topic seen first).
+
 ---
 
 # Syntax Rows API (see `Syntax_Rows_Gameplay_Spec.md`)
@@ -169,6 +182,13 @@ target output. The optional trace works the same way.
 Send a passing board in `rows` and a short `reflection` (1 to 400 characters after trimming; empty, whitespace-only or over-long text and a board that has not passed return 422). Returns `{ text, source }` from the
 tutor using the verified program and the player's own words.
 
+## POST /api/rows/levels/{id}/explain-prediction
+Body: the run body with a required `prediction` (1 to 240 characters after trimming) and `rows`
+(`trace` is ignored). The server re-runs the board. 422 when the prediction is empty, when the
+program did not finish ("Chương trình chưa chạy xong để đối chiếu dự đoán.") or when the prediction is
+already correct ("Dự đoán này đã đúng."). Otherwise `{ "text": "...", "source": "ai" | "canned" }`.
+The tutor gets the goal, code, prediction, actual and expected output, `passed` and at most 40 trace steps.
+
 ## GET /api/rows/levels/{id}/hint?level=1|2|3&error_group=output_mismatch
 `{ "level": 1, "text": "...", "source": "canned" }`. Without `error_group`, returns the level's general hint.
 
@@ -180,7 +200,9 @@ An empty or passing board or an unavailable tutor returns `"canned"`.
 
 ## Input limits
 - `prediction`: at most 240 characters (run, hint and teach-back requests share the run body).
+- `prediction`: required (non-empty after trimming) for explain-prediction.
 - `reflection` (teach-back): 1 to 400 characters.
+- `wrong` (debrief): 1 to 12 items.
 - `trace_step` (rows coach hint): integer >= 0 and less than the number of recorded trace steps.
 - `level` (hint query): 1 to 3.
 

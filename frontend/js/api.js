@@ -108,6 +108,22 @@ export function teachBack(id, body) {
   return request('POST', '/api/rows/levels/' + encodeURIComponent(id) + '/teach-back', body, { timeout: TUTOR_TIMEOUT_MS });
 }
 
+/** Tutor explains why a wrong output prediction differs from the real output. body: { rows, prediction } */
+export async function explainPrediction(id, body) {
+  if (isMock) {
+    const m = await mock();
+    const run = await m.rowsRun(id, { rows: body.rows });
+    return m.explainPrediction(body.prediction, run.actual_output);
+  }
+  return request('POST', '/api/rows/levels/' + encodeURIComponent(id) + '/explain-prediction', body, { timeout: TUTOR_TIMEOUT_MS });
+}
+
+/** End-of-run tutor summary. body: { level, mode, end_reason, wrong: [...] } */
+export async function debrief(body) {
+  if (isMock) return (await mock()).debrief(body);
+  return request('POST', '/api/rescue/debrief', body, { timeout: TUTOR_TIMEOUT_MS });
+}
+
 export async function rowsHint(id, level, errorGroup, attempt) {
   if (isMock) return (await mock()).rowsHint(id, level, errorGroup);
   const path = '/api/rows/levels/' + encodeURIComponent(id) + '/hint?level=' + level;

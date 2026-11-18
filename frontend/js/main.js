@@ -7,6 +7,7 @@ import { Board } from './board.js';
 import { openPuzzle } from './puzzle-modal.js';
 import { TOPICS, TOPIC_NAMES, TOPIC_GLYPH } from './pieces.js';
 import { el, toast, confirmDialog, wait } from './ui.js';
+import { tutorNote } from './editor.js';
 import { icon } from './icons.js';
 import { sfx } from './sound.js';
 import { keycap } from './keycap.js';
@@ -378,7 +379,7 @@ async function runLock() {
     });
     maxHint = Math.max(maxHint, res.maxHint);
     if (!res.correct) {
-      failed = { puzzle, response: res.response };
+      failed = { puzzle, response: res.response, answer: res.answer };
       break;
     }
   }
@@ -442,7 +443,7 @@ async function onBugTap(bugId) {
     for (const it of fx.newItems) toast(`Nhận vật phẩm: ${it}`, 3200);
     await afterResolution();
   } else {
-    const w = Game.applyDebugWrong(G, { puzzle, response: res.response });
+    const w = Game.applyDebugWrong(G, { puzzle, response: res.response, answer: res.answer });
     if (w.result === 'crash') await finish('crash');
     else toast('Chưa sửa được bug line.');
   }
@@ -497,7 +498,7 @@ async function afterResolution() {
       awardText: () => 'Dọn 3 hàng đầy nhất!',
     });
     if (!res.correct) {
-      Game.failLastCommit(G, { puzzle, response: res.response });
+      Game.failLastCommit(G, { puzzle, response: res.response, answer: res.answer });
       await finish('nofit', true);
       return;
     }
@@ -586,12 +587,45 @@ function showEnd() {
   for (const t of topics.length ? topics : TOPICS) {
     const k = keycap({ tag: 'button', topic: t, legend: `Luyện lại: ${TOPIC_NAMES[t]}`, legendClass: 'kb-label', variant: 'btn' });
     k.type = 'button';
+    k.dataset.topic = t;
     k.addEventListener('click', () => startGame({ mode: 'practice', level: G.level, focusTopic: t }));
     row.append(k);
   }
   pr.append(row);
   show('screen-end');
   $('end-title').focus({ preventScroll: true });
+  loadDebrief();
+}
+
+/** Tutor summary between the receipt and the error report. Silent on failure; never writes into a stale screen. */
+function loadDebrief() {
+  const game = G;
+  document.getElementById('end-debrief')?.remove();
+  const wrong = game.wrongLog.filter((w) => w.puzzleId).slice(-12);
+  if (!wrong.length) return;
+  const slot = el('div', { id: 'end-debrief', class: 'end-debrief' },
+    el('h2', { class: 'report-h', text: 'Tổng kết' }), tutorNote({ loading: true }));
+  $('end-report').previousElementSibling.before(slot);
+  const body = {
+    level: game.level,
+    mode: game.mode,
+    end_reason: game.endReason === 'crash' ? 'crash' : 'nofit',
+    wrong: wrong.map((w) => ({ puzzle_id: w.puzzleId, kind: w.kind, ...w.attempt })),
+  };
+  api.debrief(body).then((r) => {
+    if (G !== game || $('screen-end').hidden || !slot.isConnected) return;
+    slot.replaceChildren(el('h2', { class: 'report-h', text: 'Tổng kết' }),
+      tutorNote({ text: r.text, source: r.source === 'ai' ? 'ai' : 'canned', context: 'tổng kết' }));
+    const k = r.focus_topic && $('end-practice').querySelector(`[data-topic="${r.focus_topic}"]`);
+    if (k) {
+      k.classList.add('enter-key');
+      const ret = el('span', { class: 'ret', 'aria-hidden': 'true' }, icon('enter', { size: 14 }));
+      k.querySelector('.cap-top').append(ret);
+      k.parentElement.prepend(k);
+    }
+  }).catch(() => {
+    if (slot.isConnected) slot.remove();
+  });
 }
 
 $('btn-again').addEventListener('click', () => startGame({ mode: G.mode, level: G.level }));

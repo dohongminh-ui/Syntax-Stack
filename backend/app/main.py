@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import bank, hints, rows, tutor
+from . import validator as V
 
 if sys.version_info < (3, 12):  # the validator reads ast node.type_params (3.12+)
     raise RuntimeError(
@@ -189,6 +190,26 @@ class TeachBackRequest(RunRequest):
     reflection: str = Field(min_length=1, max_length=400)
 
 
+class WrongAttempt(BaseModel):
+    puzzle_id: str = Field(max_length=80)
+    kind: Kind
+    option_id: Optional[str] = Field(default=None, max_length=40)
+    order: Optional[list[OrderItem]] = Field(default=None, max_length=30)
+    line_id: Optional[str] = Field(default=None, max_length=40)
+
+
+class DebriefRequest(BaseModel):
+    level: Level
+    mode: Literal["rescue", "practice"]
+    end_reason: Literal["crash", "nofit"]
+    wrong: list[WrongAttempt] = Field(min_length=1, max_length=12)
+
+
+# Vietnamese topic names, as the frontend shows them (frontend/js/pieces.js: TOPIC_NAMES).
+TOPIC_NAMES_VI = {"variables": "Biến", "conditions": "Điều kiện", "loops": "Vòng lặp", "functions": "Hàm"}
+PREDICT_TRACE_STEPS = 40
+
+
 # --------------------------------------------------------------------------- Code Rescue
 
 
@@ -266,6 +287,45 @@ def puzzle_rematch(puzzle_id: str, request: Request, level: Level = "intermediat
     return {**intro, "puzzle": bank.public_puzzle(followup, level)}
 
 
+@app.post("/api/rescue/debrief")
+def rescue_debrief(req: DebriefRequest, request: Request):
+    """End-of-run summary. Everything in the context comes from the bank; the client sends ids only."""
+    mistakes: list[dict] = []
+    for item in req.wrong:
+        try:
+            puzzle = bank.get_puzzle(item.puzzle_id)
+        except bank.NotFound:
+            continue  # unknown ids are skipped silently
+        diagnosis = None
+        if item.option_id is not None or item.order is not None or item.line_id is not None:
+            try:
+                result = bank.check_answer(
+                    puzzle, option_id=item.option_id, line_id=item.line_id, reveal=True,
+                    order=[o.model_dump() for o in item.order] if item.order is not None else None)
+                if not result["correct"]:
+                    diagnosis = result["message"]
+            except bank.BankError:
+                pass  # an invalid attempt only loses its diagnosis
+        mistakes.append({"topic": puzzle["topic"], "type": puzzle["type"],
+                         "template_id": puzzle["template_id"], "prompt": puzzle["prompt"],
+                         "diagnosis": diagnosis})
+    if not mistakes:
+        raise HTTPException(422, "Không có lỗi nào để tổng kết.")
+    topic_counts: dict[str, int] = {}
+    for m in mistakes:
+        topic_counts[m["topic"]] = topic_counts.get(m["topic"], 0) + 1
+    focus_topic = max(topic_counts, key=topic_counts.get)  # ties: first in order of appearance
+    name = TOPIC_NAMES_VI.get(focus_topic, focus_topic)
+    fallback = (f"Ván này bạn sai nhiều nhất ở chủ đề {name} ({topic_counts[focus_topic]} lần). "
+                "Hãy chơi Luyện tập chủ đề này để quen lại quy tắc trước ván sau.")
+    if req.end_reason == "crash":
+        fallback += " Nhớ rằng hai câu trả lời sai sẽ kết thúc một ván Code Rescue."
+    context = {"level": req.level, "mode": req.mode, "end_reason": req.end_reason,
+               "topic_counts": topic_counts, "focus_topic": focus_topic, "mistakes": mistakes}
+    reply = tutor.feedback("debrief", context, fallback, client=_client_ip(request))
+    return {**reply, "focus_topic": focus_topic}
+
+
 # --------------------------------------------------------------------------- Syntax Rows
 
 
@@ -312,6 +372,35 @@ def rows_teach_back(level_id: str, req: TeachBackRequest, request: Request):
         "learner_explanation": reflection,
     }, "Nếu đổi đúng một mảnh mã, đầu ra sẽ thay đổi thế nào? / What would change in the output if you swapped one tile?",
         client=_client_ip(request))
+
+
+@app.post("/api/rows/levels/{level_id}/explain-prediction")
+def rows_explain_prediction(level_id: str, req: RunRequest, request: Request):
+    """Explain a wrong output prediction. The server re-runs the board; the client sends its guess."""
+    lv = rows.get_level(level_id)
+    prediction = (req.prediction or "").strip()
+    if not prediction:
+        raise HTTPException(422, "Hãy nhập dự đoán của bạn.")
+    result = rows.run_level(lv, [r.model_dump() for r in req.rows], include_trace=True,
+                            prediction=prediction)
+    verdict = result["prediction"]["correct"]
+    if verdict is None or result["actual_output"] is None:
+        raise HTTPException(422, "Chương trình chưa chạy xong để đối chiếu dự đoán.")
+    if verdict:
+        raise HTTPException(422, "Dự đoán này đã đúng.")
+    actual = result["actual_output"]
+    steps = result["trace"]["steps"]
+    context = {
+        "goal": lv["goal"], "code": result["code"], "prediction": V.normalize_output(prediction),
+        "actual_output": actual, "expected_output": result["expected_output"],
+        "passed": result["passed"], "trace": steps[:PREDICT_TRACE_STEPS],
+        "trace_truncated": result["trace"]["truncated"] or len(steps) > PREDICT_TRACE_STEPS,
+    }
+    guess = V.normalize_output(prediction)
+    shown = actual or "(không in gì)"
+    fallback = (f"Bạn đoán:\n{guess}\nChương trình in:\n{shown}\n"
+                "Mở «Theo dõi từng bước» để xem mỗi dòng print chạy lúc nào.")
+    return tutor.feedback("predict", context, fallback, client=_client_ip(request))
 
 
 @app.get("/api/rows/levels/{level_id}/hint")

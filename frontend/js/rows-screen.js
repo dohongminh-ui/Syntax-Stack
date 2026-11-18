@@ -61,14 +61,23 @@ function terminalInput(attrs) {
 }
 
 /** kind: 'bonus' | 'ok' (correct) | 'bad' (wrong) | 'none' (could not compare) | null (clear). */
-function setPrediction(node, kind) {
+function setPrediction(node, kind, onWhy = null) {
   if (kind === 'bonus') sfx('chime');
   node.className = 'rg-prediction' + (kind === 'ok' || kind === 'bonus' ? ' ok' : kind === 'bad' ? ' bad' : '');
+  // Any new status (or clear) drops the old explanation and invalidates a request still in flight.
+  node.whyToken = (node.whyToken || 0) + 1;
+  node.whyBox?.replaceChildren();
   if (kind == null) node.replaceChildren();
   else if (kind === 'bonus') node.replaceChildren(icon('check', { size: 16 }), el('span', {}, 'Dự đoán đúng. ', el('b', { class: 'rg-bonus', text: `+${R.PREDICT_BONUS} Đọc code` })));
   else if (kind === 'ok') node.replaceChildren(icon('check', { size: 16 }), el('span', { text: 'Dự đoán đúng' }));
-  else if (kind === 'bad') node.replaceChildren(icon('x', { size: 16 }), el('span', { text: 'Dự đoán chưa đúng, so sánh với đầu ra thực tế' }));
-  else node.replaceChildren(el('span', { text: 'Chương trình chưa chạy xong để đối chiếu dự đoán.' }));
+  else if (kind === 'bad') {
+    node.replaceChildren(icon('x', { size: 16 }), el('span', { text: 'Dự đoán chưa đúng, so sánh với đầu ra thực tế' }));
+    if (onWhy) {
+      const why = el('button', { class: 'rg-why', type: 'button', text: 'Vì sao?' });
+      why.addEventListener('click', () => onWhy(why));
+      node.append(why);
+    }
+  } else node.replaceChildren(el('span', { text: 'Chương trình chưa chạy xong để đối chiếu dự đoán.' }));
 }
 
 // ---- helpers ------------------------------------------------------------------------------------------
@@ -246,6 +255,7 @@ function buildSide() {
     predict: null,
     predictInput: terminalInput({ maxlength: 240, 'aria-label': 'Đầu ra dự đoán', placeholder: 'Mỗi giá trị trên một dòng' }),
     predictionResult: el('p', { class: 'rg-prediction', role: 'status' }),
+    predictionWhy: el('div', { class: 'rg-why-note', role: 'status' }),
     trace: null,
     traceStep: el('div', { class: 'rg-trace-step', 'aria-live': 'polite' }),
     tracePrev: stepKey('chevron-left', 'Bước trước', () => moveTrace(-1)),
@@ -263,6 +273,7 @@ function buildSide() {
       comment(`Đoán chương trình của bạn sẽ in gì trước khi chạy. Đoán đúng đầu ra của một chương trình chưa đạt: +${R.PREDICT_BONUS} điểm Đọc code (1 lần mỗi màn).`),
       options.length ? el('div', { class: 'rg-trace-controls' }, options) : null,
       el('div', { class: 'rg-field' }, el('div', { class: 'term-ps', text: '$ dự đoán' }), p.predictInput)));
+  p.predictionResult.whyBox = p.predictionWhy;
   p.predict.hidden = !!G.baseline;
   p.predict.addEventListener('toggle', () => autoGrow(p.predictInput));
   p.trace = disclosure('Theo dõi từng bước',
@@ -276,7 +287,7 @@ function buildSide() {
     renderPane();
     renderActions();
   });
-  const editor = el('div', { class: 'editor rg-editor' }, p.bar, p.vwrap, p.code, p.predict, p.predictionResult, p.trace, p.pane);
+  const editor = el('div', { class: 'editor rg-editor' }, p.bar, p.vwrap, p.code, p.predict, p.predictionResult, p.predictionWhy, p.trace, p.pane);
   $('rg-side').replaceChildren(editor, p.actions, p.result);
   renderBar();
   renderCode();
@@ -489,6 +500,26 @@ async function onPass(resp) {
   setScore(R.totals(levels, progress).score, { roll: true });
 }
 
+/** On-demand tutor explanation of a wrong prediction. Uses the rows + prediction of the run that was actually sent. */
+async function explainWrongPrediction(game, button) {
+  const status = game.parts.predictionResult;
+  const box = game.parts.predictionWhy;
+  const attempt = game.lastAttempt;
+  if (!attempt || game.lastPrediction == null || button.disabled) return;
+  const token = status.whyToken;
+  button.disabled = true;
+  box.replaceChildren(tutorNote({ loading: true }));
+  try {
+    const r = await api.explainPrediction(game.state.level.id, { rows: attempt.rows, prediction: game.lastPrediction });
+    if (game !== G || status.whyToken !== token) return;
+    box.replaceChildren(tutorNote({ text: r.text, source: r.source === 'ai' ? 'ai' : 'canned', context: 'dự đoán' }));
+  } catch (e) {
+    if (game !== G || status.whyToken !== token) return;
+    box.replaceChildren(el('p', { class: 'msg-err' }, icon('x', { size: 14 }), 'Không tải được giải thích: ' + e.message));
+    button.disabled = false;
+  }
+}
+
 function teachBackPanel(game) {
   const input = terminalInput({ maxlength: 400, required: true,
     'aria-label': 'Lời giải thích của bạn', placeholder: 'Giải thích bằng tiếng Việt hoặc tiếng Anh' });
@@ -608,8 +639,12 @@ async function run() {
   }
   if (game !== G) return;
   game.lastAttempt = attempt;
+  game.lastPrediction = prediction || null;
   const verdict = R.notePrediction(s, attempt, resp);
-  if (verdict) setPrediction(game.parts.predictionResult, verdict === 'bonus' && game.baseline ? 'ok' : verdict);
+  if (verdict) {
+    setPrediction(game.parts.predictionResult, verdict === 'bonus' && game.baseline ? 'ok' : verdict,
+      game.baseline || !prediction ? null : (button) => explainWrongPrediction(game, button));
+  }
   R.recordRun(s);
   if (resp.passed) await onPass(resp);
   else onFail(resp);

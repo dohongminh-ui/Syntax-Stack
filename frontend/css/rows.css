@@ -188,6 +188,15 @@
 .rg-prediction.bad { color: var(--coral); background: rgba(242, 135, 106, 0.1); }
 .rg-prediction .ico { margin-top: 2px; align-self: flex-start; }
 .rg-prediction:empty { display: none; }
+.rg-why { margin-left: 4px; padding: 2px 4px; border: 0; background: none; font: 700 14px/1.4 var(--f-ui); color: var(--coral); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; white-space: nowrap; border-radius: 4px; }
+.rg-why:hover:not(:disabled) { text-decoration-thickness: 2px; }
+.rg-why:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
+.rg-why:disabled { opacity: 0.55; cursor: default; }
+/* wrong prediction: icon | message, with "Vì sao?" on its own line under the message */
+.rg-prediction.bad { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 2px; }
+.rg-prediction.bad .rg-why { grid-column: 2; justify-self: start; margin-left: -4px; }
+.rg-why-note { margin: 0 14px 8px; overflow-wrap: anywhere; white-space: pre-line; }   /* keep the fallback's line breaks */
+.rg-why-note:empty { display: none; }
 .rg-prediction .rg-bonus { font: 700 13px/1 var(--f-mono); color: var(--mustard); white-space: nowrap; }
 .rg-teach-reply { margin: 0; overflow-wrap: anywhere; }
 .rg-privacy { margin: 0; font: 400 12px/1.5 var(--f-ui); color: var(--muted); }

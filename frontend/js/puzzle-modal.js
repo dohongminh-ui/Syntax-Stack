@@ -344,7 +344,7 @@ export function openPuzzle(opts) {
       gameScreen.classList.remove('dim');
       document.body.classList.remove('modal-open');
       // resolve immediately so the next animation (clear / crash) starts the moment "Tiếp tục" is pressed
-      resolve({ correct: !!st.correct, maxHint: maxHint(), response: st.response });
+      resolve({ correct: !!st.correct, maxHint: maxHint(), response: st.response, answer: st.wrongAnswer || null });
       const out = desktop() ? [{ transform: 'none', opacity: 1 }, { transform: 'translateX(12px)', opacity: 0 }] : [{ transform: 'translateY(0)' }, { transform: 'translateY(100%)' }];
       anim(scrim, [{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: EASE.out, fill: 'forwards' });
       anim(panel, out, { duration: 180, easing: EASE.out, fill: 'forwards' }).finished.then(() => layer.remove());
