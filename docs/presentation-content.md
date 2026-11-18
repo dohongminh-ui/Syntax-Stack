@@ -1,10 +1,14 @@
-# Syntax Stack — presentation content (SERS template), v3.3 (finals)
+# Syntax Stack — presentation content (SERS template), v3.4 (finals)
 
 Slide-by-slide content for `Stack.pdf`, matched one-to-one with the speaking script
-`docs/presentation-script.md` (v3.3). The talk is **10 minutes including a 3:20 live demo** (hard stop 3:45), so the
+`docs/presentation-script.md` (v3.4). The talk is **10 minutes including a 3:20 live demo** (hard stop 3:45), so the
 deck is 16 slides and the slides carry headlines, not paragraphs: the speakers carry the depth.
 Each slide lists the **on-slide text**, a **visual**, and where the media comes from. Language: English,
 like the template; the game itself is in Vietnamese. v2 of this file is in git history.
+
+**Theme: AI in studying.** Misaki is central: the student makes an attempt, gets a contextual
+explanation, applies it and practises. The teacher dashboard supports this story. Pasted-code
+generation is optional Q&A material; it is verified program generation, not language-model tutoring.
 
 > Before presenting: double-check the three cited figures on slide 4 against the original papers.
 
@@ -18,8 +22,8 @@ like the template; the game itself is in Vietnamese. v2 of this file is in git h
 
 - **19 → 16 slides.** Section dividers and "Learn from every run" are gone (that slide becomes part of
   the live demo). The two AI-tutor slides fold into the solution and the demo.
-- **New demo slide (11)** built around three beats: live classroom, puzzles from pasted code, and
-  "Vì sao?" (AI explains a wrong prediction). It carries the fallback recording.
+- **Demo slide (11)**: Misaki explains a wrong prediction, the student corrects it, Misaki supports a
+  practice move, then the teacher sees the class's mistakes. It carries the fallback recording.
 - **New features shown:** live classroom with teacher dashboard, puzzles from pasted code (runs in a
   sandbox), skill map, AI explanation of wrong predictions, AI end-of-run debrief, "Đọc code" bonus.
 - **Business slide:** the classroom package is **built**, not "an idea, not validated".
@@ -31,6 +35,8 @@ like the template; the game itself is in Vietnamese. v2 of this file is in git h
 - **v3.2: Misaki.** The AI tutor and the 1v1 AI opponent are one character, Misaki. Slides 8, 11, 12
   and 14 use her name; 1v1 (vs friends or Misaki, 4-level ladder, training mode with coaching) moves to
   "Built" on the roadmap.
+- **v3.4: AI-in-studying focus.** Tutor → correction → training → teacher visibility. The language-model
+  explanation and search-based game suggestions are identified separately. Pasted-code generation moves to Q&A.
 
 ## Screenshots to capture (new)
 
@@ -48,7 +54,7 @@ mode, for anything on the business or demo slide (mock screens are labelled "mô
 | `misaki-ladder-phone.png` | `Đối kháng 1v1` → "Đấu với Misaki" after beating level 1, so one level shows unlocked and two locked. |
 | `misaki-coach-phone.png` | A training match ("Luyện tập cùng Misaki") with her coach bubble visible and a "Gợi ý nước đi" suggestion outlined on the board. |
 | `end-debrief-ai-phone.png` | Lose a Rescue run with 2 mistakes, capture the "Tổng kết" block. |
-| `demo-fallback.mp4` | 20-second screen recording of the three demo beats, for slide 11. |
+| `demo-fallback.mp4` | 20-second recording: real AI explanation, student correction passing, and a real Misaki training suggestion. |
 
 Unchanged screens can still come from `frontend/_screens/v3/` and `v4/`.
 
@@ -87,13 +93,13 @@ Learn Python by stacking real code
 
 ## Slide 3 — Project introduction
 
-**A block-puzzle game where the blocks are Python code.**
+**Misaki helps a student understand a mistake and try again.**
 
-- Every row is one line of a program.
-- A row clears only when our validator **runs the code** and confirms it is correct.
-- For BTEC FPT students and anyone writing their first lines of Python.
+- **AI in studying:** an explanation of the student's actual attempt, followed by a correction they make.
+- The practice environment is a Python block-puzzle game; a validator checks the program's output.
+- For BTEC FPT students and anyone writing their first lines of Python. Learning gains are a pilot question.
 
-**Visual:** `frontend/_screens/v3/rescue-board-desktop.png` cropped to the board.
+**Visual:** Misaki's labelled tutor card beside the student's code and checked output.
 
 ---
 
@@ -140,9 +146,9 @@ Learn Python by stacking real code
 ## Slide 8 — Our solution
 
 1. **The board is the program.** Rows are lines; the column is the indentation.
-2. **A validator judges. AI only explains.** Every answer is checked by running the code. **Misaki**,
-   our AI tutor, explains a mistake the validator has already confirmed, is labelled as AI, and falls
-   back to hand-written text.
+2. **Misaki explains the student's attempt.** The language-model tutor gets the prediction and execution
+   trace after the validator checks the output. The student makes the correction and tests it again.
+   AI explanations are labelled; authored fallbacks are identified separately.
 3. **No time pressure.** Thinking slowly is allowed.
 
 **Visual:** numbered-circle layout (SERS slide 9).
@@ -179,20 +185,22 @@ Learn Python by stacking real code
 
 ## Slide 11 — Live demo *(target 3:20; hard stop 3:45)*
 
-**syntax.screepai.moe** · *Scan to join the class* → [room QR, shown live on the projector]
+**AI that helps the student take the next step** · **syntax.screepai.moe**
 
-1. **Live classroom:** the teacher sees *why* the class is wrong, live.
-2. **Any code → verified puzzles:** paste a program, get four puzzles.
-3. **Misaki explains, never grades:** "Vì sao?" after a wrong prediction.
+1. **Misaki explains:** wrong prediction → contextual AI explanation → the student corrects it.
+2. **Misaki supports practice:** one real training suggestion, with highlighted cells and a reason.
+3. **The teacher sees:** real classroom mistakes remain visible to the lecturer.
 
 **Visual:** this slide is mostly a backdrop: the demo runs in the browser. Put
-`classroom-dashboard-desktop.png` behind the text and embed `demo-fallback.mp4` (hidden, play only
+`predict-why-ai-phone.png` and `misaki-coach-phone.png` behind the text and embed `demo-fallback.mp4` (hidden, play only
 if the network fails).
 
-Prepare the three real browser tabs with the home-screen shortcuts `Ctrl+Alt+1` (classroom setup),
-`Ctrl+Alt+2` (code editor), `Ctrl+Alt+3` (r3 practice/prediction). Switch with the browser's `Ctrl+1/2/3`.
+Prepare the three real browser tabs in this order: `Ctrl+Alt+3` (r3 prediction), `Ctrl+Alt+4` (Misaki
+training menu), `Ctrl+Alt+1` (classroom setup). Switch with the browser's `Ctrl+1/2/3`.
 The timed actions and the eight-second waiting limit are in the speaking script. No judge-demo button
-or mock setup is used. Keep PvP, ranked play and the skill map for Q&A.
+or mock setup is used. Keep full matches, ranked play, pasted-code puzzles and the skill map for Q&A.
+Explain accurately: tutor text uses a language model; opponent moves and suggestions use search;
+event-coaching lines are authored. Do not present the latter as generated language-model explanations.
 
 ---
 
@@ -238,8 +246,8 @@ and "Misaki · opponent (search AI)" next to a "Live 1v1 (WebSocket)" box.
 **Visual:** `skills-map-phone.png`, `leaderboard-phone.png` and `misaki-ladder-phone.png` (new), small.
 Optionally `misaki-coach-phone.png` instead of the skill map.
 
-> 1v1 is shown here, not demoed: the timed demo stays on the classroom. Only mention it aloud if it
-> has been rehearsed (the script marks that line as cuttable).
+> The timed demo shows one training suggestion, not a full match or ladder progression. Mention the
+> broader competition features here briefly, and leave extended gameplay for Q&A.
 
 ---
 

@@ -115,6 +115,7 @@ async function onPresenterShortcut(e) {
     Digit1: () => Rooms.openRoomNew(),
     Digit2: () => openCustom(),
     Digit3: () => openPracticeRows('r3', 'predict', showPractice),
+    Digit4: () => Pvp.openMisakiTraining(),
   }[e.code];
   if (!open) return;
   e.preventDefault();

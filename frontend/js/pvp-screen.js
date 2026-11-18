@@ -172,6 +172,14 @@ export function openPvp() {
   $('pv-title').focus({ preventScroll: true });
 }
 
+/** Presenter shortcut: prepare ordinary training controls without starting a match. */
+export function openMisakiTraining() {
+  pickedMisaki = 1;
+  openPvp();
+  $('pv-train').checked = true;
+  paintMisakiGo();
+}
+
 function backFromPvp() {
   if (S && (S.phase === 'search' || S.phase === 'wait')) return cancel();
   nav.home();

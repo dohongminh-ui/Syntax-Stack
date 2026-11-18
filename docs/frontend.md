@@ -467,12 +467,15 @@ From the home screen, while focus is outside an input/editor:
 | `Ctrl+Alt+1` | The ordinary classroom creation form; the presenter still opens a real room. |
 | `Ctrl+Alt+2` | The ordinary custom-code editor; the presenter still pastes code and generates puzzles. |
 | `Ctrl+Alt+3` | Level r3's authored practice board (`range(2)`, indented `print(i)`) with prediction expanded, before Run. |
+| `Ctrl+Alt+4` | Misaki's ordinary ladder menu, level 1 selected and training enabled; the presenter still starts the match. |
 
 The r3 shortcut uses `openPracticeRows`, so it does not overwrite stars or mistake history and still
 uses the real validator and tutor. Shortcuts ignore held-key repeats, composition and editable fields;
 they only work from home, so they cannot abandon a live match or reset work already on screen.
-Prepare three tabs before presenting, then use the browser's `Ctrl+1`, `Ctrl+2`, `Ctrl+3` to switch
-between them. See the timed rehearsal in [presentation-script.md](presentation-script.md).
+For the AI-in-studying presentation, prepare tabs in this order: prediction (`Ctrl+Alt+3`), Misaki
+training (`Ctrl+Alt+4`), classroom (`Ctrl+Alt+1`). Use the browser's `Ctrl+1`, `Ctrl+2`, `Ctrl+3` to
+switch between them. Pasted-code generation (`Ctrl+Alt+2`) is for Q&A. See the timed rehearsal in
+[presentation-script.md](presentation-script.md).
 
 ## 14. Mock mode and demo hooks
 
