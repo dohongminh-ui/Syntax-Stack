@@ -91,7 +91,6 @@ function initStart() {
   syncRankedNote();
   $('btn-rows').addEventListener('click', () => openSelect());
   $('btn-practice-tray').addEventListener('click', () => showPractice());
-  $('btn-judge-demo').addEventListener('click', () => showPractice(true));
   $('btn-skills').addEventListener('click', () => openSkills());
   $('btn-custom').addEventListener('click', () => openCustom());
   $('practice-home').addEventListener('click', goHome);
@@ -105,30 +104,44 @@ function initStart() {
   buildPreviews();
   buildBackdrop();
   playWave(buildTitle());
+  document.addEventListener('keydown', onPresenterShortcut);
+}
+
+// Prepare three real screens from home; use the browser's Ctrl+1/2/3 to switch tabs on stage.
+async function onPresenterShortcut(e) {
+  if (!e.ctrlKey || !e.altKey || e.shiftKey || e.metaKey || e.repeat || e.isComposing || e.defaultPrevented) return;
+  if ($('screen-start').hidden || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const open = {
+    Digit1: () => Rooms.openRoomNew(),
+    Digit2: () => openCustom(),
+    Digit3: () => openPracticeRows('r3', 'predict', showPractice),
+  }[e.code];
+  if (!open) return;
+  e.preventDefault();
+  try {
+    await open();
+  } catch (err) {
+    toast('Không mở được: ' + err.message);
+  }
 }
 
 const PRACTICE_LEVEL = { variables: 'r1', conditions: 'r2', loops: 'r3', functions: 'r5' };
 
-function showPractice(judge = false) {
-  const saved = judge ? {} : store.practiceFocus(TOPICS);
+function showPractice() {
+  const saved = store.practiceFocus(TOPICS);
   const topic = saved.topic || 'loops';
   const level = topic === 'loops' && saved.errorGroup === 'bad_indent' ? 'r4'
     : Object.values(PRACTICE_LEVEL).includes(saved.levelId) || saved.levelId === 'r4'
     ? saved.levelId : PRACTICE_LEVEL[topic];
-  const back = () => showPractice(judge);
+  const back = () => showPractice();
   const title = $('practice-title');
-  title.textContent = judge ? 'Demo cho giám khảo' : 'Luyện theo lỗi';
-  $('practice-focus').textContent = judge ? 'Dự đoán đầu ra, xem vòng lặp và giải lại một câu Code Rescue.'
-    : saved.count ? `${TOPIC_NAMES[topic]} · ${saved.count} lần sai gần đây` : 'Bắt đầu với vòng lặp.';
-  const items = judge
-    ? [['Dự đoán đầu ra', () => openPracticeRows('r4', 'predict', back), 'bulb', 'Đoán chương trình in gì trước khi chạy'],
-       ['Theo dõi vòng lặp', () => openPracticeRows('r3', 'trace', back), 'search', 'Xem giá trị biến sau từng dòng']]
-    : [['Xem từng bước', () => openPracticeRows(level, 'trace', back), 'search', 'Xem giá trị biến sau từng dòng'],
-       ['Sửa lỗi trên bàn', () => openPracticeRows(level, 'repair', back, level === saved.levelId ? saved.rows : null), 'bug', 'Bàn có sẵn một lỗi, tìm và sửa']];
+  title.textContent = 'Luyện theo lỗi';
+  $('practice-focus').textContent = saved.count ? `${TOPIC_NAMES[topic]} · ${saved.count} lần sai gần đây` : 'Bắt đầu với vòng lặp.';
+  const items = [['Xem từng bước', () => openPracticeRows(level, 'trace', back), 'search', 'Xem giá trị biến sau từng dòng'],
+    ['Sửa lỗi trên bàn', () => openPracticeRows(level, 'repair', back, level === saved.levelId ? saved.rows : null), 'bug', 'Bàn có sẵn một lỗi, tìm và sửa']];
   items.push(['Thử lại Code Rescue', async () => {
     const seed = saved.puzzleId || (await api.nextPuzzle({
       topic, level: 'beginner', tier: 1, kind: 'rescue',
-      ...(judge ? { template_id: 'loops_range_fill' } : {}),
     })).id;
     const result = await api.rematch(seed, 'beginner');
     if ($('screen-practice').hidden) return;
@@ -772,7 +785,7 @@ async function boot() {
   if (!demo) return;
   if (demo === 'skills') return openSkills({ sample: demoSkills() });
   if (demo === 'custom') return openCustom();
-  if (demo === 'judge') return showPractice(true);
+  if (demo === 'judge') return showPractice(); // legacy URL: ordinary practice, without a separate judge flow
   if (demo.startsWith('rows-')) return runDemo(demo);
   const mode = params.get('mode') || 'rescue';
   if (demo === 'end') {

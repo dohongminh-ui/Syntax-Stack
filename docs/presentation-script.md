@@ -1,14 +1,14 @@
-# Syntax Stack — speaking script (finals, v3.2, 10 minutes)
+# Syntax Stack — speaking script (finals, v3.3, 10 minutes)
 
-v2 is kept in `presentation-script.v2.md`. v3 cuts the talk to **10 minutes including a 3-minute live
-demo**. Judges remember one strong moment, so the demo is one block, built around the live classroom.
+v2 is kept in `presentation-script.v2.md`. The talk is **10 minutes including a 3:20 live demo**
+(hard stop at 3:45). The demo is one block, built around the live classroom, with real actions and data.
 
 | Presenter | Slides | Section | Time |
 | --- | --- | --- | --- |
 | **Bui Manh Cuong** | 1–5 | Opening, problem | 1:45 |
 | **Tran Thuong Vu Lam** | 6–9 | Gap, solution, two modes | 2:00 |
-| **Do Hong Minh** | 10–16 | Mistakes as lessons, **live demo**, technology, business, close | 5:30 (demo 3:00) |
-| | | Buffer for transitions and network | 0:45 |
+| **Do Hong Minh** | 10–16 | Mistakes as lessons, **live demo**, technology, business, close | 5:50 (demo 3:20) |
+| | | Buffer for transitions and network | 0:25 |
 
 *Italics in brackets* are actions. **Bold** marks the words to stress. Lines starting with
 "↳ Cut if short on time" can be dropped without breaking the flow. At about 130 words a minute, each
@@ -17,7 +17,7 @@ section's word count matches its time; don't add to it on the day.
 ## Before you walk on (checklist)
 
 - [ ] Laptop and both phones on **one phone hotspot**, not the venue Wi-Fi.
-- [ ] Laptop: **classroom room already open** on the teacher screen (`Lớp học trực tiếp` → `Mở phòng`)
+- [ ] Laptop tab 1: from home press **Ctrl+Alt+1**, then **Mở phòng**. Have the real classroom already open
       with **Tên người chơi: Ngẫu nhiên** (the default), browser in fullscreen, on the projector. Note
       the room code.
 - [ ] Cuong's and Lam's phones: **already joined the room**, game started, sitting on a board where a row
@@ -25,9 +25,14 @@ section's word count matches its time; don't add to it on the day.
       **write both names down** so Minh can point at the right row.
 - [ ] Because the room uses random names, a judge who scans the QR cannot put anything rude on the
       projector. If something unexpected shows anyway, the row's **"Ẩn"** button removes it.
-- [ ] Laptop clipboard: the paste-code demo program (below). Second browser tab on `Tạo câu đố từ code`.
-- [ ] Third tab: Syntax Rows level 3, "Đếm đến ba", with `range(2)` and `print(i)` already placed and
-      "Dự đoán đầu ra" open.
+- [ ] Laptop clipboard: the paste-code demo program (below). Tab 2: from home press **Ctrl+Alt+2**;
+      leave the real code editor empty so the paste and generation happen live.
+- [ ] Tab 3: from home press **Ctrl+Alt+3**. This opens the real r3 practice board, "Đếm đến ba",
+      with `range(2)` and `print(i)` placed and prediction expanded. Leave it **unrun** and the prediction empty.
+- [ ] Use the browser's **Ctrl+1 / Ctrl+2 / Ctrl+3** to switch tabs on stage. The app's Ctrl+Alt shortcuts
+      only work from home and outside text fields. No judge-demo menu, mock data or fake scores.
+- [ ] Rehearse the exact wrong prediction and "Vì sao?" on the real tutor before the talk. Keep a
+      clearly labelled recording ready; allow at most **8 seconds** of visible waiting for an explanation.
 - [ ] Fallback: a 20-second screen recording of the demo on the demo slide, plus screenshots.
 - [ ] Rehearse with a timer at least twice. The demo always runs long the first time.
 
@@ -42,7 +47,7 @@ print(tong)
 
 ## Slide changes from v2 (for Stack.pdf)
 
-The full slide-by-slide content is in `docs/presentation-content.md` (v3, 16 slides); slide numbers
+The full slide-by-slide content is in `docs/presentation-content.md` (v3.3, 16 slides); slide numbers
 below and in the headings match it.
 
 - Merge v2 slides 4–6 into **two** problem slides; keep the one-in-three pass-rate chart.
@@ -124,7 +129,7 @@ give the same learning gains as writing code from scratch in less time (Ericson 
 
 ---
 
-## Do Hong Minh — slides 10 to 16 (5:30, including the 3:00 demo)
+## Do Hong Minh — slides 10 to 16 (5:50, including the 3:20 demo)
 
 ### Slide 10 — One wrong answer is a lesson (0:45)
 Thank you, Lam. Code Rescue has one strict rule: **one mistake per game**. That makes students stop
@@ -138,33 +143,41 @@ plan** of everything you missed.
 ↳ Cut if short on time: Practice mode removes losing entirely and gives you more blocks in your weakest
 topic.
 
-### Slide 11 — Live demo (3:00)
-Everything is live at **syntax.screepai.moe**. *(Projector shows the classroom screen.)*
+### Slide 11 — Live demo (target 3:20, hard stop 3:45)
 
-**1. Live classroom (1:30).** This is the teacher screen. Cuong and Lam are already in the room on their
-phones. **Scan this QR code and you can join too.** No account and nothing to type: everyone gets a
-random friendly name, so nothing embarrassing can land on this screen.
+| Clock | Action | Evidence to point at |
+| --- | --- | --- |
+| 0:00–0:20 | Tab 1: show the live room and invite QR joins; do not wait for the audience. | Two teammates already connected under real generated names. |
+| 0:20–1:25 | Lam fills the prepared loops row and submits one wrong answer. | Lam's row, the updated heatmap and the actual named mistake. |
+| 1:25–2:15 | Ctrl+2: paste the four-line program and press **Tạo câu đố**. Open one generated card. | The real puzzle and its four-card source set. |
+| 2:15–3:10 | Ctrl+3: predict `0`, `1`, `2` on separate lines, then **Chạy kiểm tra** and **Vì sao?** | Actual output `0`, `1`; the validator's verdict and Misaki's labelled explanation. |
+| 3:10–3:20 | Return to the teacher tab and connect the three beats. | One classroom workflow: see the mistake, create practice, explain it. |
 
-*(Lam answers a loops puzzle wrong on purpose. Point at Lam's row by its random name, then the heatmap.)*
-Lam just made a mistake. Within two seconds, the **loops** cell on the class map turned red, and here's
-**"Lỗi phổ biến nhất"**, the most common mistake in the room, by name: for example, "range() does not
-include its end value".
+**Opening / classroom.** Everything is live at **syntax.screepai.moe**. This is the teacher screen.
+Cuong and Lam are already playing on their phones. **Scan the QR code to join**: no account, just a
+generated nickname.
 
-This is what an AI mentor can't give a lecturer: a **reliable map of why the class is wrong**. Every
-answer is checked and labelled by our validator on the server, so a phone can't fake it.
+*(Lam completes the prepared row and answers wrong; point at the actual update, not a rehearsed label.)*
+Lam just made a mistake. Here is his row, the topic on the class map, and **the named mistake**.
+The lecturer sees what to teach next. The server checked the answer and labelled the error;
+the phone didn't report its own result.
 
-**2. Any code becomes practice (0:45).** *(Switch tab. Paste the program, press "Tạo câu đố".)*
-A lecturer pastes any short program, and in under a second we get **four verified puzzles** from it:
-predict, fix the bug, fill the blank, reorder. Every option was actually run. Pasted code runs in an
-**isolated sandbox** with time, CPU and memory limits, so it can't harm the server.
+**Pasted code.** *(Ctrl+2, paste, generate, open one card.)* The lecturer can turn their own short
+program into practice. Here are the generated puzzle types; let's open one. Every option was checked
+by running it, and pasted code runs in an isolated process with resource limits.
 
-**3. AI explains, never grades (0:45).** *(Switch tab: Syntax Rows, level 3.)*
-I predict this prints 0, 1, 2 and press Run. *(Run.)* It prints 0, 1: my prediction was wrong. I tap
-**"Vì sao?"** *(tap)* and **Misaki**, our AI tutor, explains **why**, using the validator's trace:
-`range(2)` stops before 2. The validator decided; Misaki only explained. If the AI is down, a
-hand-written explanation appears instead.
+**Misaki.** *(Ctrl+3, enter the three-line prediction, run.)* I think this prints 0, 1, 2.
+It actually prints 0, 1. The validator has already decided my prediction is wrong.
+*(Tap "Vì sao?" and point at the explanation.)* Misaki explains that `range(2)` stops before 2.
+**The validator decides; Misaki explains.** If this is the authored fallback, say so; don't label it AI.
 
-*(If the network fails: play the recording on this slide and narrate the same three steps.)*
+**Close.** *(Ctrl+1.)* The lecturer sees the problem, creates practice from their own code, and the
+student gets an explanation. That's the classroom workflow.
+
+**Timing rules:** don't wait for judges to join, play a full game, solve all four cards, or add PvP,
+ranked play or the skill map. Those are Q&A material. If generation or explanation has no result
+after 8 seconds, show the clearly labelled recording/screenshot and continue; don't repeat requests.
+Use the 25-second talk buffer if needed, then stop the demo at **3:45**.
 
 ### Slide 12 — Technology (0:30)
 In one breath: plain HTML, CSS and JavaScript on the front, Python and FastAPI on the back. The

@@ -1,7 +1,7 @@
-# Syntax Stack — presentation content (SERS template), v3.2 (finals)
+# Syntax Stack — presentation content (SERS template), v3.3 (finals)
 
 Slide-by-slide content for `Stack.pdf`, matched one-to-one with the speaking script
-`docs/presentation-script.md` (v3.2). The talk is **10 minutes including a 3-minute live demo**, so the
+`docs/presentation-script.md` (v3.3). The talk is **10 minutes including a 3:20 live demo** (hard stop 3:45), so the
 deck is 16 slides and the slides carry headlines, not paragraphs: the speakers carry the depth.
 Each slide lists the **on-slide text**, a **visual**, and where the media comes from. Language: English,
 like the template; the game itself is in Vietnamese. v2 of this file is in git history.
@@ -177,7 +177,7 @@ Learn Python by stacking real code
 
 ---
 
-## Slide 11 — Live demo *(3 minutes)*
+## Slide 11 — Live demo *(target 3:20; hard stop 3:45)*
 
 **syntax.screepai.moe** · *Scan to join the class* → [room QR, shown live on the projector]
 
@@ -188,6 +188,11 @@ Learn Python by stacking real code
 **Visual:** this slide is mostly a backdrop: the demo runs in the browser. Put
 `classroom-dashboard-desktop.png` behind the text and embed `demo-fallback.mp4` (hidden, play only
 if the network fails).
+
+Prepare the three real browser tabs with the home-screen shortcuts `Ctrl+Alt+1` (classroom setup),
+`Ctrl+Alt+2` (code editor), `Ctrl+Alt+3` (r3 practice/prediction). Switch with the browser's `Ctrl+1/2/3`.
+The timed actions and the eight-second waiting limit are in the speaking script. No judge-demo button
+or mock setup is used. Keep PvP, ranked play and the skill map for Q&A.
 
 ---
 
@@ -233,7 +238,7 @@ and "Misaki · opponent (search AI)" next to a "Live 1v1 (WebSocket)" box.
 **Visual:** `skills-map-phone.png`, `leaderboard-phone.png` and `misaki-ladder-phone.png` (new), small.
 Optionally `misaki-coach-phone.png` instead of the skill map.
 
-> 1v1 is shown here, not demoed: the 3-minute demo stays on the classroom. Only mention it aloud if it
+> 1v1 is shown here, not demoed: the timed demo stays on the classroom. Only mention it aloud if it
 > has been rehearsed (the script marks that line as cuttable).
 
 ---

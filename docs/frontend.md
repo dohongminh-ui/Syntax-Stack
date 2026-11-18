@@ -72,7 +72,7 @@ shown or hidden by `strip.js: showStrip`.
 
 | Screen id | What | Strip | Entered from |
 | --- | --- | --- | --- |
-| `screen-start` | Keycap title, two mode cards, level and mode keys, "Luyện theo lỗi" and "Demo cho giám khảo" buttons, high score | hidden | boot, any "Về màn hình chính" |
+| `screen-start` | Keycap title, two mode cards, level and mode keys, Học / Thi đấu / Giáo viên links, high score | hidden | boot, any "Về màn hình chính" |
 | `screen-practice` | Practice screen (section 13) | plain | start buttons |
 | `screen-game` | Code Rescue: board, tray, items, legend; puzzle panel overlays it | shown, back = confirm exit | start card "Chơi Code Rescue", end screen buttons |
 | `screen-end` | Code Rescue result: score, receipt, "Báo cáo lỗi", practice keys | hidden | `finish()` after crash or no-fit |
@@ -83,7 +83,7 @@ shown or hidden by `strip.js: showStrip`.
 flowchart LR
   Start["Start"] -->|"Chơi Code Rescue"| RG["Code Rescue game"]
   Start -->|"Chơi Syntax Rows"| RS["Level select"]
-  Start -->|"Luyện theo lỗi / Demo cho giám khảo"| PR["Practice screen"]
+  Start -->|"Luyện theo lỗi"| PR["Practice screen"]
   RG -->|"crash or no fit"| End["Result + Báo cáo lỗi"]
   RG -->|"back + confirm"| Start
   End -->|"Chơi lại"| RG
@@ -351,8 +351,8 @@ emoji anywhere. `icon(name, {size, cls, fill})` throws on an unknown name.
 **Chips** are squared (4 px radius); pills are not used except the LED housing as in the brief.
 
 Differences from the brief worth knowing: Syntax Rows reuses the strip LEDs with the labels RUN, FAIL
-and PASS; the start screen has two extra buttons ("Luyện theo lỗi", "Demo cho giám khảo") and the
-practice screen; the "AI" badge and tutor block (section 8 of [ai-tutor.md](ai-tutor.md)) and the
+and PASS; the start screen has the "Luyện theo lỗi" entry and the practice screen;
+the "AI" badge and tutor block (section 8 of [ai-tutor.md](ai-tutor.md)) and the
 trace panel are not in the brief.
 
 ## 10. Motion system
@@ -436,8 +436,7 @@ in storage is ever sent to the server.
 
 ## The practice screen
 
-"Luyện theo lỗi" and "Demo cho giám khảo" on the start screen both open `screen-practice`
-(`main.js: showPractice(judge)`).
+"Luyện theo lỗi" on the start screen opens `screen-practice` (`main.js: showPractice()`).
 
 **"Luyện theo lỗi"** uses the learner's history. `storage.practiceFocus(topics)` takes the last 40
 mistakes, counts them by topic and picks the most frequent. The level is `r4` when the topic is loops
@@ -453,14 +452,27 @@ r5`). With no history the focus is loops. Three items:
    topic), calls `GET /rematch`, and opens the verified variant in a standalone puzzle panel with the
    tutor sentence.
 
-**"Demo cho giám khảo"** ignores history and shows a fixed script for the competition: **Dự đoán đầu
-ra** (level `r4` with the prediction panel open: predict `6` or `1 · 3 · 6`, then run the board with the
-print inside the loop), **Theo dõi vòng lặp** (level `r3` with the `range(2)` mistake, run and trace
-opened), and **Thử lại Code Rescue** (a `loops_range_fill` puzzle through rematch). The same screen can
-be opened directly with `?demo=judge`.
+There is no separate judge-demo button or practice variant. The legacy `?demo=judge` URL opens
+ordinary history-based practice.
 
 Practice sessions do not write stars, progress or mistake history (`returnTo` is set), and the
 standalone puzzle panel does not record mistakes.
+
+### Presenter keyboard shortcuts
+
+From the home screen, while focus is outside an input/editor:
+
+| Shortcut | Opens |
+| --- | --- |
+| `Ctrl+Alt+1` | The ordinary classroom creation form; the presenter still opens a real room. |
+| `Ctrl+Alt+2` | The ordinary custom-code editor; the presenter still pastes code and generates puzzles. |
+| `Ctrl+Alt+3` | Level r3's authored practice board (`range(2)`, indented `print(i)`) with prediction expanded, before Run. |
+
+The r3 shortcut uses `openPracticeRows`, so it does not overwrite stars or mistake history and still
+uses the real validator and tutor. Shortcuts ignore held-key repeats, composition and editable fields;
+they only work from home, so they cannot abandon a live match or reset work already on screen.
+Prepare three tabs before presenting, then use the browser's `Ctrl+1`, `Ctrl+2`, `Ctrl+3` to switch
+between them. See the timed rehearsal in [presentation-script.md](presentation-script.md).
 
 ## 14. Mock mode and demo hooks
 
@@ -497,7 +509,7 @@ correctness. Coverage:
 | `demo=lock` | the same board with row 5 completed and the lock open |
 | `demo=puzzle-fill-blank`, `puzzle-predict-output`, `puzzle-parsons`, `puzzle-find-bug` | as `lock`, then open a puzzle of that type immediately. With the real API the client keeps requesting puzzles until the type appears (up to 80 tries); with the mock it picks a matching mock puzzle |
 | `demo=end` | the Code Rescue result screen with two sample mistakes and a crash; also stores a high score of at least 1500 |
-| `demo=judge` | the judge practice screen |
+| `demo=judge` | legacy alias for the ordinary practice screen |
 | `demo=rows-select` | level select with r1 (3 stars) and r2 (2 stars) saved |
 | `demo=rows-3` | level r3 with `for i in range(2) :` placed |
 | `demo=rows-3-fail` | r3 with `range(2)` and `print(i)` placed, run, then hint 1 |
