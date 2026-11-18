@@ -1,4 +1,4 @@
-# Syntax Stack — speaking script (finals, v3, 10 minutes)
+# Syntax Stack — speaking script (finals, v3.1, 10 minutes)
 
 v2 is kept in `presentation-script.v2.md`. v3 cuts the talk to **10 minutes including a 3-minute live
 demo**. Judges remember one strong moment, so the demo is one block, built around the live classroom.
@@ -17,10 +17,14 @@ section's word count matches its time; don't add to it on the day.
 ## Before you walk on (checklist)
 
 - [ ] Laptop and both phones on **one phone hotspot**, not the venue Wi-Fi.
-- [ ] Laptop: **classroom room already open** on the teacher screen (`Lớp học trực tiếp` → `Mở phòng`),
-      browser in fullscreen, on the projector. Note the room code.
-- [ ] Cuong's and Lam's phones: **already joined the room** with nicknames, game started, sitting on a
-      board where a row is about to fill with **coral (loops)** blocks.
+- [ ] Laptop: **classroom room already open** on the teacher screen (`Lớp học trực tiếp` → `Mở phòng`)
+      with **Tên người chơi: Ngẫu nhiên** (the default), browser in fullscreen, on the projector. Note
+      the room code.
+- [ ] Cuong's and Lam's phones: **already joined the room**, game started, sitting on a board where a row
+      is about to fill with **coral (loops)** blocks. Each phone gets a random name (e.g. "Cáo Nhanh 17"):
+      **write both names down** so Minh can point at the right row.
+- [ ] Because the room uses random names, a judge who scans the QR cannot put anything rude on the
+      projector. If something unexpected shows anyway, the row's **"Ẩn"** button removes it.
 - [ ] Laptop clipboard: the paste-code demo program (below). Second browser tab on `Tạo câu đố từ code`.
 - [ ] Third tab: Syntax Rows level 3, "Đếm đến ba", with `range(2)` and `print(i)` already placed and
       "Dự đoán đầu ra" open.
@@ -47,7 +51,7 @@ below and in the headings match it.
 - Business slide: replace "a classroom package … could become a paid plan" with the dashboard
   screenshot: it's now built, not an idea.
 - Update the numbers everywhere: **559 playable puzzles** (706 generated forms including debug-only
-  variants), **"nearly 300 automated tests"** (297 today; recount the day before with
+  variants), **"more than 400 automated tests"** (421 on 18 Nov; recount the day before with
   `.venv\Scripts\python -m pytest -q` and use the real number).
 - Skill map: one screenshot on the business or roadmap slide; it is not demoed live.
 
@@ -138,9 +142,10 @@ topic.
 Everything is live at **syntax.screepai.moe**. *(Projector shows the classroom screen.)*
 
 **1. Live classroom (1:30).** This is the teacher screen. Cuong and Lam are already in the room on their
-phones. **Scan this QR code and you can join too.** No account, just a nickname.
+phones. **Scan this QR code and you can join too.** No account and nothing to type: everyone gets a
+random friendly name, so nothing embarrassing can land on this screen.
 
-*(Lam answers a loops puzzle wrong on purpose. Point at the heatmap.)*
+*(Lam answers a loops puzzle wrong on purpose. Point at Lam's row by its random name, then the heatmap.)*
 Lam just made a mistake. Within two seconds, the **loops** cell on the class map turned red, and here's
 **"Lỗi phổ biến nhất"**, the most common mistake in the room, by name: for example, "range() does not
 include its end value".
@@ -165,7 +170,7 @@ appears instead.
 In one breath: plain HTML, CSS and JavaScript on the front, Python and FastAPI on the back. The
 **validator** parses code, blocks anything outside a beginner whitelist, runs it with step and time
 limits, and names the error. **559 puzzles** are generated from templates, and every wrong option is
-**proven wrong** by running it. Nearly 300 automated tests protect all of it.
+**proven wrong** by running it. More than 400 automated tests protect all of it.
 
 ### Slide 13 — Business potential (0:45)
 **Free for students**, cheap to run: puzzles are generated once, in advance, and the AI tutor is capped
@@ -176,12 +181,15 @@ which concepts the class struggles with, plus custom puzzles from the lecturer's
 **classroom package for schools**, starting with BTEC FPT lecturers.
 
 ### Slide 14 — Roadmap (0:20)
-Next: a **pilot with real students** to measure whether this actually improves learning (we don't
-claim it yet), more Syntax Rows levels, and more languages like C# and JavaScript, which the validator
-design allows.
+Already built beyond the demo: a **ranked leaderboard** and **friend races**, where the server replays
+every game, so a score can't be faked. Next: a **pilot with real students** to measure learning (we
+don't claim it yet), and more languages like C# and JavaScript.
 
 ↳ Cut if short on time: Each player also has a **skill map** *(point at screenshot)*, sixteen skills
 that light up as they master them.
+
+↳ *(Only if 1v1 ships and is rehearsed)* And a real-time **1v1 mode**: solve a lock and you send bug
+lines to your opponent's board.
 
 ### Slide 15 — Close and questions (0:10)
 Syntax Stack keeps the feeling of a game people love, and puts **verified code** underneath it, so
@@ -198,8 +206,12 @@ every mistake becomes a lesson. Thank you. We'd be happy to take your questions.
   themselves only use code from our bank.
 - **"Can students cheat the classroom data?"** (Minh) No. The phone sends only which option was chosen;
   the server checks it and names the mistake itself.
-- **"What about privacy?"** (Minh) Nicknames only, no accounts, and a room's data is deleted 12 hours
-  after it goes quiet. The teacher can delete it immediately.
+- **"What about privacy?"** (Minh) No accounts and no real names: players get random names, and a
+  room's data is deleted 12 hours after it goes quiet. The teacher can delete it immediately.
+- **"What if someone types a rude name?"** (Minh) On the leaderboard and in races they can't type a
+  name at all: the server only accepts names from our generator. In class the default is random names
+  too. If a lecturer chooses free names, a Vietnamese and English word filter applies and the teacher
+  can hide any player from the screen with one tap.
 - **"Isn't one mistake too harsh for beginners?"** (Minh) That's why Practice mode exists, and Syntax Rows
   has unlimited retries.
 - **"How do you know students actually learn?"** (Minh) We don't claim it yet. The pilot measures it.
@@ -208,9 +220,13 @@ every mistake becomes a lesson. Thank you. We'd be happy to take your questions.
   code, and a row clears only when the code is correct.
 - **"What does the AI cost?"** (Minh) It's capped per day and per visitor, cached, and the game works
   fully without it.
-- *(Only if ranked play ships before the finals)* **"Is there competition between players?"** (Minh) Yes:
-  a ranked leaderboard and friend races. The phone never sends a score; the server replays every move
-  and computes it, so the board can't be faked.
+- **"Is there competition between players?"** (Minh) Yes: a ranked leaderboard and friend races. The
+  phone never sends a score; it sends only its moves, and the server replays the whole game with the
+  same rules and computes the score itself. We check that the server's copy of the rules matches the
+  game exactly by replaying hundreds of games in both. A faked score is simply rejected.
+- *(Only if 1v1 ships)* **"Can you play against each other live?"** (Minh) Yes, 1v1: both players get
+  the same pieces, solving a lock sends bug lines to the opponent, and the server runs both boards, so
+  nobody can cheat. There's also a bot opponent when nobody else is online.
 
 ### Slide 16 — Thank you
 Try it now at **syntax.screepai.moe**.

@@ -1,4 +1,4 @@
-# Syntax Stack — presentation content (SERS template), v3 (finals)
+# Syntax Stack — presentation content (SERS template), v3.1 (finals)
 
 Slide-by-slide content for `Stack.pdf`, matched one-to-one with the speaking script
 `docs/presentation-script.md` (v3). The talk is **10 minutes including a 3-minute live demo**, so the
@@ -18,7 +18,7 @@ like the template; the game itself is in Vietnamese. v2 of this file is in git h
   sandbox), skill map, AI explanation of wrong predictions, AI end-of-run debrief, "Đọc code" bonus.
 - **Business slide:** the classroom package is **built**, not "an idea, not validated".
 - **Numbers updated:** 559 playable puzzles (706 generated forms with debug-only variants); tests
-  "nearly 300" (297 at writing; recount the day before).
+  "more than 400" (421 on 18 Nov; recount the day before).
 - **Q&A updated:** "Isn't running user code dangerous?" no longer says players never type code (they
   can paste code now); the answer is the sandbox, with the limits tested on the live server.
 - **Still not claimed:** learning gains. Framed as the pilot.
@@ -31,7 +31,8 @@ mode, for anything on the business or demo slide (mock screens are labelled "mô
 | File (suggested, in `frontend/_screens/v5/`) | How to get it |
 | --- | --- |
 | `classroom-dashboard-desktop.png` | Open a room, have 3–4 people answer ~15 puzzles with a few deliberate mistakes, wait for the heatmap to fill, capture the teacher screen. |
-| `classroom-join-phone.png` | `/?room=<code>` on a phone, nickname typed. |
+| `classroom-join-phone.png` | `/?room=<code>` on a phone in a random-names room: the "Tên của bạn: …" moment after tapping "Vào phòng". |
+| `leaderboard-phone.png` | `Bảng xếp hạng` after a few real ranked runs (not mock: mock is labelled "dữ liệu mẫu"). |
 | `custom-result-desktop.png` | `Tạo câu đố từ code` → paste the demo program → capture the four puzzle cards. |
 | `skills-map-phone.png` | Play a few Rescue runs first so the map has all four mastery levels, then `Bản đồ kỹ năng`. |
 | `predict-why-ai-phone.png` | Syntax Rows level 3, `range(2)`, predict 0 1 2, Run, tap "Vì sao?" with the tutor on. |
@@ -187,7 +188,8 @@ if the network fails).
 - **Puzzle bank:** 16 templates → **559 verified puzzles**; every wrong option is proven wrong by running it.
 - **Pasted code:** runs in an **isolated sandbox process** (time, 3 s CPU, 256 MB memory limits).
 - **AI tutor (optional):** explains only, capped per day and per visitor, hand-written fallback.
-- **Nearly 300 automated tests.**
+- **Ranked play is server-verified:** the phone sends only its moves; the server replays the game and computes the score.
+- **More than 400 automated tests.**
 
 **Visual:** architecture strip: Phone/Browser → FastAPI → Validator → SQLite bank; side boxes
 "Sandbox (pasted code)" and "AI tutor (explains only)" with a dashed "hand-written fallback" arrow.
@@ -207,15 +209,17 @@ if the network fails).
 
 ## Slide 14 — Roadmap
 
+- **Built:** ranked leaderboard and friend races (scores verified by server replay), random friendly
+  names, skill map.
 - **Next:** a pilot with real students to measure learning, using the classroom dashboard as the
   instrument. *(Learning gains are not claimed yet.)*
-- **Then:** more Syntax Rows levels (Intermediate, Advanced); ranked play and friend races.
-- **Later:** more languages (C#, JavaScript), which the validator design allows; more topics (lists, strings).
+- **Later:** more Syntax Rows levels (Intermediate, Advanced); more languages (C#, JavaScript), which
+  the validator design allows; more topics (lists, strings).
 
-**Visual:** `skills-map-phone.png` (new): "every player gets a skill map of 16 skills."
+**Visual:** `skills-map-phone.png` and `leaderboard-phone.png` (new), small.
 
-> If ranked play and races ship before the finals, move them from "Then" into the demo or the
-> Q&A answer instead (see the script).
+> Real-time 1v1 is being built. If it ships and has been rehearsed, add it to "Built" with one line
+> ("solve a lock, send bug lines to your opponent") and a screenshot; otherwise leave it off the slide.
 
 ---
 
