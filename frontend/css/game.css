@@ -237,6 +237,8 @@ body:has(#screen-start:not([hidden])) .home-bg { display: block; }
 .piece .key { width: var(--pc); height: var(--pc); }
 .piece .legend { top: 3px; left: 4px; }
 .piece.selected { transform: translateY(-3px); }
+/* whole slot drags its piece (board.js renderTray), so the slot must not start a page scroll either */
+.slot:has(.piece:not(:disabled)) { touch-action: none; cursor: grab; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
 .slot:has(.selected) { box-shadow: inset 0 0 0 1px var(--line-2), inset 0 2px 4px rgba(0, 0, 0, 0.35); }
 .piece.dragging { opacity: 0.3; }
 .piece.nofit { opacity: 0.4; }

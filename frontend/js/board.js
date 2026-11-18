@@ -127,7 +127,16 @@ export class Board {
 
   renderTray(s, ui) {
     const t = this.trayEl;
-    while (t.children.length < 3) t.append(el('div', { class: 'slot' }));
+    while (t.children.length < 3) {
+      const slot = el('div', { class: 'slot', dataset: { idx: t.children.length } });
+      // The whole slot is the drag handle: on phones a small piece leaves most of the slot empty,
+      // and a touch there used to scroll the page instead of picking the piece up.
+      slot.addEventListener('pointerdown', (e) => {
+        const btn = slot.querySelector('.piece');
+        if (btn && !btn.disabled) this.onDown(e, +slot.dataset.idx, btn);
+      });
+      t.append(slot);
+    }
     s.tray.forEach((p, i) => {
       const slot = t.children[i];
       const pid = p ? p.id : '';
@@ -168,7 +177,7 @@ export class Board {
       k.style.gridColumn = String(c + 1);
       btn.append(k);
     }
-    btn.addEventListener('pointerdown', (e) => this.onDown(e, i, btn));
+    // pointerdown is handled by the whole slot (renderTray), so a touch beside a small piece still drags it
     btn.addEventListener('click', (e) => {
       if (e.detail === 0) this.h.onSelect(i, true); // keyboard activation
     });
