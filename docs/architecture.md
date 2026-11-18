@@ -293,6 +293,32 @@ puzzles) and are kept out of the leaderboard. A Node harness (`backend/tests/js_
 hundreds of games with the real `game.js` and the test suite requires the Python replay to match, so the
 two implementations cannot drift unnoticed.
 
+## 8c. Real-time 1v1 (Đối kháng)
+
+Contract: [`pvp.md`](pvp.md); code: `backend/app/pvp.py` (matches, tickets, WebSocket), `pvp_bot.py` (the bot's
+decisions), `rescue_engine.py` (`RescueGame(mode="pvp")`, the rules), `frontend/js/game.js` (`mode: 'pvp'`).
+
+- **The server is authoritative.** A match owns two `RescueGame`s dealt from one seed. The browser sends only
+  intentions over `GET /api/pvp/ws` (place, bomb, shuffle, undo, resign) and renders the `state` the server
+  pushes after every change. Puzzles, hints and answers use the existing HTTP endpoints with `match_id` +
+  `match_token`; the server picks the puzzle for the player's current lock deterministically from the match seed,
+  checks the answer and applies the outcome to that player's game (the same code path the bot uses).
+- **Everything live is in memory, in one process.** Tickets, the quick-match queue, private duel codes and live
+  matches are Python objects guarded by one re-entrant lock; one asyncio task ticks all matches every 0.1 s
+  (countdown, overtime, bots, 20 s disconnect grace, 4 opponent pushes per second). The puzzle endpoints run in the
+  thread pool and hand messages to the socket's asyncio queue with `call_soon_threadsafe`. So the game must run
+  with **one worker** (`uvicorn` without `--workers`), as `compose.yaml` does. Only the Elo ratings are stored
+  (`pvp_ratings` in `ranked.sqlite`).
+- **What a deploy does.** Restarting the container drops every live match: players see a closed socket and
+  `bad_ticket` on reconnect (the app also ends matches with `server_restart`, no rating change, when it still can).
+  `deploy/update.sh` restarts the container only when a new commit arrives, but it runs from cron, so push while
+  nobody plays. Queued tickets and private duel codes are lost too.
+- **Two implementations of the rules, one test.** `backend/tests/js_harness/play.mjs <n> <seed> pvp` plays pvp games
+  with the real `game.js` (random incoming rows, cancels, landings, top-outs, undo, overtime-style single rows) and
+  `test_pvp_rules.py` requires `rescue_engine.replay_pvp` to reach the same final state for 400 games.
+- **Limits.** 200 live matches, messages up to 4 KB, 10 messages per second per player, rate limit per IP on
+  matchmaking (60 per hour).
+
 ## 9. Directory map
 
 ```

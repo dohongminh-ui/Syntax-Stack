@@ -66,6 +66,7 @@
   <link rel="stylesheet" href="css/features.css">
   <link rel="stylesheet" href="css/rooms.css">
   <link rel="stylesheet" href="css/ranked.css">
+  <link rel="stylesheet" href="css/pvp.css">
 </head>
 <body>
 <noscript><p class="noscript">Syntax Stack cần JavaScript để chạy. Hãy bật JavaScript trong trình duyệt rồi tải lại trang.</p></noscript>
@@ -143,6 +144,7 @@
         </div>
         <div class="hub-col">
           <h2 class="hub-h">Thi đấu</h2>
+          <button id="btn-pvp" class="btn" type="button">Đối kháng 1v1</button>
           <button id="btn-leaderboard" class="btn" type="button">Bảng xếp hạng</button>
           <button id="btn-race-new" class="btn" type="button">Đấu tốc độ</button>
           <div class="room-row">
@@ -379,12 +381,93 @@
     </div>
   </section>
 
+  <!-- ĐỐI KHÁNG (real-time 1v1): entry, searching, private duel waiting room -->
+  <section id="screen-pvp" class="screen end" hidden>
+    <div class="end-card race-card pvp-card">
+      <div class="race-top"><span id="pv-level" class="chip t-neutral" hidden></span><span id="pv-mock" class="tp-mock" hidden>mô phỏng (mock)</span></div>
+      <h1 id="pv-title" tabindex="-1">Đối kháng 1v1</h1>
+      <p id="pv-sub" class="end-sub">Hai người chơi cùng một bộ khối. Giải đố đúng để gửi dòng lỗi sang bàn của đối thủ. Ai bị đẩy kín bàn trước sẽ thua.</p>
+      <ul class="pv-rules" aria-label="Luật đối kháng">
+        <li><b>Dòng lỗi đẩy bàn lên từ dưới.</b> Khối ở hàng trên cùng sẽ bị đẩy ra ngoài: hãy giữ phía trên trống. Vùng sắp bị đẩy sẽ hiện màu đỏ.</li>
+        <li><b>Giải đúng để tấn công và phòng thủ.</b> Dòng bạn gửi đi sẽ xoá dòng lỗi đang chờ của chính bạn trước.</li>
+        <li><b>Sai không thua ngay.</b> Hàng đó thành dòng lỗi trên bàn bạn; chạm vào để sửa.</li>
+      </ul>
+
+      <div id="pv-menu" class="pv-pane">
+        <div class="pv-id">
+          <div class="pv-id-main">
+            <span class="setup-l">Tên của bạn</span>
+            <b id="pv-name" class="pv-name"></b>
+            <span id="pv-rating" class="po-rating" hidden></span>
+          </div>
+          <button id="pv-rename" class="btn" type="button">Đổi tên</button>
+        </div>
+        <div class="setup-group">
+          <span class="setup-l" id="pv-level-l">Cấp độ</span>
+          <div class="keyrow" role="radiogroup" aria-labelledby="pv-level-l">
+            <label class="key keyopt"><input class="sr-only" type="radio" name="pv-level" value="beginner" checked><span class="cap-top"><span class="kb-label">Beginner</span></span></label>
+            <label class="key keyopt"><input class="sr-only" type="radio" name="pv-level" value="intermediate"><span class="cap-top"><span class="kb-label">Intermediate</span></span></label>
+            <label class="key keyopt"><input class="sr-only" type="radio" name="pv-level" value="advanced"><span class="cap-top"><span class="kb-label">Advanced</span></span></label>
+          </div>
+        </div>
+        <ol id="pv-options" class="practice-list pv-options"></ol>
+        <form id="pv-join-form" class="pv-join" autocomplete="off">
+          <label class="setup-l" for="pv-code-in">Đã có mã từ bạn bè?</label>
+          <div class="pv-join-row">
+            <input id="pv-code-in" class="room-input room-code-in" type="text" maxlength="5" autocapitalize="characters" spellcheck="false" placeholder="MÃ TRẬN" aria-describedby="pv-err">
+            <button class="btn" type="submit">Vào trận</button>
+          </div>
+        </form>
+      </div>
+
+      <div id="pv-search" class="pv-pane panel" hidden>
+        <p id="pv-search-t" class="pv-big" role="status">Đang tìm đối thủ…</p>
+        <p class="pv-time"><span class="sr-only">Thời gian chờ: </span><b id="pv-time">0:00</b></p>
+        <p id="pv-search-note" class="setup-note">Hai người cùng cấp độ được ghép với nhau.</p>
+        <div id="pv-search-act" class="end-actions"></div>
+      </div>
+
+      <div id="pv-wait" class="pv-pane" hidden>
+        <p id="pv-wait-t" class="pv-big" role="status">Đang chờ bạn bè vào…</p>
+        <div id="pv-code" class="rc-code" role="img"></div>
+        <div class="cu-share">
+          <label class="setup-l" for="pv-link">Liên kết mời</label>
+          <div class="cu-share-row">
+            <input id="pv-link" class="cu-link" type="text" readonly>
+            <button id="pv-copy" class="btn cu-copy" type="button">Sao chép liên kết</button>
+          </div>
+        </div>
+        <p class="rk-note">Gửi mã hoặc liên kết cho bạn bè. Trận bắt đầu ngay khi họ vào. Mã hết hạn sau 10 phút nếu chưa có ai vào.</p>
+        <div id="pv-wait-act" class="end-actions"></div>
+      </div>
+
+      <p id="pv-err" class="rs-error" role="alert" hidden></p>
+      <div class="end-actions"><button id="pv-home" class="btn" type="button">Về màn hình chính</button></div>
+    </div>
+  </section>
+
+  <!-- ĐỐI KHÁNG: result -->
+  <section id="screen-pvp-end" class="screen end" hidden>
+    <div id="pe-card" class="end-card pvp-end-card">
+      <div id="pe-badge" class="end-badge"></div>
+      <h1 id="pe-title" tabindex="-1">Kết quả</h1>
+      <p id="pe-sub" class="end-sub"></p>
+      <div id="pe-rating" class="rk-panel pe-rating-panel" hidden></div>
+      <div class="pe-tbl-wrap"><table id="pe-table" class="pe-tbl"></table></div>
+      <div id="pe-actions" class="end-actions"></div>
+      <p id="pe-note" class="rk-note" role="status"></p>
+    </div>
+  </section>
+
   <!-- CODE RESCUE -->
   <section id="screen-game" class="screen game-screen" hidden>
     <main class="game">
+      <aside id="pvp-opp" class="pvp-opp" aria-label="Đối thủ" hidden></aside>
       <div class="board-col">
         <div class="board-case">
+          <div id="pvp-meter" class="pvp-meter" hidden></div>
           <div id="board" class="board" role="grid" aria-label="Lưới 8×8" tabindex="0"></div>
+          <div id="pvp-ovl" class="pvp-ovl" hidden></div>
         </div>
         <p id="board-hint" class="board-hint">Kéo khối vào lưới, hoặc chọn khối rồi chạm vào ô. Phím mũi tên + Enter để đặt.</p>
       </div>

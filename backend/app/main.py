@@ -10,13 +10,15 @@ import sys
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Header, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import bank, custom, hints, nicknames, ranked, rescue_engine, rooms, rows, tutor
+from . import bank, custom, hints, nicknames, pvp, ranked, rescue_engine, rooms, rows, tutor
 from . import validator as V
 
 if sys.version_info < (3, 12):  # the validator reads ast node.type_params (3.12+)
@@ -26,7 +28,13 @@ if sys.version_info < (3, 12):  # the validator reads ast node.type_params (3.12
 # The interactive API docs (/docs, /redoc, /openapi.json) are a free map of the API, so they are off
 # unless SYNTAX_STACK_API_DOCS=1 (handy locally).
 _DOCS = os.getenv("SYNTAX_STACK_API_DOCS", "").strip() in ("1", "true", "yes")
-app = FastAPI(title="Syntax Stack API", version="1.0",
+@asynccontextmanager
+async def _lifespan(_app):
+    yield
+    pvp.shutdown()  # a deploy / restart ends every live 1v1 match (reason server_restart, no rating change)
+
+
+app = FastAPI(title="Syntax Stack API", version="1.0", lifespan=_lifespan,
               docs_url="/docs" if _DOCS else None, redoc_url="/redoc" if _DOCS else None,
               openapi_url="/openapi.json" if _DOCS else None)
 
@@ -155,6 +163,11 @@ class NextRequest(BaseModel):
     # Ranked run / race: with a valid pair the server picks the puzzle deterministically and records it.
     run_id: Optional[str] = Field(default=None, max_length=32)
     run_token: Optional[str] = Field(default=None, max_length=64)
+    # Live 1v1 match (docs/pvp.md): with a valid pair the server picks the puzzle for the player's current lock, or for
+    # the bug line `bug` (its id in the player's bugLines) when kind is "debug".
+    match_id: Optional[str] = Field(default=None, max_length=32)
+    match_token: Optional[str] = Field(default=None, max_length=64)
+    bug: Optional[int] = Field(default=None, ge=1, le=1_000_000)
 
 
 class CustomSetRequest(BaseModel):
@@ -179,6 +192,9 @@ class AnswerRequest(BaseModel):
     # Ranked run / race: when both are valid the server records the checked result for the replay.
     run_id: Optional[str] = Field(default=None, max_length=32)
     run_token: Optional[str] = Field(default=None, max_length=64)
+    # Live 1v1 match: when both are valid the checked result is applied to the player's game.
+    match_id: Optional[str] = Field(default=None, max_length=32)
+    match_token: Optional[str] = Field(default=None, max_length=64)
 
 
 class RoomCreateRequest(BaseModel):
@@ -263,6 +279,17 @@ class RaceCreateRequest(BaseModel):
     device_id: str = Field(max_length=64)
 
 
+class PvpStartRequest(BaseModel):
+    level: Level
+    nickname: str = Field(max_length=200)  # real rule: a generated name (422 in ranked._clean_identity)
+    device_id: str = Field(max_length=64)
+
+
+class PvpJoinRequest(BaseModel):
+    nickname: str = Field(max_length=200)
+    device_id: str = Field(max_length=64)
+
+
 # Vietnamese topic names, as the frontend shows them (frontend/js/pieces.js: TOPIC_NAMES).
 TOPIC_NAMES_VI = {"variables": "Biến", "conditions": "Điều kiện", "loops": "Vòng lặp", "functions": "Hàm"}
 PREDICT_TRACE_STEPS = 40
@@ -283,6 +310,11 @@ def puzzle_next(req: NextRequest):
             raise HTTPException(422, "kind 'debug' cần có template_id.")
     elif req.kind == "rescue" and (req.topic is None or req.tier is None):
         raise HTTPException(422, "kind 'rescue' cần có topic và tier.")
+    live = pvp.serve_puzzle(req.match_id, req.match_token, kind=req.kind, bug=req.bug, topic=req.topic,
+                            template_id=req.template_id)
+    if live is not None:  # a valid live match: the server picked the puzzle for the player's lock / bug line
+        row, level = live
+        return bank.public_puzzle(row, level)
     run = ranked.serve_puzzle(req.run_id, req.run_token, kind=req.kind, topic=req.topic, tier=req.tier,
                               template_id=req.template_id)
     if run is not None:  # a valid ranked run / race: deterministic pick, already recorded
@@ -315,16 +347,22 @@ def puzzle_answer(puzzle_id: str, req: AnswerRequest):
         rooms.log_answer(req.room, req.player_token, row, req.option_id, result)  # never raises
     if req.run_id and req.run_token and not custom.is_custom_id(puzzle_id):
         ranked.record_answer(req.run_id, req.run_token, puzzle_id, result["correct"])  # never raises
+    if req.match_id and req.match_token and not custom.is_custom_id(puzzle_id):
+        pvp.record_answer(req.match_id, req.match_token, puzzle_id, result["correct"])  # never raises
     return result
 
 
 @app.get("/api/puzzle/{puzzle_id}/hint")
 def puzzle_hint(puzzle_id: str, level: int = Query(..., ge=1, le=3),
                 run_id: Optional[str] = Query(default=None, max_length=32),
-                run_token: Optional[str] = Query(default=None, max_length=64)):
+                run_token: Optional[str] = Query(default=None, max_length=64),
+                match_id: Optional[str] = Query(default=None, max_length=32),
+                match_token: Optional[str] = Query(default=None, max_length=64)):
     hint = hints.puzzle_hint(_get_puzzle(puzzle_id), level)
     if run_id and run_token and not custom.is_custom_id(puzzle_id):
         ranked.record_hint(run_id, run_token, puzzle_id, level)  # never raises
+    if match_id and match_token and not custom.is_custom_id(puzzle_id):
+        pvp.record_hint(match_id, match_token, puzzle_id, level)  # never raises
     return hint
 
 
@@ -522,6 +560,42 @@ def races_get(code: str, device_id: Optional[str] = Query(default=None, max_leng
     return ranked.race_info(code, device_id)
 
 
+# --------------------------------------------------------------------------- real-time 1v1 (docs/pvp.md)
+
+
+@app.post("/api/pvp/queue")
+def pvp_queue(req: PvpStartRequest, request: Request):
+    return pvp.queue_join(req.level, req.nickname, req.device_id, _client_ip(request))
+
+
+@app.delete("/api/pvp/queue/{ticket}", status_code=204)
+def pvp_queue_leave(ticket: str):
+    pvp.queue_leave(ticket)
+    return Response(status_code=204)
+
+
+@app.post("/api/pvp/private")
+def pvp_private(req: PvpStartRequest, request: Request):
+    made = pvp.private_create(req.level, req.nickname, req.device_id, _client_ip(request))
+    base = rooms.public_base(headers=request.headers, scheme=request.url.scheme, netloc=request.url.netloc)
+    return {**made, "url": f"{base}/?duel={made['code']}"}
+
+
+@app.post("/api/pvp/private/{code}/join")
+def pvp_private_join(code: str, req: PvpJoinRequest, request: Request):
+    return pvp.private_join(code, req.nickname, req.device_id, _client_ip(request))
+
+
+@app.post("/api/pvp/bot")
+def pvp_bot_match(req: PvpStartRequest, request: Request):
+    return pvp.bot_start(req.level, req.nickname, req.device_id, _client_ip(request))
+
+
+@app.websocket("/api/pvp/ws")
+async def pvp_ws(ws: WebSocket, ticket: str = Query(default="", max_length=64)):
+    await pvp.serve_socket(ws, ticket)
+
+
 # --------------------------------------------------------------------------- Syntax Rows
 
 
@@ -670,11 +744,14 @@ def render_index(build: str) -> str:
     return html.replace('<script type="module"', tag + '<script type="module"', 1)
 
 
-def content_security_policy(html: str) -> str:
+def content_security_policy(html: str, ws_origin: str = "") -> str:
     """CSP for the page: own scripts plus the inline import map (allowed by its exact hash), Google
     Fonts and Cloudflare Web Analytics, nothing else. The JSON-LD block is data, not script, so
     CSP does not apply to it. Cloudflare's inline bot-detection snippet stays blocked on purpose:
-    it changes on every request, so it can only be allowed with 'unsafe-inline'."""
+    it changes on every request, so it can only be allowed with 'unsafe-inline'.
+
+    ``connect-src`` also names the site's own WebSocket origin (``wss://host``) explicitly: ``'self'`` covers
+    ws:/wss: in current Chrome and Firefox but not in every Safari, and nothing but the own origin is opened."""
     hashes = [
         "'sha256-" + base64.b64encode(hashlib.sha256(body.encode()).digest()).decode() + "'"
         for body in re.findall(r'<script type="importmap">(.*?)</script>', html, re.S)
@@ -686,7 +763,7 @@ def content_security_policy(html: str) -> str:
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  # inline style="--c:..." on LEDs
         "font-src 'self' https://fonts.gstatic.com",
         "img-src 'self' data:",
-        "connect-src 'self' https://cloudflareinsights.com",
+        ("connect-src 'self' https://cloudflareinsights.com" + (f" {ws_origin}" if ws_origin else "")),
         "manifest-src 'self'",
         "object-src 'none'",
         "base-uri 'self'",
@@ -699,12 +776,30 @@ if FRONTEND_DIR.is_dir():
     BUILD_ID = build_id()
     _INDEX_HTML = render_index(BUILD_ID)
     _INDEX_CSP = content_security_policy(_INDEX_HTML)
+    _CSP_BY_ORIGIN: dict[str, str] = {}
+
+    def _ws_origin(request: Request) -> str:
+        """``wss://host`` (``ws://host`` over plain http) of the site as the visitor reaches it (same rules as the
+        public URL of a duel link); empty when the host looks wrong."""
+        base = rooms.public_base(headers=request.headers, scheme=request.url.scheme, netloc=request.url.netloc)
+        scheme, _, host = base.partition("://")
+        if scheme not in ("http", "https") or not host or "/" in host or not rooms._HOST_RE.match(host):
+            return ""
+        return ("wss://" if scheme == "https" else "ws://") + host
 
     @app.get("/", include_in_schema=False)
     @app.get("/index.html", include_in_schema=False)
-    def _index() -> HTMLResponse:
+    def _index(request: Request) -> HTMLResponse:
+        origin = _ws_origin(request)
+        csp = _INDEX_CSP
+        if origin:
+            csp = _CSP_BY_ORIGIN.get(origin)
+            if csp is None:
+                csp = content_security_policy(_INDEX_HTML, origin)
+                if len(_CSP_BY_ORIGIN) < 32:  # bounded: a visitor can pick the Host header
+                    _CSP_BY_ORIGIN[origin] = csp
         return HTMLResponse(_INDEX_HTML, headers={"Cache-Control": "no-cache", "X-Build": BUILD_ID,
-                                                  "Content-Security-Policy": _INDEX_CSP})
+                                                  "Content-Security-Policy": csp})
 
     # mounted last so it never shadows /api or the rendered index above
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

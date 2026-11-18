@@ -7,6 +7,7 @@ export const HINT_FACTOR = [1, 0.9, 0.75, 0.5];
 export const HINT_PENALTY_PCT = [0, 10, 25, 50];
 export const BUG_FIX_POINTS = 150;
 export const PRACTICE_BUG_LIFETIME = 5;
+export const PVP_SEND = [0, 1, 2, 3, 4]; // pvp: lines sent by a correct lock answer, index = min(lock.count, 4)
 const ITEM_CAP = 3;
 
 export function streakFactor(n) {
@@ -47,6 +48,11 @@ export function newGame({ mode = 'rescue', level = 'beginner', focusTopic = null
     snapshot: null,
     endReason: null,
   };
+  if (mode === 'pvp') {
+    s.pending = []; // incoming rows ({ topic, templateId }, oldest first) that land after a placement without a lock
+    s.sent = 0; // rows sent to the opponent (after cancelling)
+    s.received = 0; // rows queued by the opponent / overtime
+  }
   refillTray(s);
   return s;
 }
@@ -107,13 +113,15 @@ export function anyFit(s) {
 }
 
 function snapshot(s) {
-  return {
+  const sn = {
     grid: cloneGrid(s.grid),
     tray: s.tray.slice(),
     score: s.score,
     placements: s.placements,
     bugLines: s.bugLines.map((b) => ({ ...b })),
   };
+  if (s.mode === 'pvp') sn.pending = s.pending.map((e) => ({ ...e }));
+  return sn;
 }
 
 // Place tray piece idx with its top-left cell at (r, c). Returns null if invalid.
@@ -133,7 +141,71 @@ export function place(s, idx, r, c) {
   if (s.tray.every((p) => !p)) refillTray(s);
   const lock = findLock(s);
   s.lock = lock;
+  if (s.mode === 'pvp') {
+    // docs/pvp.md rule 4/5: a placement that makes no lock lets the pending rows land (and may top you out)
+    let landed = 0;
+    if (!lock) {
+      landed = landPending(s);
+      if (s.phase !== 'over') checkNoFit(s);
+    }
+    return { placed, lock, expired, landed };
+  }
   return { placed, lock, expired };
+}
+
+// pvp: append incoming rows ({ topic, templateId }) to the pending queue. Returns how many were queued.
+export function queueIncoming(s, entries) {
+  if (s.mode !== 'pvp' || s.phase === 'over') return 0;
+  for (const e of entries) s.pending.push({ topic: e.topic, templateId: e.templateId ?? null });
+  s.received += entries.length;
+  return entries.length;
+}
+
+// pvp: all pending rows land at once. Every cell moves up k rows, the bottom k rows become bug lines (oldest on
+// top). A non-empty cell that would leave the board tops you out (grid left as it was, endReason 'topped_out').
+// Returns k, the number of rows (also when it topped you out).
+export function landPending(s) {
+  const k = s.pending.length;
+  if (!k) return 0;
+  const rows = s.pending;
+  s.pending = [];
+  let out = k > SIZE;
+  for (let r = 0; r < Math.min(k, SIZE) && !out; r++) if (s.grid[r].some(Boolean)) out = true;
+  if (out) {
+    s.phase = 'over';
+    s.endReason = 'topped_out';
+    refreshStatus(s);
+    return k;
+  }
+  for (let r = 0; r < SIZE - k; r++) s.grid[r] = s.grid[r + k];
+  for (const b of s.bugLines) b.cells = b.cells.map(([r, c]) => [r - k, c]);
+  rows.forEach((e, i) => {
+    const row = SIZE - k + i;
+    const id = s.nextBugId++;
+    s.grid[row] = Array.from({ length: SIZE }, () => ({ topic: e.topic, bug: true, bugId: id }));
+    s.bugLines.push({
+      id,
+      cells: Array.from({ length: SIZE }, (_, c) => [row, c]),
+      topic: e.topic,
+      templateId: e.templateId ?? null,
+      placementsLeft: PRACTICE_BUG_LIFETIME,
+    });
+  });
+  s.snapshot = null;
+  refreshStatus(s);
+  return k;
+}
+
+// pvp: no tray piece fits anywhere = you lose. Returns true when it ended the game. The rules call it by
+// themselves (place, finishLock, applyWrong, fixBug, shuffle); it is exported for the server and the UI.
+export function checkNoFit(s) {
+  if (s.mode === 'pvp' && s.phase !== 'over' && !anyFit(s)) {
+    s.phase = 'over';
+    s.endReason = 'nofit';
+    refreshStatus(s);
+    return true;
+  }
+  return false;
 }
 
 // Practice: bug lines vanish after 5 placements.
@@ -185,6 +257,8 @@ export function majorityTopic(s, cells) {
   for (const [r, c] of cells) n[s.grid[r][c].topic] = (n[s.grid[r][c].topic] || 0) + 1;
   const max = Math.max(...Object.values(n));
   const tied = Object.keys(n).filter((t) => n[t] === max);
+  // pvp: no RNG draw, so both players keep drawing the same pieces (first tied topic in row-major order)
+  if (s.mode === 'pvp') return cells.map(([r, c]) => s.grid[r][c].topic).find((t) => n[t] === max);
   return tied[Math.floor(s.rng() * tied.length)];
 }
 
@@ -235,6 +309,16 @@ export function applyCorrect(s, { base, maxHint, free, lines }) {
   }
   if (lines >= 4) addItem(s, 'undo', newItems, 'Hoàn tác');
   s.bestStreak = Math.max(s.bestStreak, s.streak);
+  if (s.mode === 'pvp') {
+    // docs/pvp.md rule 2/3: send lines by lock size (+1 for a clean answer at streak >= 3); they first cancel
+    // your own pending rows, only the remainder is sent to the opponent.
+    let send = PVP_SEND[Math.min(lines, 4)] + (r.clean && s.streak >= 3 ? 1 : 0);
+    const cancelled = Math.min(send, s.pending.length);
+    s.pending.splice(0, cancelled);
+    send -= cancelled;
+    s.sent += send;
+    return { ...r, newItems, send, cancelled };
+  }
   return { ...r, newItems };
 }
 
@@ -243,6 +327,7 @@ export function finishLock(s) {
   s.lock = null;
   s.snapshot = null;
   s.phase = 'play';
+  if (s.mode === 'pvp') checkNoFit(s);
 }
 
 export function refreshStatus(s) {
@@ -300,10 +385,11 @@ export function applyWrong(s, { puzzle, response, answer }) {
   s.snapshot = null;
   s.phase = 'play';
   refreshStatus(s);
+  if (s.mode === 'pvp') checkNoFit(s);
   return { result: 'bug' };
 }
 
-// Wrong Debug answer: rescue = crash, practice = bug line stays.
+// Wrong Debug answer: rescue = crash, practice and pvp = bug line stays.
 export function applyDebugWrong(s, { puzzle, response, answer }) {
   logWrong(s, puzzle, response, 'debug', answer);
   if (s.mode === 'rescue') {
@@ -326,6 +412,7 @@ export function fixBug(s, bugId) {
   const newItems = [];
   addItem(s, 'debugger', newItems, 'Debugger');
   refreshStatus(s);
+  if (s.mode === 'pvp') checkNoFit(s);
   return { points: BUG_FIX_POINTS, newItems, cells: b.cells };
 }
 
@@ -394,6 +481,7 @@ export function shuffle(s) {
   if (s.items.shuffle < 1) return false;
   s.items.shuffle--;
   refillTray(s);
+  if (s.mode === 'pvp') checkNoFit(s);
   return true;
 }
 
@@ -409,6 +497,9 @@ export function undo(s) {
   s.score = sn.score;
   s.placements = sn.placements;
   s.bugLines = sn.bugLines;
+  // pvp (docs/pvp.md rule 10): the queue as it was before the placement that created the lock, then the rows that
+  // arrived since (nothing is lost, nothing can be dodged by undoing)
+  if (s.mode === 'pvp') s.pending = sn.pending.concat(s.pending.slice(sn.pending.length));
   s.items.undo--;
   s.lock = null;
   s.snapshot = null;

@@ -34,10 +34,14 @@ LEVELS = rescue_engine.LEVELS
 PERIODS = ("day", "week", "all")
 RUN_RATE_LIMIT = 30          # new runs per client IP per window
 RACE_RATE_LIMIT = 10         # new races per client IP per window
+PVP_RATE_LIMIT = 60          # quick-match / private duel / bot match requests per client IP per window
 RATE_WINDOW_S = 3600
 MAX_TRACKED_CLIENTS = 20_000
 RUN_TTL_S = 3 * 3600         # a run must be finished within 3 hours of its start
 KEEP_FINISHED_S = 90 * 24 * 3600
+PVP_RATING_KEEP_S = 365 * 24 * 3600   # a device's PvP rating is forgotten after a year without a match
+PVP_START_RATING = 1000
+PVP_ELO_K = 32
 RACE_TTL_S = 7 * 24 * 3600
 MAX_RACE_RUNS = 30
 LEADERBOARD_SIZE = 50
@@ -97,13 +101,20 @@ _race_limiter = _Limiter(RACE_RATE_LIMIT, f"Bạn đã tạo {RACE_RATE_LIMIT} c
 
 
 _nickname_limiter = _Limiter(60, "Bạn đã xin quá nhiều tên trong một phút. Hãy thử lại sau.", 60)
+_pvp_limiter = _Limiter(PVP_RATE_LIMIT, f"Bạn đã tìm trận đối kháng {PVP_RATE_LIMIT} lần trong một giờ qua, "
+                                        "đó là mức tối đa. Hãy thử lại sau.")
 
 
 def take_nickname_slot(client: Optional[str]) -> None:
     _nickname_limiter.take(client)
 
 
+def take_pvp_slot(client: Optional[str]) -> None:
+    _pvp_limiter.take(client)
+
+
 def reset_rate_limits() -> None:
+    _pvp_limiter.reset()
     _nickname_limiter.reset()
     _run_limiter.reset()
     _race_limiter.reset()
@@ -153,6 +164,9 @@ CREATE TABLE IF NOT EXISTS served (
     req_topic TEXT, req_tier INTEGER, req_template TEXT, topic TEXT NOT NULL, template_id TEXT NOT NULL,
     hint INTEGER NOT NULL DEFAULT 0, correct INTEGER, PRIMARY KEY (run_id, seq));
 CREATE INDEX IF NOT EXISTS idx_served_puzzle ON served (run_id, puzzle_id);
+CREATE TABLE IF NOT EXISTS pvp_ratings (
+    device_hash TEXT PRIMARY KEY, rating INTEGER NOT NULL, games INTEGER NOT NULL DEFAULT 0,
+    wins INTEGER NOT NULL DEFAULT 0, losses INTEGER NOT NULL DEFAULT 0, updated_at REAL NOT NULL);
 """
 
 
@@ -177,6 +191,7 @@ def _purge(con: sqlite3.Connection) -> None:
     con.execute("DELETE FROM runs WHERE race IN (SELECT code FROM races WHERE expires_at < ?)", (now,))
     con.execute("DELETE FROM races WHERE expires_at < ?", (now,))
     con.execute("DELETE FROM served WHERE run_id NOT IN (SELECT id FROM runs)")
+    con.execute("DELETE FROM pvp_ratings WHERE updated_at < ?", (now - PVP_RATING_KEEP_S,))
 
 
 def _device_hash(device_id: str) -> str:
@@ -501,3 +516,47 @@ def leaderboard(level: str, period: str, device_id: Optional[str] = None) -> dic
     entries = [{"rank": i, "nickname": r["nickname"], "score": r["score"], "locks": r["locks"],
                 "at": int(r["finished_at"])} for i, r in enumerate(rows, 1)]
     return {"level": level, "period": period, "entries": entries, "you": you}
+
+
+# --------------------------------------------------------------------------- PvP rating (Elo, docs/pvp.md section 6)
+
+
+def pvp_rating(device_hash: Optional[str]) -> int:
+    """The Elo rating of a device (1000 until its first rated match). Never raises."""
+    if not device_hash:
+        return PVP_START_RATING
+    try:
+        with closing(_connect()) as con:
+            row = con.execute("SELECT rating FROM pvp_ratings WHERE device_hash = ?", (device_hash,)).fetchone()
+        return row["rating"] if row else PVP_START_RATING
+    except Exception:  # noqa: BLE001 - a rating must never break a lobby
+        return PVP_START_RATING
+
+
+def pvp_apply_result(hash_a: str, hash_b: str, score_a: float) -> Optional[tuple[tuple[int, int], tuple[int, int]]]:
+    """Update both devices after a human-vs-human match (``score_a``: 1 win, 0.5 draw, 0 loss for A). Returns
+    ``((before_a, after_a), (before_b, after_b))``, or None when the rating database is unusable."""
+    try:
+        with closing(_connect()) as con, _db_lock:
+            ra = _rating_row(con, hash_a)
+            rb = _rating_row(con, hash_b)
+            exp_a = 1 / (1 + 10 ** ((rb - ra) / 400))
+            new_a = ra + round(PVP_ELO_K * (score_a - exp_a))
+            new_b = rb + round(PVP_ELO_K * ((1 - score_a) - (1 - exp_a)))
+            now = _now()
+            for h, before, after, won, lost in ((hash_a, ra, new_a, score_a == 1, score_a == 0),
+                                                (hash_b, rb, new_b, score_a == 0, score_a == 1)):
+                con.execute(
+                    "INSERT INTO pvp_ratings (device_hash, rating, games, wins, losses, updated_at) "
+                    "VALUES (?,?,1,?,?,?) ON CONFLICT(device_hash) DO UPDATE SET rating = excluded.rating, "
+                    "games = games + 1, wins = wins + excluded.wins, losses = losses + excluded.losses, "
+                    "updated_at = excluded.updated_at", (h, after, int(won), int(lost), now))
+            con.commit()
+        return (ra, new_a), (rb, new_b)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _rating_row(con: sqlite3.Connection, device_hash: str) -> int:
+    row = con.execute("SELECT rating FROM pvp_ratings WHERE device_hash = ?", (device_hash,)).fetchone()
+    return row["rating"] if row else PVP_START_RATING

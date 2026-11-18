@@ -226,6 +226,41 @@ export function sfx(name, opts = {}) {
       tone(c, t, 'triangle', hz(G5), 0.11, 0.2, 0.006);
       tone(c, t + 0.11, 'triangle', hz(C6), 0.11, 0.2, 0.006);
       break;
+    // ---- Đối kháng (1v1) ----
+    case 'send': // lines leave your board: a quick rising two-note whoosh
+      tone(c, t, 'triangle', hz(G5), 0.09, 0.2, 0.004, hz(C6));
+      tone(c, t + 0.07, 'triangle', hz(E6), 0.1, 0.16, 0.004);
+      haptic(12);
+      break;
+    case 'incoming': // lines are queued against you: low double knock
+      tone(c, t, 'square', 150, 0.08, 0.16, 0.004, 110);
+      tone(c, t + 0.1, 'square', 130, 0.1, 0.16, 0.004, 90);
+      haptic([20, 40, 20]);
+      break;
+    case 'land': // rows land from the bottom: a thud with a rumble
+      noiseBurst(c, t, 0.22, 0.6, 'lowpass', 800, 120);
+      tone(c, t, 'sine', 80, 0.2, 0.7, 0.002, 45);
+      haptic([30, 30, 50]);
+      break;
+    case 'win':
+      arpeggio(c, t, [C5, E5, G5, C6, E6], 0.24, 0);
+      tone(c, t + 0.3, 'triangle', hz(G6), 0.5, 0.16, 0.01);
+      haptic([15, 40, 15, 40, 30]);
+      break;
+    case 'lose':
+      tone(c, t, 'triangle', hz(G5), 0.2, 0.22, 0.01, hz(E5));
+      tone(c, t + 0.2, 'triangle', hz(E5), 0.22, 0.22, 0.01, hz(C5));
+      tone(c, t + 0.42, 'triangle', hz(C5), 0.4, 0.2, 0.01, hz(-14));
+      haptic(40);
+      break;
+    case 'tick':
+      tone(c, t, 'sine', hz(G5), 0.1, 0.22, 0.004);
+      break;
+    case 'go':
+      tone(c, t, 'triangle', hz(C6), 0.28, 0.26, 0.004);
+      tone(c, t, 'triangle', hz(G6), 0.28, 0.14, 0.004);
+      haptic(15);
+      break;
     default:
   }
 }

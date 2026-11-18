@@ -1,6 +1,8 @@
 // Mock of the real API (docs/api-contract.md). Used ONLY with ?mock=1.
 // Answers live here and are checked client-side for the mock only; the real client never sees them.
 
+import { pvpServed, pvpAnswered, pvpHinted } from './mock-pvp.js';
+
 const T = {
   variables: 'var',
   conditions: 'cond',
@@ -183,6 +185,12 @@ function publicCopy(entry, level) {
 }
 
 export async function nextPuzzle(req) {
+  const puzzle = await nextPuzzleBase(req);
+  if (req.match_id) pvpServed(req, puzzle);
+  return puzzle;
+}
+
+async function nextPuzzleBase(req) {
   await sleep(150);
   const ex = new Set(req.exclude_ids || []);
   const exT = new Set(req.exclude_templates || []);
@@ -241,6 +249,12 @@ function check(entry, body) {
 }
 
 export async function submitAnswer(id, body) {
+  const result = await submitAnswerBase(id, body);
+  if (body.match_id) pvpAnswered(id, body, result);
+  return result;
+}
+
+async function submitAnswerBase(id, body) {
   await sleep(200);
   const entry = byId(id);
   if (!entry) throw new Error('Không tìm thấy câu đố');
@@ -258,10 +272,11 @@ export async function submitAnswer(id, body) {
   };
 }
 
-export async function getHint(id, level) {
+export async function getHint(id, level, match = null) {
   await sleep(100);
   const entry = byId(id);
   if (!entry) throw new Error('Không tìm thấy câu đố');
+  if (match) pvpHinted(match, Number(level));
   return { level: Number(level), text: entry.priv.hints[Number(level) - 1], source: 'canned' };
 }
 
@@ -332,3 +347,4 @@ export async function getCustomSet(id, level) {
 export { rowsLevels, rowsLevel, rowsRun, rowsHint } from './mock-rows.js';
 export { createRoom, getRoom, joinRoom, roomSummary, closeRoom, deleteRoom, kickPlayer } from './mock-rooms.js';
 export { createRun, finishRun, leaderboard, createRace, getRace, fetchNickname } from './mock-ranked.js';
+export { pvpQueue, pvpLeaveQueue, pvpPrivate, pvpJoinPrivate, pvpBot, MockPvpSocket } from './mock-pvp.js';

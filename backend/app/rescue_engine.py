@@ -15,6 +15,10 @@ Everything that consumes the RNG is mirrored in the same order as the JavaScript
 ``backend/tests/test_rescue_engine.py`` runs ``tests/js_harness/play.mjs`` (the real game.js) and
 checks that this module reaches the same final state for hundreds of games. If a rule changes in the
 JavaScript, change it here too; that test fails otherwise.
+
+``mode="pvp"`` adds the Code Rescue "Đối kháng" rules of docs/pvp.md section 2 (incoming bug lines that
+land after a placement, cancelling, no crash, no fit = loss). The live matches (``app/pvp.py``) run two such
+games; ``replay_pvp`` replays an event list for the golden test (``play.mjs pvp``).
 """
 from __future__ import annotations
 
@@ -27,6 +31,8 @@ LEVELS = ("beginner", "intermediate", "advanced")
 BASE_POINTS = (0, 100, 250, 450, 700)  # index = number of lines (4 = 4+)
 HINT_FACTOR = (1, 0.9, 0.75, 0.5)
 BUG_FIX_POINTS = 150
+PVP_SEND = (0, 1, 2, 3, 4)  # lines sent by a correct lock answer, index = min(lock count, 4)
+MODES = ("rescue", "pvp")
 ITEM_CAP = 3
 MAX_MOVES = 3000
 _M32 = 0xFFFFFFFF
@@ -107,10 +113,11 @@ def _pick_weighted(items: list, weight_of: Callable[[Any], float], rng: Callable
 
 
 class Piece:
-    __slots__ = ("shape", "cells", "topic")
+    __slots__ = ("shape", "cells", "topic", "id")
 
     def __init__(self, shape: str, cells: tuple[tuple[int, int], ...], topic: str):
         self.shape, self.cells, self.topic = shape, cells, topic
+        self.id = ""  # only set by RescueGame.refill_tray (the live matches send it to the browser)
 
 
 def make_piece(rng: Callable[[], float]) -> Piece:
@@ -137,9 +144,15 @@ def streak_factor(n: int) -> float:
 
 
 class RescueGame:
-    """One Code Rescue game. Method names follow game.js; phases: play | locked | over."""
+    """One Code Rescue game. Method names follow game.js; phases: play | locked | over.
 
-    def __init__(self, seed: int, level: str):
+    ``mode="pvp"`` switches to the rules of docs/pvp.md section 2 (same switches as ``mode: 'pvp'`` in game.js).
+    """
+
+    def __init__(self, seed: int, level: str, mode: str = "rescue"):
+        self.mode = mode
+        self.pvp = mode == "pvp"
+        self.piece_n = 0
         self.level = level
         self.rng = mulberry32(seed)
         self.grid: list[list[Optional[dict]]] = [[None] * SIZE for _ in range(SIZE)]
@@ -162,11 +175,20 @@ class RescueGame:
         self.snapshot: Optional[dict] = None
         self.end_reason: Optional[str] = None
         self.stuck = False  # no piece fits and the Last Commit choice is pending
+        # pvp only: incoming rows waiting to land ({"topic", "template_id"}, oldest first) and the counters
+        self.pending: list[dict] = []
+        self.sent = 0
+        self.received = 0
+        self.landed_total = 0
+        self.cancelled_total = 0
         self.refill_tray()
 
     # ---- pieces and placing ----
     def refill_tray(self) -> None:
         self.tray = [make_piece(self.rng) for _ in range(3)]
+        for p in self.tray:
+            self.piece_n += 1
+            p.id = f"p{self.piece_n}"
 
     def can_place(self, piece: Piece, r: int, c: int) -> bool:
         for dr, dc in piece.cells:
@@ -187,10 +209,14 @@ class RescueGame:
             "tray": list(self.tray),
             "score": self.score,
             "bug_lines": [dict(b) for b in self.bug_lines],
+            "pending": [dict(e) for e in self.pending],
         }
 
     def place(self, idx: int, r: int, c: int) -> Optional[dict]:
-        """``Game.place``: None when the piece does not fit; else ``{"lock": ...}`` (lock may be None)."""
+        """``Game.place``: None when the piece does not fit; else ``{"lock": ...}`` (lock may be None).
+
+        pvp: also ``"landed"`` (rows that landed, 0 if none); a placement that makes no lock lands the pending rows
+        and then checks for a top-out and for no fit."""
         piece = self.tray[idx] if 0 <= idx < len(self.tray) else None
         if piece is None or not self.can_place(piece, r, c):
             return None
@@ -202,7 +228,14 @@ class RescueGame:
         if all(p is None for p in self.tray):
             self.refill_tray()
         self.lock = self.find_lock()
-        return {"lock": self.lock}
+        if not self.pvp:
+            return {"lock": self.lock}
+        landed = 0
+        if self.lock is None:
+            landed = self.land_pending()
+            if self.phase != "over":
+                self.check_no_fit()
+        return {"lock": self.lock, "landed": landed}
 
     def find_lock(self) -> Optional[dict]:
         rows = [r for r in range(SIZE) if all(x and not x["bug"] for x in self.grid[r])]
@@ -229,6 +262,8 @@ class RescueGame:
             n[t] = n.get(t, 0) + 1
         top = max(n.values())
         tied = [t for t in n if n[t] == top]
+        if self.pvp:  # no RNG draw: both players keep drawing the same pieces (first tied topic in row-major order)
+            return next(self.grid[r][c]["topic"] for r, c in cells if n[self.grid[r][c]["topic"]] == top)
         return tied[math.floor(self.rng() * len(tied))]  # one draw even when nothing is tied
 
     # ---- points ----
@@ -264,6 +299,14 @@ class RescueGame:
         if lines >= 4:
             self._add_item("undo")
         self.best_streak = max(self.best_streak, self.streak)
+        if self.pvp:
+            send = PVP_SEND[min(lines, 4)] + (1 if r["clean"] and self.streak >= 3 else 0)
+            cancelled = min(send, len(self.pending))
+            del self.pending[:cancelled]
+            self.cancelled_total += cancelled
+            send -= cancelled
+            self.sent += send
+            r = {**r, "send": send, "cancelled": cancelled}
         return r
 
     def finish_lock(self) -> None:
@@ -274,10 +317,14 @@ class RescueGame:
         self.snapshot = None
         self.phase = "play"
         self.locks_cleared += 1
+        if self.pvp:
+            self.check_no_fit()
 
     def refresh_status(self) -> None:
         if self.end_reason == "crash":
             self.status = "crash"
+        elif self.pvp:
+            self.status = "warn" if self.bug_lines else "ok"
         else:
             self.status = "warn" if self.mistakes > 0 else "ok"
 
@@ -290,7 +337,7 @@ class RescueGame:
     def apply_wrong(self, topic: str, template_id: str) -> str:
         """Wrong answer to a lock puzzle. Returns ``'bug'`` or ``'crash'``."""
         self._log_wrong(topic, template_id, "rescue")
-        if self.mistakes >= 1:
+        if not self.pvp and self.mistakes >= 1:
             self.end_reason = "crash"
             self.phase = "over"
             self.refresh_status()
@@ -302,15 +349,20 @@ class RescueGame:
             self.grid[r][c]["bug"] = True
             self.grid[r][c]["bug_id"] = bug_id
         self.bug_lines.append({"id": bug_id, "cells": cells, "topic": topic, "template_id": template_id})
-        self.mistakes = 1
+        if not self.pvp:
+            self.mistakes = 1
         self.lock = None
         self.snapshot = None
         self.phase = "play"
         self.refresh_status()
+        if self.pvp:
+            self.check_no_fit()
         return "bug"
 
     def apply_debug_wrong(self, topic: str, template_id: str) -> str:
         self._log_wrong(topic, template_id, "debug")
+        if self.pvp:
+            return "stay"  # the bug line stays, no crash
         self.end_reason = "crash"
         self.phase = "over"
         self.refresh_status()
@@ -328,6 +380,8 @@ class RescueGame:
         self.mistakes = 0
         self._add_item("debugger")
         self.refresh_status()
+        if self.pvp:
+            self.check_no_fit()
         return True
 
     # ---- Last Commit ----
@@ -385,6 +439,8 @@ class RescueGame:
             return False
         self.items["shuffle"] -= 1
         self.refill_tray()
+        if self.pvp:
+            self.check_no_fit()
         return True
 
     def can_undo(self) -> bool:
@@ -398,6 +454,8 @@ class RescueGame:
         self.tray = sn["tray"]
         self.score = sn["score"]
         self.bug_lines = sn["bug_lines"]
+        if self.pvp:  # the queue before the placement that made the lock, then the rows that arrived since
+            self.pending = sn["pending"] + self.pending[len(sn["pending"]):]
         self.items["undo"] -= 1
         self.lock = None
         self.snapshot = None
@@ -421,6 +479,100 @@ class RescueGame:
                 self.end_game("nofit")
             else:
                 self.stuck = True
+
+    # ---- pvp (docs/pvp.md section 2) ----
+    def queue_incoming(self, entries: list[dict]) -> int:
+        """``Game.queueIncoming``: append ``{"topic", "template_id"}`` rows to the pending queue."""
+        if not self.pvp or self.phase == "over":
+            return 0
+        for e in entries:
+            self.pending.append({"topic": e["topic"], "template_id": e.get("template_id")})
+        self.received += len(entries)
+        return len(entries)
+
+    def land_pending(self) -> int:
+        """``Game.landPending``: every pending row lands at once. Returns the number of rows (also when that tops
+        the player out: the grid is then left as it was and ``end_reason`` is ``topped_out``)."""
+        k = len(self.pending)
+        if not k:
+            return 0
+        rows, self.pending = self.pending, []
+        self.landed_total += k
+        if k > SIZE or any(self.grid[r][c] for r in range(k) for c in range(SIZE)):
+            self.phase = "over"
+            self.end_reason = "topped_out"
+            self.refresh_status()
+            return k
+        for r in range(SIZE - k):
+            self.grid[r] = self.grid[r + k]
+        for b in self.bug_lines:
+            b["cells"] = [(r - k, c) for r, c in b["cells"]]
+        for i, e in enumerate(rows):
+            row = SIZE - k + i  # oldest row on top: it was pushed up by the newer ones
+            bug_id = self.next_bug_id
+            self.next_bug_id += 1
+            self.grid[row] = [{"topic": e["topic"], "bug": True, "bug_id": bug_id} for _ in range(SIZE)]
+            self.bug_lines.append({"id": bug_id, "cells": [(row, c) for c in range(SIZE)], "topic": e["topic"],
+                                   "template_id": e["template_id"]})
+        self.snapshot = None
+        self.refresh_status()
+        return k
+
+    def check_no_fit(self) -> bool:
+        """``Game.checkNoFit``: no tray piece fits anywhere: the game is lost (``end_reason`` ``nofit``)."""
+        if self.pvp and self.phase != "over" and not self.any_fit():
+            self.phase = "over"
+            self.end_reason = "nofit"
+            self.refresh_status()
+            return True
+        return False
+
+    def pvp_open_lock(self) -> bool:
+        """The first puzzle of a lock is served: a Debugger is spent automatically when owned (as ``runLock`` in
+        main.js does). Returns whether one was spent."""
+        use = self.items["debugger"] > 0
+        if use:
+            self.items["debugger"] -= 1
+        return use
+
+    def pvp_resolve_lock(self, debugger: bool, parts: list[dict]) -> dict:
+        """Resolve the current lock from the checked puzzle results (``parts``: ``correct, hint, topic,
+        template_id``, in serving order; the first wrong one ends the list). A boss lock needs 2 parts unless the
+        first is wrong. Returns ``{"result": "ok"|"bug", "send", "cancelled", "topic", "template_id"}``."""
+        lk = self.lock
+        free = self.free_hint_level(debugger)
+        need = 2 if lk["boss"] else 1
+        max_hint = 0
+        failed: Optional[dict] = None
+        used = 0
+        for part in parts:
+            used += 1
+            max_hint = max(max_hint, min(3, max(0, int(part.get("hint") or 0))))
+            if not part["correct"]:
+                failed = part
+                break
+        if (failed is None and used != need) or used != len(parts):
+            raise Rejected("bad_lock")
+        if failed is None:
+            r = self.apply_correct(self.base_for(lk), max_hint, free, lk["count"])
+            last = parts[-1]
+            self.finish_lock()
+            return {"result": "ok", "send": r["send"], "cancelled": r["cancelled"], "topic": last["topic"],
+                    "template_id": last["template_id"]}
+        self.apply_wrong(failed["topic"], failed["template_id"])
+        return {"result": "bug", "send": 0, "cancelled": 0, "topic": failed["topic"],
+                "template_id": failed["template_id"]}
+
+    def pvp_summary(self) -> dict:
+        out = self.summary()
+        out.update({
+            "phase": self.phase, "pending": [[p["topic"], p["template_id"]] for p in self.pending],
+            "sent": self.sent, "received": self.received, "landed": self.landed_total,
+            "cancelled": self.cancelled_total,
+            "bug_lines": [{"id": b["id"], "cells": [list(x) for x in b["cells"]], "topic": b["topic"],
+                           "template": b["template_id"]} for b in self.bug_lines],
+        })
+        return out
 
     # ---- results ----
     def grid_rows(self) -> list[str]:
@@ -640,3 +792,103 @@ def replay(seed: int, level: str, moves: Any, records: Iterable[dict]) -> dict:
     if not ended and g.phase != "over":
         raise Rejected("incomplete")
     return g.summary()
+
+
+# --------------------------------------------------------------------------- pvp replay (golden test)
+
+
+def replay_pvp(seed: int, level: str, events: Any) -> dict:
+    """Replay a list of pvp events and return ``RescueGame.pvp_summary()`` (``Rejected`` when illegal).
+
+    The events are what the live match server feeds one player's game, in the order they happened:
+
+    * ``{"t":"place","i","r","c"}``, ``{"t":"undo"}``, ``{"t":"bomb","r","c"}``, ``{"t":"shuffle"}``
+    * ``{"t":"incoming","entries":[{"topic","templateId"}, ...]}``: rows queued by the opponent / overtime
+    * ``{"t":"lock","debugger":bool,"parts":[{"correct","hint","topic","template"}, ...]}``: the pending lock
+      was resolved (a Debugger must be flagged exactly when one is owned, as in Rescue)
+    * ``{"t":"bugfix","bug":id,"correct":bool}``: a bug line was tapped and its Debug puzzle answered
+    * ``{"t":"end","reason":"resign"|"quit"}``: the player left (the game may also end by itself:
+      ``topped_out`` or ``nofit``)
+    * ``{"t":"grant","items":{"undo":2,...}}``: test fixture only (items are slow to earn); never sent by a server
+    """
+    if level not in LEVELS:
+        raise Rejected("bad_level")
+    if not isinstance(events, list) or len(events) > 20 * MAX_MOVES:
+        raise Rejected("too_many_moves")
+    g = RescueGame(seed, level, "pvp")
+    for m in events:
+        if not isinstance(m, dict):
+            raise Rejected("bad_move")
+        t = m.get("t")
+        if g.phase == "over":
+            raise Rejected("moves_after_end")
+        if t == "incoming":
+            entries = m.get("entries")
+            if not isinstance(entries, list) or not entries:
+                raise Rejected("bad_move")
+            g.queue_incoming([{"topic": e["topic"], "template_id": e.get("templateId")} for e in entries])
+        elif t == "place":
+            idx, r, c = _int(m, "i", 0, 2), _int(m, "r", 0, SIZE - 1), _int(m, "c", 0, SIZE - 1)
+            if g.phase != "play":
+                raise Rejected("illegal_phase")
+            res = g.place(idx, r, c)
+            if res is None:
+                raise Rejected("illegal_place")
+            if res["lock"]:
+                g.phase = "locked"
+        elif t == "lock":
+            if g.phase != "locked" or not g.lock:
+                raise Rejected("no_lock")
+            flag = m.get("debugger", False)
+            use = g.items["debugger"] > 0
+            if type(flag) is not bool or flag != use:
+                raise Rejected("debugger_mismatch")
+            if g.pvp_open_lock() != use:  # pragma: no cover - same condition
+                raise Rejected("debugger_mismatch")
+            parts = m.get("parts")
+            if not isinstance(parts, list):
+                raise Rejected("bad_move")
+            g.pvp_resolve_lock(use, [{"correct": bool(p["correct"]), "hint": p.get("hint", 0), "topic": p["topic"],
+                                      "template_id": p.get("template")} for p in parts])
+        elif t == "undo":
+            if g.phase != "locked":
+                raise Rejected("illegal_phase")
+            if not g.undo():
+                raise Rejected("item_not_owned")
+        elif t == "bomb":
+            r, c = _int(m, "r", 0, SIZE - 1), _int(m, "c", 0, SIZE - 1)
+            if g.phase != "play":
+                raise Rejected("illegal_phase")
+            if g.bomb(r, c) is None:
+                raise Rejected("item_not_owned")
+        elif t == "shuffle":
+            if g.phase != "play":
+                raise Rejected("illegal_phase")
+            if not g.shuffle():
+                raise Rejected("item_not_owned")
+        elif t == "bugfix":
+            bug = _int(m, "bug", 1, 1_000_000)
+            if g.phase != "play":
+                raise Rejected("illegal_phase")
+            bl = next((b for b in g.bug_lines if b["id"] == bug), None)
+            if bl is None:
+                raise Rejected("bad_bug")
+            if m.get("correct"):
+                g.fix_bug(bug)
+            else:
+                g.apply_debug_wrong(bl["topic"], bl["template_id"])
+        elif t == "grant":  # test fixture only: hand over items (the match server never does this)
+            items = m.get("items")
+            if not isinstance(items, dict):
+                raise Rejected("bad_move")
+            for name, n in items.items():
+                if name not in g.items or type(n) is not int or not 0 <= n <= ITEM_CAP:
+                    raise Rejected("bad_move")
+                g.items[name] = n
+        elif t == "end":
+            if m.get("reason") not in ("resign", "quit"):
+                raise Rejected("bad_end")
+            g.end_game(m["reason"])
+        else:
+            raise Rejected("bad_move")
+    return g.pvp_summary()

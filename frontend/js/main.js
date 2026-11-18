@@ -23,6 +23,7 @@ import * as RunLog from './runlog.js';
 import * as Ranked from './ranked.js';
 import { initLeaderboard, openLeaderboard } from './leaderboard.js';
 import { initRace, openRace } from './race.js';
+import * as Pvp from './pvp-screen.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -48,8 +49,8 @@ const LEVEL_NAME = { beginner: 'Beginner', intermediate: 'Intermediate', advance
 function show(id) {
   setScreenTitle(id);
   for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
-  if (['screen-start', 'screen-end'].includes(id)) showStrip(false);
-  $('strip').classList.toggle('strip-plain', ['screen-practice', 'screen-skills', 'screen-custom', 'screen-leaderboard', 'screen-race-new', 'screen-race'].includes(id));
+  if (['screen-start', 'screen-end', 'screen-pvp-end'].includes(id)) showStrip(false);
+  $('strip').classList.toggle('strip-plain', ['screen-practice', 'screen-skills', 'screen-custom', 'screen-leaderboard', 'screen-race-new', 'screen-race', 'screen-pvp'].includes(id));
   Rooms.syncChip(id);
   window.scrollTo(0, 0);
 }
@@ -67,6 +68,7 @@ function goHome() {
   G = null;
   Ranked.detach();
   Rooms.leaveAll();
+  Pvp.leaveAll();
   show('screen-start');
   const hs = store.getHighScore();
   $('hs-line').textContent = hs ? `Điểm cao nhất (Rescue): ${hs}` : '';
@@ -753,7 +755,11 @@ async function boot() {
   Ranked.initRanked({ openBoard: (level) => openLeaderboard({ level }) });
   initLeaderboard({ show, home: goHome, level: () => prefs.level, playRun });
   initRace({ show, home: goHome, level: () => prefs.level, playRun });
+  Pvp.initPvp({ show, home: goHome, level: () => prefs.level, getBoard: () => { ensureBoard(); return board; } });
   Rooms.initRooms({ show, home: goHome, level: () => prefs.level, play: (level) => startGame({ mode: 'rescue', level: LEVEL_NAME[level] ? level : prefs.level }) });
+  if (Pvp.resumeIfAny()) return;
+  const duelCode = params.get('duel');
+  if (duelCode) return Pvp.openDuel(duelCode);
   const teach = params.get('teach');
   if (teach) return Rooms.openTeach(teach);
   const roomCode = params.get('room');

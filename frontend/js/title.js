@@ -14,6 +14,8 @@ const TITLES = {
   'screen-leaderboard': 'Bảng xếp hạng — Syntax Stack',
   'screen-race-new': 'Đấu tốc độ — Syntax Stack',
   'screen-race': 'Đấu tốc độ — Syntax Stack',
+  'screen-pvp': 'Đối kháng 1v1 — Syntax Stack',
+  'screen-pvp-end': 'Kết quả đối kháng — Syntax Stack',
 };
 
 export function setScreenTitle(id) {

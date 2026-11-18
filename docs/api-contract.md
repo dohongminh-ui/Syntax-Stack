@@ -398,5 +398,31 @@ Extended existing endpoints (all fields optional; invalid values are ignored and
 
 ---
 
+## Real-time 1v1 "Đối kháng" (`/api/pvp/*`, full contract in [`pvp.md`](pvp.md))
+
+Nicknames must be generated names and `device_id` 32 hex chars (422 otherwise, as for `/api/runs`); 60 requests
+per hour per client IP across the four POST endpoints (429); 503 when 200 matches are live.
+
+- `POST /api/pvp/queue` `{level, nickname, device_id}` → `{ticket}`. Joins the quick-match queue of that level.
+- `DELETE /api/pvp/queue/{ticket}` → 204; 404 unknown ticket; 409 match already started.
+- `POST /api/pvp/private` `{level, nickname, device_id}` → `{code, ticket, url}` (`url` = `<public base>/?duel=<code>`).
+- `POST /api/pvp/private/{code}/join` `{nickname, device_id}` → `{ticket}`. 404 unknown, 409 full, 410 expired.
+- `POST /api/pvp/bot` `{level, nickname, device_id}` → `{ticket}`. A match against the built-in bot (no rating).
+- `GET /api/pvp/ws?ticket=<ticket>` (WebSocket). JSON messages `{"t": ...}`; client → server `ready, place, bomb,
+  shuffle, undo, resign, ping, rematch`; server → client `lobby, start, state, opponent, sent, incoming, landed,
+  opponent_status, end, rematch_status, error, pong`. Same-origin only in the page's CSP (`connect-src` names
+  `wss://<host>` explicitly).
+
+Puzzle endpoints inside a match (fields from the `start` message):
+
+- `POST /api/puzzle/next`: extra optional body fields `match_id`, `match_token`, `bug` (id of the tapped bug line,
+  for `kind: "debug"`). With a valid pair the server ignores `topic`, `tier`, `level` and the exclude lists and picks
+  the puzzle for the player's current lock (or for bug line `bug`); 409 when there is nothing to solve.
+- `POST /api/puzzle/{id}/answer`: extra optional `match_id`, `match_token`. The response is unchanged; with a valid
+  pair and a puzzle served to the player for their current lock / bug line the outcome is applied to their game and
+  pushed on the socket.
+- `GET /api/puzzle/{id}/hint?level=n`: extra optional query `match_id`, `match_token` (records the hint level).
+Invalid or missing pairs are ignored: the endpoints then behave as before.
+
 ## Errors
 `404 { "detail": "..." }` for unknown puzzle id or no puzzle matching the filters (custom sets: see the custom section for 422 and 429; rooms: see the live classroom section for 403, 404, 409, 410 and 429), `422` for a malformed body (including lists over their caps: `exclude_ids` 1000, `exclude_templates` 50, `order` 30, `rows`/`baseline` 30, `tokens` per row 30; ids up to 40 characters, `template_id` 80), `413 { "detail": "Yêu cầu quá lớn." }` for a request body over 64 KB.

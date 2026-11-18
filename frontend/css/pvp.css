@@ -1,0 +1,164 @@
+/* Đối kháng (real-time 1v1): entry screen, live match (opponent panel, pending meter, overlays), result. Tokens and keycaps come from base.css. */
+
+/* ---------------- entry / search / waiting room ---------------- */
+.pvp-card { gap: 18px; }
+.pv-pane { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.pv-id { display: flex; align-items: center; justify-content: space-between; gap: 6px 14px; flex-wrap: wrap; padding: 12px 14px; background: var(--case); border-radius: var(--r-panel); box-shadow: inset 0 1px 0 var(--case-hi); }
+.pv-id-main { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
+.pv-name { font: 800 20px/1.2 var(--f-display); letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.pv-name.is-none { font: 500 14px/1.4 var(--f-ui); color: var(--muted); }
+.pv-options { gap: 12px; }
+.pv-join { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+.pv-join-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
+.pv-join .room-code-in { width: 150px; }
+.pv-big { font: 800 24px/1.2 var(--f-display); letter-spacing: -0.02em; }
+.pv-time { font: 700 40px/1 var(--f-mono); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+#pv-search .end-actions .key { min-width: 0; flex: 1 1 200px; }
+
+/* ---------------- live match: layout ---------------- */
+.game-screen.is-pvp .board-case { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: stretch; }
+.game-screen.is-pvp .pvp-meter { grid-column: 1; grid-row: 1; }
+.game-screen.is-pvp .board { grid-column: 2; grid-row: 1; --u: calc((100cqw - 30px - 7 * var(--gap)) / 8); }
+.game-screen.is-pvp .pvp-opp { grid-column: 1 / -1; }
+.game-screen.is-away .board::before { opacity: 0.55; }
+.game-screen.is-pvp .board-hint { display: none; }
+@media (min-width: 720px) and (max-width: 1179px) { .game-screen.is-pvp .pvp-opp { max-width: 600px; } }
+@media (min-width: 1024px) and (max-width: 1179px) {
+  .game-screen.is-pvp .pvp-opp { grid-column: 1; grid-row: 1; }
+  .game-screen.is-pvp .board-col { grid-column: 1; grid-row: 2; }
+  .game-screen.is-pvp .side { grid-column: 2; grid-row: 1 / span 2; }
+}
+@media (min-width: 1180px) {
+  .game-screen.is-pvp .game { width: min(100% - 2 * var(--gutter), 1200px); grid-template-columns: 232px minmax(0, 560px) 340px; gap: 24px; }
+  .game-screen.is-pvp .pvp-opp { grid-column: 1; grid-row: 1; flex-direction: column; align-self: start; position: sticky; top: calc(var(--strip-h) + 16px); }
+  .game-screen.is-pvp .board-col { grid-column: 2; grid-row: 1; }
+  .game-screen.is-pvp .side { grid-column: 3; grid-row: 1; }
+}
+
+/* ---------------- pending meter ---------------- */
+.pvp-meter { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.pm-track {
+  flex: 1; display: flex; flex-direction: column-reverse; gap: 3px; padding: 3px;
+  background: var(--plate); border-radius: 8px; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+.pm-seg { flex: 1 1 0; min-height: 0; border-radius: 3px; background: rgba(236, 232, 223, 0.05); }
+.pm-seg.on { background: var(--c); box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+.pm-seg.out { background: var(--c); animation: pm-out 420ms var(--ease-out) forwards; }
+@keyframes pm-out { 0% { filter: brightness(1.9); opacity: 1; } 100% { filter: brightness(1); opacity: 0; } }
+.pm-n {
+  position: absolute; left: 50%; top: -9px; translate: -50% 0; z-index: 1;
+  min-width: 20px; padding: 3px 5px; border-radius: 4px; text-align: center;
+  background: var(--mustard); color: #33240a; font: 700 11px/1 var(--f-mono); font-variant-numeric: tabular-nums;
+}
+.pvp-meter.danger .pm-track { box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 0 0 2px var(--crash); animation: pm-danger 1s ease-in-out infinite alternate; }
+.pvp-meter.danger .pm-n { background: var(--crash); color: #2a0a0a; }
+.pv-rules { margin: 4px 0 14px; padding: 12px 14px 12px 30px; border-radius: 10px; background: var(--plate); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.45); display: grid; gap: 6px; color: var(--muted); font-size: 14px; line-height: 1.45; text-align: left; }
+.pv-rules li { list-style: disc; }
+.pv-rules b { color: var(--text); font-weight: 600; }
+/* board danger zone: top rows that pending lines will push off (no gravity, so make "the top" visible) */
+.board .cell.pvp-danger { box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 93, 93, 0.45); background-color: color-mix(in srgb, var(--crash) 10%, var(--plate)); }
+.board .cell.pvp-doomed > .key { outline: 2px solid var(--crash); outline-offset: -2px; animation: pvp-doomed 0.9s ease-in-out infinite alternate; }
+@keyframes pvp-doomed { from { filter: none; } to { filter: brightness(0.75) saturate(0.7); } }
+@media (prefers-reduced-motion: reduce) { .board .cell.pvp-doomed > .key { animation: none; } }
+@keyframes pm-danger { from { box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(255, 93, 93, 0.45); } to { box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 0 10px 2px var(--crash); } }
+.pvp-meter.pm-hit .pm-track { animation: pm-hit 700ms var(--ease-out); }
+@keyframes pm-hit { 0%, 40% { box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 0 14px 3px var(--crash); } 100% { box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6); } }
+.pvp-meter.pm-cancel .pm-track, .pvp-meter.pm-land .pm-track { animation: pm-cancel 600ms var(--ease-out); }
+@keyframes pm-cancel { 0%, 35% { box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 0 14px 3px var(--ok); } 100% { box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6); } }
+
+/* ---------------- opponent panel ---------------- */
+.pvp-opp {
+  display: flex; align-items: stretch; gap: 12px; min-width: 0; padding: 10px;
+  background: var(--case); border-radius: var(--r-case);
+  box-shadow: inset 0 1px 0 var(--case-hi), 0 30px 60px -28px rgba(0, 0, 0, 0.6);
+}
+.po-board { position: relative; flex: none; width: 112px; height: 112px; align-self: flex-start; }
+.po-mini {
+  width: 100%; height: 100%; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(8, minmax(0, 1fr)); gap: 2px; padding: 3px;
+  background: var(--plate); border-radius: 8px; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6); transition: opacity 200ms var(--ease-out);
+}
+.mc { border-radius: 2px; background: rgba(236, 232, 223, 0.05); }
+.mc[data-k='variables'] { background: var(--cap-variables); }
+.mc[data-k='conditions'] { background: var(--cap-conditions); }
+.mc[data-k='loops'] { background: var(--cap-loops); }
+.mc[data-k='functions'] { background: var(--cap-functions); }
+.mc[data-k='bug'] { background: #2e2729; box-shadow: inset 0 0 0 1px var(--crash); }
+.po-board.is-solving .po-mini { opacity: 0.55; }
+.po-board.is-away .po-mini { opacity: 0.35; }
+.po-ovl { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 2px; text-align: center; border-radius: 8px; background: rgba(15, 16, 19, 0.82); }
+.po-ovl-n { font: 800 24px/1 var(--f-mono); color: var(--warn); font-variant-numeric: tabular-nums; }
+.po-ovl-t { font: 600 10px/1.25 var(--f-ui); color: var(--text); padding: 0 6px; }
+.po-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 6px; }
+.po-name { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; min-width: 0; }
+.po-nick { min-width: 0; font: 700 16px/1.2 var(--f-ui); overflow-wrap: anywhere; }
+.po-tag { flex: none; padding: 3px 5px; border-radius: 4px; font: 700 10px/1 var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.po-bot { background: var(--cap-functions); color: #0c2633; }
+.po-mock { border: 1px dashed var(--mustard); color: var(--mustard); }
+.po-rating { flex: none; padding: 3px 5px; border-radius: 4px; background: var(--plate); box-shadow: inset 0 0 0 1px var(--line-2); color: var(--mustard); font: 700 11px/1 var(--f-mono); }
+.po-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.po-stat { display: flex; flex-direction: column; gap: 3px; }
+.po-stat i { font: 700 9px/1 var(--f-mono); font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.po-stat b { font: 700 18px/1 var(--f-mono); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.po-stat.is-hot b { color: #ff8f8f; }
+.po-stat.is-ot b { color: var(--warn); }
+.po-state { display: flex; align-items: center; gap: 8px; font: 500 12px/1.2 var(--f-mono); color: var(--muted); }
+.po-state .led { flex: none; width: 8px; height: 8px; }
+.po-ot { display: flex; align-items: flex-start; gap: 6px; min-height: 30px; font: 600 11px/1.35 var(--f-ui); color: var(--warn); }
+.po-ot .ico { flex: none; margin-top: 1px; }
+.po-ot.is-off { visibility: hidden; }
+@media (min-width: 720px) { .po-board { width: 128px; height: 128px; } .po-nick { font-size: 17px; } }
+@media (min-width: 1180px) {
+  .pvp-opp { flex-direction: column; gap: 12px; }
+  .po-board { width: 100%; height: auto; aspect-ratio: 1; align-self: stretch; }
+  .po-ovl-n { font-size: 34px; }
+  .po-ovl-t { font-size: 12px; }
+  .po-ot { min-height: 46px; font-size: 12px; }
+}
+
+/* ---------------- overlay on your board: countdown / waiting / reconnecting ---------------- */
+.pvp-ovl {
+  position: absolute; inset: 0; z-index: 9; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  padding: 16px; text-align: center; border-radius: var(--r-case); background: rgba(15, 16, 19, 0.8);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+}
+.pvp-vs { font: 700 13px/1.4 var(--f-mono); letter-spacing: 0.04em; color: var(--muted); overflow-wrap: anywhere; white-space: pre-wrap; }
+.pvp-wait { font: 700 18px/1.3 var(--f-ui); }
+.pvp-count-hint { max-width: 28ch; font-size: 13px; color: var(--muted); }
+.pvp-count-key { width: 96px; height: 100px; --u: 96px; }
+.pvp-count-key .legend { position: static; margin: auto; font: 800 56px/1 var(--f-display); letter-spacing: -0.02em; }
+.pvp-count-key.is-go .legend { font-size: 40px; }
+.pvp-ovl .led { width: 10px; height: 10px; }
+
+/* ---------------- result ---------------- */
+.pvp-end-card { width: min(100%, 600px); }
+.pvp-end-card .end-badge { flex-wrap: wrap; }
+.pvp-end-card[data-outcome='win'] h1 { color: var(--ok); }
+.pvp-end-card[data-outcome='lose'] h1 { color: #ff8f8f; }
+.pvp-end-card[data-outcome='draw'] h1, .pvp-end-card[data-outcome='cancel'] h1, .pvp-end-card[data-outcome='unknown'] h1 { color: var(--warn); }
+.pvp-end-card h1 { font-size: 40px; }
+.pe-rating-panel { gap: 6px; }
+.pe-rate-l { font: 700 11px/1 var(--f-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.pe-rate { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; font: 700 20px/1.2 var(--f-mono); font-variant-numeric: tabular-nums; }
+.pe-rate-b { color: var(--muted); }
+.pe-rate-a { font-size: 28px; }
+.pe-arrow { color: var(--muted); }
+.pe-delta { padding: 3px 6px; border-radius: 4px; font-size: 14px; background: var(--plate); box-shadow: inset 0 0 0 1px var(--line-2); }
+.pe-delta.up { color: var(--ok); }
+.pe-delta.down { color: #ff8f8f; }
+.pe-tbl-wrap { min-width: 0; }
+.pe-tbl { width: 100%; table-layout: fixed; border-collapse: collapse; background: var(--case); border-radius: var(--r-panel); box-shadow: inset 0 1px 0 var(--case-hi); }
+.pe-tbl th, .pe-tbl td { padding: 10px; border-top: 1px solid var(--line); text-align: right; overflow-wrap: anywhere; }
+.pe-tbl thead th, .pe-tbl thead td { border-top: 0; vertical-align: bottom; }
+.pe-tbl thead th { font: 600 14px/1.3 var(--f-ui); }
+.pe-tbl thead th.is-win { box-shadow: inset 0 -3px 0 var(--ok); }
+.pe-tbl tbody th { width: 34%; text-align: left; font: 600 12px/1.3 var(--f-mono); letter-spacing: 0.04em; color: var(--muted); }
+.pe-tbl td { font: 700 18px/1.2 var(--f-mono); font-variant-numeric: tabular-nums; }
+.pe-who { display: block; }
+.pe-you { display: inline-block; margin-top: 4px; padding: 3px 6px; border-radius: 4px; background: var(--mustard); color: #33240a; font: 700 10px/1 var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.pe-tbl .po-tag { display: inline-block; margin-top: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pm-seg.out, .pvp-meter.pm-hit .pm-track, .pvp-meter.pm-cancel .pm-track, .pvp-meter.pm-land .pm-track { animation: none; }
+  .pvp-meter.danger .pm-track { animation: none; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 0 0 2px var(--crash); }
+  .po-mini { transition: none; }
+}

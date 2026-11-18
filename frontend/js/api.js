@@ -55,8 +55,15 @@ export function setRunContext(ctx) {
   runCtx = ctx && ctx.id && ctx.token ? { run_id: ctx.id, run_token: ctx.token } : null;
 }
 
+// While a live 1v1 match (Đối kháng) is in progress, the same three calls carry match_id + match_token instead.
+let matchCtx = null;
+export function setMatchContext(ctx) {
+  matchCtx = ctx && ctx.id && ctx.token ? { match_id: ctx.id, match_token: ctx.token } : null;
+}
+
 export async function nextPuzzle(params) {
   if (runCtx) params = { ...params, ...runCtx };
+  if (matchCtx) params = { ...params, ...matchCtx };
   if (isMock) return (await mock()).nextPuzzle(params);
   return request('POST', '/api/puzzle/next', params);
 }
@@ -71,14 +78,16 @@ export function setRoomContext(ctx) {
 export async function submitAnswer(id, body, { room = true } = {}) {
   if (roomCtx && room) body = { ...body, ...roomCtx };
   if (runCtx && room) body = { ...body, ...runCtx };
+  if (matchCtx && room) body = { ...body, ...matchCtx };
   if (isMock) return (await mock()).submitAnswer(id, body);
   return request('POST', '/api/puzzle/' + encodeURIComponent(id) + '/answer', body);
 }
 
 export async function getHint(id, level) {
-  if (isMock) return (await mock()).getHint(id, level);
+  if (isMock) return (await mock()).getHint(id, level, matchCtx);
   const run = runCtx ? '&run_id=' + encodeURIComponent(runCtx.run_id) + '&run_token=' + encodeURIComponent(runCtx.run_token) : '';
-  return request('GET', '/api/puzzle/' + encodeURIComponent(id) + '/hint?level=' + level + run);
+  const match = matchCtx ? '&match_id=' + encodeURIComponent(matchCtx.match_id) + '&match_token=' + encodeURIComponent(matchCtx.match_token) : '';
+  return request('GET', '/api/puzzle/' + encodeURIComponent(id) + '/hint?level=' + level + run + match);
 }
 
 export async function explainChoice(id, body) {
@@ -276,4 +285,43 @@ function mockQr(code) {
   }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 ${n + 4} ${n + 4}" shape-rendering="crispEdges"><rect x="-2" y="-2" width="${n + 4}" height="${n + 4}" fill="#fff"/><path fill="#111" fill-rule="evenodd" d="${finder(0, 0)}${finder(n - 7, 0)}${finder(0, n - 7)}${d}"/></svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
+// ---- Real-time 1v1 "Đối kháng" (docs/pvp.md). Tickets come from HTTP, the match itself runs over a WebSocket (pvp.js). ----
+const duel = (code) => '/api/pvp/private/' + encodeURIComponent(code);
+
+/** body: { level, nickname, device_id } -> { ticket }. Joins the quick-match queue for that level. */
+export async function pvpQueue(body) {
+  if (isMock) return (await mock()).pvpQueue(body);
+  return request('POST', '/api/pvp/queue', body);
+}
+
+export async function pvpLeaveQueue(ticket) {
+  if (isMock) return (await mock()).pvpLeaveQueue(ticket);
+  return request('DELETE', '/api/pvp/queue/' + encodeURIComponent(ticket), null, { timeout: 5000 });
+}
+
+/** body: { level, nickname, device_id } -> { code, ticket, url }. */
+export async function pvpPrivate(body) {
+  if (isMock) return (await mock()).pvpPrivate(body);
+  return request('POST', '/api/pvp/private', body);
+}
+
+/** body: { nickname, device_id } -> { ticket }. 404 unknown, 409 full, 410 expired, 422 filtered name. */
+export async function pvpJoinPrivate(code, body) {
+  if (isMock) return (await mock()).pvpJoinPrivate(code, body);
+  return request('POST', duel(code) + '/join', body);
+}
+
+/** body: { level, nickname, device_id } -> { ticket }. An immediate match against the built-in bot. */
+export async function pvpBot(body) {
+  if (isMock) return (await mock()).pvpBot(body);
+  return request('POST', '/api/pvp/bot', body);
+}
+
+/** A WebSocket-shaped object for GET /api/pvp/ws?ticket=... (the mock returns a same-shaped fake server). */
+export async function openPvpSocket(ticket) {
+  if (isMock) return new (await mock()).MockPvpSocket(ticket);
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return new WebSocket(`${proto}//${location.host}/api/pvp/ws?ticket=${encodeURIComponent(ticket)}`);
 }

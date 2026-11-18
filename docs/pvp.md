@@ -1,0 +1,245 @@
+# Real-time 1v1 (Code Rescue "Đối kháng")
+
+Contract shared by the rules/server work and the frontend work. Builds on ranked play
+(`docs/ranked-and-race.md`): same seeded pieces, same server-picked puzzles, same Python rules engine.
+No accounts: generated nicknames (`backend/app/nicknames.py`) and the browser device id.
+
+## 1. The game in one paragraph
+
+Two players play Code Rescue on their own boards, at the same time, dealt the **same pieces** (same
+seed). When you clear a lock by answering its puzzle correctly, you **send bug lines**: rows of ERR
+blocks that rise from the bottom of your opponent's board, like garbage in a falling-block versus game.
+Incoming bug lines wait in a queue first, and lines you clear cancel your own queue before anything is
+sent. Opening a puzzle pauses **your** board only; your opponent keeps playing, so thinking speed is
+the skill. You lose when incoming lines push your blocks off the top, or when none of your pieces fits.
+
+## 2. Rule changes (`mode: 'pvp'`)
+
+These live in `frontend/js/game.js` **and** `backend/app/rescue_engine.py`, changed together, kept in
+lockstep by the golden test (§7). Everything not listed works as in `mode: 'rescue'`.
+
+1. **No crash on mistakes.** A wrong lock answer turns the lock into one of your own bug lines (as the
+   first mistake does in Rescue), every time. There is no second-mistake crash and no Last Commit.
+2. **Lines sent** by a correct lock answer: `SEND = [0, 1, 2, 3, 4]` indexed by `min(lock.count, 4)`,
+   plus 1 if the answer was clean (no paid hint) and the streak after it is ≥ 3. A boss lock answered
+   correctly sends 4 + streak bonus.
+3. **Cancelling.** Lines you would send first cancel your own pending incoming lines, one for one; only
+   the remainder is sent.
+4. **Pending queue.** Incoming lines are held in `s.pending` (a list of `{topic, templateId}` entries,
+   one per row). They **land after your next placement that does not create a lock**, all at once. A
+   placement that creates a lock keeps them pending until that lock is resolved (answer, or undo), then
+   they land on the next placement that does not create a lock. Lines that arrive while a lock is open
+   are queued behind the older ones.
+5. **Landing** k rows: every existing cell moves up k rows (existing bug lines move with their cells). If
+   any non-empty cell would move above row 0 (or k is more than 8), you **top out** and lose; the grid is
+   then left as it was. Otherwise the bottom k rows are filled with ERR bug cells: each row is a full row of
+   bug cells and its own bug line (`bugLines` entry, new ids in queue order) with the sender's topic and
+   template, so it can be tapped and fixed with a Debug puzzle like any bug line. The oldest row ends up
+   on top of the new block, the newest in row 7. A lock in progress is impossible at this moment (see 4).
+   After a landing there is no undo snapshot.
+6. **Fixing** a bug line (correct Debug answer) clears it as in Rescue, sends nothing, and keeps the
+   Debugger item reward. A wrong Debug answer: the line stays (no crash).
+7. **No fit:** if none of your tray pieces fits anywhere, you lose (`reason: 'nofit'`).
+8. **Overtime:** from 4:00 of match time, 1 bug line is added to **both** players' pending queues every
+   20 s (topic: a random topic from a server RNG derived from the match seed; template: none → the
+   debug puzzle for that topic's `*_bug` template). This guarantees a match ends.
+9. Score is still computed (it is the tiebreak shown at the end) but nobody is ranked by it.
+10. Items work as in Rescue (bomb, shuffle, undo, debugger). Undo restores the snapshot taken before
+    the placement that created the lock, **including the pending queue as it was at that time; rows that
+    arrived since are re-queued behind it** (`pending = snapshot.pending + rows received since`, so nothing
+    is lost and undo cannot dodge incoming rows). The server only allows Undo while the lock's puzzle has not
+    been opened yet.
+11. **Debugger** works as in Rescue: it is spent automatically on the next lock that opens while owned,
+    which is when the server serves the first puzzle of that lock (`state.you.lock.debugger` is then
+    `true`, `items.debugger` drops by one) and gives free hint level 2 for that lock.
+12. **Boss locks** (4+ lines) are two sequential puzzles as in Rescue: the second is only served when the
+    first was answered correctly (a wrong first answer ends the lock with one bug line). They send 4 lines
+    plus the streak bonus.
+13. **Same pieces.** Both players are dealt from the same seed. Breaking a lock-topic tie draws no random
+    number in pvp (the first tied topic in row-major order of the lock cells wins), so the piece sequence
+    only depends on how many pieces a player drew (a Shuffle draws 3 more).
+
+### `game.js` interface for PvP (owned by the rules work; the frontend builds against it)
+
+- `newGame({ mode: 'pvp', level, rng })` → state gains `pending: []` (incoming rows, oldest first),
+  `sent: 0`, `received: 0`.
+- `place(s, i, r, c)` → in pvp also returns `landed` (rows that landed, 0 if none) and sets
+  `s.phase = 'over'`, `s.endReason = 'topped_out'` when landing tops you out.
+- `applyCorrect(s, {...})` → in pvp also returns `send` (lines actually sent after cancelling) and
+  `cancelled` (own pending rows cancelled). The caller (server) delivers `send` to the opponent.
+- `queueIncoming(s, entries)` appends `{topic, templateId}` rows to `s.pending`; `s.received += n`;
+  returns n (0 outside pvp or when the game is over).
+- `landPending(s)` lands every pending row (called by `place`); returns the number of rows, also when
+  they topped you out. `PVP_SEND` is the send table.
+- `applyWrong`, `fixBug`, `applyDebugWrong` follow rule 1 / 6 in pvp (never crash).
+- No-fit detection: `checkNoFit(s)` (returns true when it ended the game) runs by itself, in pvp only, at the
+  end of `place` (when no lock was made, after landing), `finishLock`, `applyWrong`, `fixBug` and `shuffle`:
+  `anyFit(s)` false → `s.phase = 'over'`, `s.endReason = 'nofit'` (the server decides it, the frontend
+  shows the end).
+- `place` in pvp returns `{placed, lock, expired, landed}`; the caller still sets `phase = 'locked'` when
+  `lock` is set. `applyCorrect` returns `{..., send, cancelled}`; `s.sent` counts `send` (after cancelling).
+- Undo restores `pending` from the snapshot and re-queues rows that arrived since (rule 10).
+- Rescue, practice and ranked behaviour is unchanged; every addition is behind `s.mode === 'pvp'`.
+
+## 3. Match lifecycle
+
+### Matchmaking (HTTP)
+- `POST /api/pvp/queue {level, nickname, device_id}` → `{ticket}` and joins the quick-match queue for
+  that level. Pairing is first-come within a level. `DELETE /api/pvp/queue/{ticket}` leaves the queue.
+- `POST /api/pvp/private {level, nickname, device_id}` → `{code, ticket, url}` (code: classroom
+  alphabet, 5 chars; `url` = `<public base>/?duel=<code>`). The second player calls
+  `POST /api/pvp/private/{code}/join {nickname, device_id}` → `{ticket}`. 404 unknown, 409 full,
+  410 expired (10 minutes without a second player; the code answers 410 for an hour after that).
+  Codes are case-insensitive.
+- `POST /api/pvp/bot {level, nickname, device_id}` → `{ticket}`: an immediate match against the
+  built-in bot ("Máy" + a generated animal name, always labelled as a bot in the UI).
+- Nicknames must be generated names (422 as for ranked). Rate limit: 60 requests per hour per client IP
+  across queue / private / join / bot (429).
+- A queued ticket has to open its socket within 15 s and may be away at most 15 s, or it is dropped; it waits
+  at most 5 minutes (`error queue_timeout`). A ticket is never paired with a ticket of the same device.
+  `DELETE /api/pvp/queue/{ticket}` → 204 (404 unknown ticket; 409 once the match has started). If the ticket
+  was already paired but not started, the match is dissolved and the other player gets
+  `error opponent_left`.
+- Server limits: 200 live matches (`503` when full), 2000 tickets.
+
+### Live connection
+`GET /api/pvp/ws?ticket=<ticket>` upgrades to a WebSocket. One socket per player. All messages are JSON
+`{"t": "<type>", ...}`. The **server is authoritative**: it runs both games with the rules engine and
+the browser renders what the server says. The browser may predict its own placement locally (same
+rules, same seed) and must accept the server's state when it differs.
+
+One socket per ticket: opening a second socket with the same ticket replaces the first (it gets
+`error replaced` and is closed with code 4001); that is also how a reconnect after a reload works. A
+unknown/ended ticket gets `error bad_ticket` and close code 4404 (after a server restart every ticket is
+unknown, so the client should treat `bad_ticket` on a reconnect as `server_restart`). `ready` may be sent
+as soon as the socket is open (also before an opponent is found) and survives a reconnect; the countdown
+(3 s) starts when both players are connected and ready. Two paired players who are not both ready within
+60 s: `error lobby_timeout` (match cancelled).
+
+Client → server:
+
+| `t` | Fields | Meaning |
+| --- | --- | --- |
+| `ready` | | in the lobby, ready to start |
+| `place` | `i, r, c` | place tray piece `i` at (r, c) |
+| `bomb` | `r, c` | use Bomb |
+| `shuffle` | | use Shuffle |
+| `undo` | | use Undo while a lock is pending |
+| `resign` | | give up (immediate loss) |
+| `ping` | `n` | keep-alive / latency (server answers `pong` with the same `n`) |
+| `rematch` | | private duels only, after `end`: play again (see below) |
+
+Puzzles, hints and answers use the **existing HTTP endpoints** with `match_id` + `match_token` (same
+pattern as `run_id` / `run_token`; the pair comes from `start`, one token per player): `POST
+/api/puzzle/next` (server picks deterministically from the match seed, §ranked-and-race 2), `GET
+/api/puzzle/{id}/hint`, `POST /api/puzzle/{id}/answer`. When an answer for the player's current lock (or
+tapped bug line) is checked, the server applies the outcome to that player's game and pushes the new
+state over the socket. `kind` is `rescue` for locks and `debug` for bug lines.
+
+- `POST /api/puzzle/next` in a match: `{kind: "rescue", match_id, match_token}` (`topic`/`tier`/`level`
+  are ignored: the server uses the player's current lock, tier 3 for a boss lock, and the match level) or
+  `{kind: "debug", bug: <bugLines[].id>, match_id, match_token}` (**contract addition**: `bug` names the
+  tapped bug line; the server uses that line's `templateId`, tier 1. Without `bug`, the first bug line
+  whose `templateId` equals the request's `template_id` is used). Asking again for a puzzle that is still
+  open returns the same puzzle (no re-roll). `409` when there is nothing to solve (`rescue` needs `phase` `locked`; `debug` needs `phase` `play` and an existing bug line) or the match is over. A missing or invalid pair is ignored: the request works as a normal
+  practice request and nothing is applied.
+- The first puzzle of a lock spends a Debugger when owned (rule 11) and pushes a `state`. `exclude_*`
+  fields are ignored; the server keeps its own history (last 500 ids, last 3 templates) per player, and
+  `n` (the pick counter) is per player, so two players in the same situation get the same puzzle.
+- `GET .../hint?level=n&match_id=&match_token=` records the highest hint level opened for that served
+  puzzle; the answer is then paid per the usual hint factor.
+- `POST .../answer` with the pair applies the result only when the puzzle was served to this player for
+  their **current** lock part / bug line and has not been answered before (first answer counts). The
+  response is the same as always; the effect arrives as `state` (+ `sent`, `incoming`). Answers without
+  or with a wrong pair, for puzzles not served by the match, or for a lock that is gone are checked but
+  not applied.
+
+Server → client:
+
+| `t` | Fields | Meaning |
+| --- | --- | --- |
+| `lobby` | `you: {nickname, rating}, opponent: {nickname, bot, connected, rating} \| null, level, starts_in` | waiting / countdown. `opponent` is `null` until paired; `rating` is the Elo (1000 for a new device) and `null` for the bot; `starts_in` is `null` or 3, 2, 1, 0 |
+| `start` | `seed, level, match_id, match_token, at, elapsed` | 3-2-1 done, play. `at` = server Unix time of the start; `elapsed` = seconds since then (0, or more when re-sent on a reconnect: use it instead of `at` to avoid clock skew) |
+| `state` | `you: {grid, tray, score, streak, items, pending, bugLines, lock, phase, status, bestStreak, sent, received, endReason}`, `rev` | your full state after **every** change, including every change to your pending queue (incoming, cancel, landing, overtime, undo) (`rev` increases per player; `start`/new round restarts it) |
+| `opponent` | `{grid, score, pending, lock: bool, phase, connected}` | opponent's board, at most 4× per second; `pending` is a **number** of rows |
+| `sent` | `lines, cancelled` | you sent / cancelled lines (for the animation); only when either is above 0 |
+| `incoming` | `lines, from_topic, overtime?` | lines added to your pending queue (`overtime: true` for the overtime lines) |
+| `landed` | `rows` | your pending lines just landed (not sent when they topped you out) |
+| `opponent_status` | `connected, grace_s` | opponent dropped (`grace_s` 20) / is back (0) |
+| `end` | `winner: "you"\|"opponent"\|"draw", reason, you: {score, sent, received, locks}, opponent: {score, sent, received, locks, nickname, bot}, rating?: {before, after}` | match over (the last `opponent` and `state` are sent just before it) |
+| `rematch_status` | `you, opponent, expired?` | private duels after `end`, see below |
+| `error` | `code, message` | rejected action (e.g. illegal place: the client re-renders from the `state` that follows) |
+| `pong` | `n` | |
+
+`state.you` shapes (same as `game.js`): `grid` is 8×8 of `null` or `{topic, bug, bugId}`; `tray` has
+`{id, shape, cells, w, h, topic}` or `null` for a used slot; `pending` is `[{topic, templateId}]` (oldest
+first); `bugLines` is `[{id, cells: [[r, c]], topic, templateId}]` (`templateId` is never null: overtime rows
+carry `<topic>_bug`); `lock` is `null` or `{rows, cols, cells, count, tier, boss, topic, debugger}` (`debugger`:
+a Debugger was spent on it); `items` is `{bomb, shuffle, undo, debugger}`; `phase` is `play`, `locked` (the
+lock's puzzle is the player's to solve; the server has no separate `puzzle` phase) or `over`; `status` is
+`ok`/`warn`.
+
+`error` codes: `bad_message`, `not_playing`, `illegal` (followed by a `state`), `no_rematch`, `replaced`,
+`bad_ticket`, `queue_timeout`, `lobby_timeout`, `opponent_left`, `expired` (private code ran out),
+`server_restart` (lobby only). Illegal actions never change the game.
+
+**Rematch (private duels).** After `end` the sockets of a private duel stay open for 60 s and the server
+sends `rematch_status {you: false, opponent: false}`. `{"t":"rematch"}` sets your flag and both players get
+`rematch_status` (each from their own point of view). When both flagged within 60 s the server starts a new
+match on the same sockets: fresh seed, new `match_id` / `match_token`, a new `start` + `state` straight away
+(no countdown), rated as usual. A player who disconnects clears their flag. After 60 s:
+`rematch_status {you: false, opponent: false, expired: true}` and the sockets are closed. Quick-match
+rematch is a new search (the sockets are closed after `end`; `rematch` is `no_rematch` while playing).
+
+`reason`: `topped_out`, `nofit`, `resign`, `disconnect`, `both_disconnected` (draw), `server_restart`.
+
+## 4. Disconnects (UX)
+
+- A dropped socket starts a **20-second grace**. The opponent sees an overlay "Đối thủ mất kết nối…
+  15 s" and their own board keeps working. The dropped player's board is frozen (no pending lines land
+  on it while away).
+- Reconnecting with the same ticket within the grace resumes exactly: the server re-sends `start` (same
+  `match_id` / `match_token`, `elapsed` > 0) and `state`, and tells the opponent `opponent_status
+  connected: true`. This is also what a page reload does (the browser keeps the ticket in
+  `sessionStorage`); in the lobby the server re-sends `lobby`. The browser reconnects automatically
+  (backoff 0.5, 1, 2, 4 s) and shows "Đang kết nối lại…". A reconnect after the match ended gets `end`
+  (and the socket is closed unless it is a private duel inside the rematch window).
+- Grace expired → the dropped player loses (`reason: disconnect`). Both dropped → draw
+  (`both_disconnected`: checked when the first grace runs out while the other is still gone). Lines the
+  opponent sends keep queueing on a dropped player's board; nothing lands until they place again.
+- Closing the tab or tapping back = resign after a confirm dialog.
+- A server restart (deploy) ends live matches with `server_restart` (winner `draw`); no rating change.
+  uvicorn closes the sockets (close code 1012) before the app can send anything on a SIGTERM, so in
+  practice the browser sees a closed socket and, on reconnect, `bad_ticket`: treat that as a restart. The
+  deploy cron (`deploy/update.sh`) restarts the container when a new commit is pushed.
+
+## 5. Bot
+
+A server-side player using the same engine: picks placements with a simple heuristic (prefer
+completing rows, avoid holes), answers its puzzles after a "thinking" delay of 4–9 s (scaled by tier)
+with accuracy by level (beginner 70%, intermediate 80%, advanced 88%), never uses hints, uses items
+sensibly. Always shown with a bot badge. Bot matches do not change rating.
+
+## 6. Rating
+
+Quick-match and private matches between humans update an Elo rating per device (start 1000, K = 32),
+stored in `ranked.sqlite` (table `pvp_ratings`, forgotten after a year without a match). Shown on the end
+screen (`rating.before/after`) and in the PvP lobby. No public PvP leaderboard in this version. No rating
+change for bot matches, `both_disconnected`, `server_restart`, or when both players share one device. Draws
+count as 0.5.
+
+## 7. Verification
+
+- The golden harness (`backend/tests/js_harness/play.mjs`) gains `pvp` games: random garbage arrivals,
+  cancels, landings, top-outs and overtime events are injected identically into the JS game and the
+  Python engine; every final state must match.
+- Match tests drive two WebSocket clients (and bot matches) through full games, disconnect/reconnect,
+  grace expiry, resign, both-disconnect, illegal actions, and answers sent without/with wrong match
+  token.
+- Server limits: at most 200 live matches; one socket per ticket; messages ≤ 4 KB (a bigger frame closes
+  the socket with code 1009); ≥ 10 messages per second per player are dropped silently; the outbox of a
+  socket that does not read is capped (it is cut off and may reconnect).
+- Overtime (rule 8) is on the server's match clock: events at 4:00, 4:20, ... (topic from
+  `Random(f"{seed}:overtime:{k}")`, same for both players, template `<topic>_bug`).
+- Match tests: `backend/tests/test_pvp_match.py` (HTTP + WebSocket, accelerated clock via `pvp.SPEED`);
+  rules: `backend/tests/test_pvp_rules.py` (golden against `game.js`, 400 pvp games).

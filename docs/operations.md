@@ -149,6 +149,10 @@ cd backend
 .venv/bin/python -m pytest -q          # Windows: .venv\Scripts\python -m pytest -q
 ```
 
+Real-time 1v1 tests: `tests/test_pvp_rules.py` (golden test of the pvp rules against `game.js`, needs `node`) and
+`tests/test_pvp_match.py` (HTTP + WebSocket matches with an accelerated clock). The whole suite takes about two
+minutes.
+
 Observed for these docs: **149 passed, 1 warning in about 14 s** (Python 3.14.7). The warning is a
 Starlette deprecation notice about `TestClient` and `httpx`; it does not affect results.
 
@@ -223,6 +227,14 @@ Put a reverse proxy in front for HTTPS (the app does not terminate TLS). Because
 relative URLs and is served by the same app, no CORS setup is needed.
 
 ### Things to know before going live
+
+- **Real-time 1v1 (Đối kháng).** Needs the `websockets` package (in `requirements.txt`; the Docker image installs
+  it) and exactly **one uvicorn worker**: live matches, the queue and duel codes live in that process's memory (see
+  [architecture.md](architecture.md#8c-real-time-1v1-đối-kháng)). A reverse proxy must forward WebSocket upgrades
+  on `/api/pvp/ws` (Cloudflare does by default; for nginx add `proxy_http_version 1.1` and the `Upgrade` /
+  `Connection` headers, and a read timeout above 60 s). Restarting the container ends every live match.
+  `SYNTAX_STACK_PUBLIC_URL` (else the forwarded host) is used for the duel link and for the `wss://` origin in the
+  page's CSP. No new environment variables; Elo ratings are in `ranked.sqlite` on the volume.
 
 - **Google Fonts dependency.** `frontend/index.html` loads Be Vietnam Pro, Bricolage Grotesque and
   JetBrains Mono from `fonts.googleapis.com` / `fonts.gstatic.com` (`subset=vietnamese`). If those
