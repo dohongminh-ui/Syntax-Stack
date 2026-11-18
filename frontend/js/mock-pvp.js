@@ -263,6 +263,7 @@ const serialize = (s) => ({
   streak: s.streak,
   items: s.items,
   pending: s.pending,
+  received: s.received,
   bugLines: s.bugLines.map((b) => ({ id: b.id, cells: b.cells, topic: b.topic, templateId: b.templateId })),
   lock: s.lock,
   phase: s.phase === 'over' ? 'over' : s.lock ? 'locked' : 'play',
@@ -684,6 +685,10 @@ class Sim {
       case 'rematch': return this.askRematch();
       case 'resign': return this.finish('opponent', 'resign');
       case 'place': return this.act(() => {
+        if (msg.received !== undefined && msg.received !== this.me.received) {
+          this.emit({ t: 'error', code: 'stale_state', message: 'Có dòng lỗi mới vừa tới. Hãy xem lại bàn rồi đặt khối.' });
+          return true; // send the current state without applying the stale placement
+        }
         const out = placeFor(this.me, msg.i, msg.r, msg.c);
         if (!out) return false;
         if (out.landed) this.emit({ t: 'landed', rows: out.landed });

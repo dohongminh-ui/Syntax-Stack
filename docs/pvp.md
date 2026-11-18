@@ -123,7 +123,7 @@ Client → server:
 | `t` | Fields | Meaning |
 | --- | --- | --- |
 | `ready` | | in the lobby, ready to start |
-| `place` | `i, r, c` | place tray piece `i` at (r, c) |
+| `place` | `i, r, c, received?` | place tray piece `i` at (r, c); `received` is the last displayed `state.you.received` |
 | `bomb` | `r, c` | use Bomb |
 | `shuffle` | | use Shuffle |
 | `undo` | | use Undo while a lock is pending |
@@ -188,6 +188,12 @@ lock's puzzle is the player's to solve; the server has no separate `puzzle` phas
 `bad_ticket`, `queue_timeout`, `lobby_timeout`, `opponent_left`, `expired` (private code ran out), `not_training`
 (`suggest` outside a training match),
 `server_restart` (lobby only). Illegal actions never change the game.
+
+The browser includes the cumulative `received` counter with each placement. If it differs from the server's
+counter, an attack arrived while the move was in transit: the server rejects it with `error stale_state` followed
+by a fresh `state`, leaving the board, tray and pending rows untouched. The player can review the incoming rows
+before placing again. The counter includes overtime and never decreases when rows land or are cancelled.
+Older clients that omit it keep the existing placement behavior; server-side bots do not use this guard.
 
 **Rematch (private duels).** After `end` the sockets of a private duel stay open for 60 s and the server
 sends `rematch_status {you: false, opponent: false}`. `{"t":"rematch"}` sets your flag and both players get

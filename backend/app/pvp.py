@@ -62,6 +62,7 @@ _ERR = {
     "bad_message": "Tin nhắn không hợp lệ.",
     "not_playing": "Ván đấu chưa bắt đầu hoặc đã kết thúc.",
     "illegal": "Nước đi không hợp lệ.",
+    "stale_state": "Có dòng lỗi mới vừa tới. Hãy xem lại bàn rồi đặt khối.",
     "not_training": "Gợi ý chỉ có trong chế độ luyện tập cùng Misaki.",
 }
 
@@ -891,6 +892,15 @@ def _dispatch(p: Player, msg: dict) -> None:
     ok = False
     if kind == "place":
         if all(_is_int(msg.get(k)) for k in ("i", "r", "c")):
+            # An attack arriving in transit must be shown before this placement can land it.
+            if "received" in msg:
+                received = msg["received"]
+                if not _is_int(received) or received < 0:
+                    return _error(p, "bad_message")
+                if received != p.game.received:
+                    _error(p, "stale_state")
+                    m.push_state(p)
+                    return
             ok = m.do_place(p, msg["i"], msg["r"], msg["c"])
         else:
             return _error(p, "bad_message")

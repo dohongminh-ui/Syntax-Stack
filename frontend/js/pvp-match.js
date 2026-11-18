@@ -274,6 +274,7 @@ export class PvpMatch {
     });
     return {
       grid, tray, pending, bugLines,
+      received: Number(you.received) || 0,
       score: Number(you.score) || 0,
       streak: Number(you.streak) || 0,
       items: { bomb: 0, shuffle: 0, undo: 0, debugger: 0, ...(you.items || {}) },
@@ -469,6 +470,7 @@ export class PvpMatch {
     if (this.server && !this.frozen && !this.ended) this.rebuild();
     const text = {
       illegal: 'Không đặt được ở vị trí này.',
+      stale_state: 'Có dòng lỗi mới vừa tới. Hãy xem lại bàn rồi đặt khối.',
       not_playing: 'Chưa thể thao tác lúc này.',
       rate_limited: 'Bạn thao tác quá nhanh.',
       not_training: 'Gợi ý nước đi chỉ có trong chế độ luyện tập.',
@@ -527,7 +529,7 @@ export class PvpMatch {
     this.clearMarks('sug');
     const next = this.predictPlace(this.view, i, r, c);
     if (!next) return;
-    if (!this.client.send({ t: 'place', i, r, c })) {
+    if (!this.client.send({ t: 'place', i, r, c, received: this.server.received })) {
       toast('Mất kết nối, chưa gửi được nước đi.', 2000);
       return;
     }

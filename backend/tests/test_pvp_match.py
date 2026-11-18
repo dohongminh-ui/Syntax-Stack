@@ -316,6 +316,47 @@ def test_cancel_own_pending_before_sending(duo, tc):
     assert "incoming" not in b.log_types()
 
 
+@pytest.mark.parametrize("bot", [False, True])
+@pytest.mark.parametrize("overtime", [False, True])
+def test_unseen_incoming_rows_do_not_turn_an_in_flight_move_into_a_loss(tc, bot, overtime):
+    if bot:
+        ticket = post(tc, "/api/pvp/bot", level="intermediate", nickname=nick(), device_id=dev())["ticket"]
+        a = Client(tc, ticket)
+        a.until("lobby")
+        a.send(t="ready")
+        a.until("start")
+        a.until("state")
+    else:
+        a = Client(tc, queue(tc, i=1))
+        b = Client(tc, queue(tc, i=2))
+        start_match(a, b)
+    m, p = match_of(a), side_of(a)
+    with pvp._lock:
+        p.game.grid[0][7] = {"topic": "loops", "bug": False, "bug_id": None}
+        p.game.tray[0] = E.Piece("dot", ((0, 0),), "variables")
+        m.push_state(p)
+    a.until("state")
+    seen = a.state["received"]
+    # The attack is processed between sending a placement and the server reading it.
+    with pvp._lock:
+        if overtime:
+            m.started_at = pvp.now() - pvp.OVERTIME_AT_S
+            m.tick()
+        else:
+            m.deliver(p.opponent, {"send": 1, "cancelled": 0, "topic": "loops", "template_id": "loops_bug"})
+    a.send(t="place", i=0, r=7, c=0, received=seen)
+    reply = a.until("error", "end")
+    assert reply["t"] == "error" and reply["code"] == "stale_state"
+    a.until("state")
+    assert a.state["received"] == seen + 1 and len(a.state["pending"]) == 1
+    assert a.state["grid"][7][0] is None and a.state["tray"][0] is not None
+    assert a.state["phase"] == "play" and m.phase == "playing"
+    # Once the attack is visible, ordinary top-out rules still apply to the same move.
+    a.send(t="place", i=0, r=7, c=0, received=a.state["received"])
+    end = a.until("end")
+    assert end["winner"] == "opponent" and end["reason"] == "topped_out"
+
+
 def test_wrong_answer_makes_a_bug_line_and_it_can_be_fixed_without_a_crash(duo, tc):
     a, b = duo
     prime_lock(a)
