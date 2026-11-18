@@ -1,7 +1,7 @@
 // Puzzle panel (editor window): renders the four puzzle types, hints, commit/confirm and result.
 // Desktop: docks over the side column so the board stays visible. Phone: bottom sheet with a grab handle.
 import * as api from './api.js';
-import { recordMistake } from './storage.js';
+import { recordMistake, recordSkill } from './storage.js';
 import { HINT_PENALTY_PCT } from './game.js';
 import { el, anim, EASE, reducedMotion } from './ui.js';
 import { icon } from './icons.js';
@@ -15,6 +15,14 @@ const TYPE_LABEL = {
   parsons: 'Sắp xếp mã',
   find_bug: 'Tìm bug',
 };
+// Skill map: the puzzle type comes from the template id suffix (falls back to the public `type`).
+const SKILL_SUFFIX = { _fill: 'fill_blank', _predict: 'predict_output', _parsons: 'parsons', _bug: 'find_bug' };
+function noteSkill(puzzle, topic, correct) {
+  const tpl = puzzle.template_id;
+  if (!tpl || tpl === 'custom') return;
+  const hit = Object.keys(SKILL_SUFFIX).find((x) => tpl.endsWith(x));
+  recordSkill({ templateId: tpl, topic: puzzle.topic || topic, type: hit ? SKILL_SUFFIX[hit] : puzzle.type, correct, prompt: puzzle.prompt });
+}
 const desktop = () => window.matchMedia('(min-width: 1024px)').matches;
 
 function enterKey(label, onclick, { id, disabled = false, cls = '' } = {}) {
@@ -32,7 +40,7 @@ function enterKey(label, onclick, { id, disabled = false, cls = '' } = {}) {
  */
 export function openPuzzle(opts) {
   const { puzzle, topic, title, boss = null, tag = null, maxAttempts = 1, free = 0, penalties = true,
-    awardText, startHint = 0, onResult = null, standalone = false, intro = '', introSource = 'canned', closeLabel = 'Về báo cáo' } = opts;
+    awardText, startHint = 0, onResult = null, track = true, standalone = false, intro = '', introSource = 'canned', closeLabel = 'Về báo cáo' } = opts;
   const root = document.getElementById('modal-root');
   const app = document.getElementById('app');
   const gameScreen = document.getElementById('screen-game');
@@ -316,6 +324,7 @@ export function openPuzzle(opts) {
         st.phase = 'result';
         st.response = res;
         st.correct = res.correct;
+        if (track) noteSkill(puzzle, topic, !!res.correct);
         render();
         flashEdge(res.correct);
         if (onResult) onResult(res);

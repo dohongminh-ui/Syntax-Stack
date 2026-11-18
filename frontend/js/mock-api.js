@@ -300,5 +300,33 @@ export async function debrief(body) {
   };
 }
 
+// ---- custom sets (canned: built from the loops puzzles of the bank) ----
+const mockFail = (status, detail) => Object.assign(new Error(detail), { status });
+
+function mockSet(id, code, level) {
+  const puzzles = [];
+  const skipped = [];
+  for (const type of ['fill_blank', 'predict_output', 'parsons', 'find_bug']) {
+    const entry = BANK.find((b) => b.pub.topic === 'loops' && b.pub.type === type);
+    if (entry) puzzles.push(publicCopy(entry, level));
+    else skipped.push({ type, reason: 'chương trình này không có đủ chỗ để tạo dạng câu đố này' });
+  }
+  const out = BANK.find((b) => b.pub.topic === 'loops' && b.pub.expected_output)?.pub.expected_output ?? '';
+  return { id, topic: 'loops', code, expected_output: out, puzzles, skipped };
+}
+
+export async function createCustomSet(body) {
+  await sleep(500);
+  const code = String(body?.code ?? '').trim();
+  if (!code) throw mockFail(422, 'Chương trình đang trống. Hãy dán một đoạn mã Python ngắn.');
+  return mockSet('mock-set', code, body.level);
+}
+
+export async function getCustomSet(id, level) {
+  await sleep(250);
+  if (id !== 'mock-set' && id !== 'demo') throw mockFail(404, 'Không tìm thấy bộ câu đố.');
+  return mockSet(id, ['total = 0', 'for i in range(1, 4):', '    total = total + i', 'print(total)'].join('\n'), level);
+}
+
 // Syntax Rows mock lives in mock-rows.js
 export { rowsLevels, rowsLevel, rowsRun, rowsHint } from './mock-rows.js';

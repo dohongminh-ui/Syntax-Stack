@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import bank, hints, rows, tutor
+from . import bank, custom, hints, rows, tutor
 from . import validator as V
 
 if sys.version_info < (3, 12):  # the validator reads ast node.type_params (3.12+)
@@ -150,6 +150,12 @@ class NextRequest(BaseModel):
     exclude_templates: list[str] = Field(default_factory=list, max_length=50)
 
 
+class CustomSetRequest(BaseModel):
+    # No length cap here: too long must be a Vietnamese 422 from custom.create_set, not a pydantic list.
+    code: str
+    level: Level = "intermediate"
+
+
 class OrderItem(BaseModel):
     line_id: str = Field(max_length=40)
     indent: int
@@ -231,25 +237,36 @@ def puzzle_next(req: NextRequest):
     return bank.public_puzzle(row, req.level)
 
 
+def _get_puzzle(puzzle_id: str) -> dict:
+    """Bank puzzle, or a custom one (ids ``c-<set>-<n>``)."""
+    return custom.get_puzzle(puzzle_id) if custom.is_custom_id(puzzle_id) else bank.get_puzzle(puzzle_id)
+
+
+def _diagnoser(puzzle_id: str):
+    """Custom puzzles run their parsons check in the sandbox child process, never in this process."""
+    return custom.diagnose if custom.is_custom_id(puzzle_id) else None
+
+
 @app.post("/api/puzzle/{puzzle_id}/answer")
 def puzzle_answer(puzzle_id: str, req: AnswerRequest):
-    row = bank.get_puzzle(puzzle_id)
+    row = _get_puzzle(puzzle_id)
     return bank.check_answer(
         row, option_id=req.option_id,
         order=[o.model_dump() for o in req.order] if req.order is not None else None,
-        line_id=req.line_id, reveal=req.reveal)
+        line_id=req.line_id, reveal=req.reveal, diagnose=_diagnoser(puzzle_id))
 
 
 @app.get("/api/puzzle/{puzzle_id}/hint")
 def puzzle_hint(puzzle_id: str, level: int = Query(..., ge=1, le=3)):
-    return hints.puzzle_hint(bank.get_puzzle(puzzle_id), level)
+    return hints.puzzle_hint(_get_puzzle(puzzle_id), level)
 
 
 @app.post("/api/puzzle/{puzzle_id}/explain")
 def puzzle_explain(puzzle_id: str, req: AnswerRequest, request: Request):
-    puzzle = bank.get_puzzle(puzzle_id)
+    puzzle = _get_puzzle(puzzle_id)
     order = [item.model_dump() for item in req.order] if req.order is not None else None
-    result = bank.check_answer(puzzle, option_id=req.option_id, order=order, reveal=True)
+    result = bank.check_answer(puzzle, option_id=req.option_id, order=order, reveal=True,
+                               diagnose=_diagnoser(puzzle_id))
     if result["correct"]:
         raise HTTPException(422, "Câu trả lời này đã đúng.")
     data = puzzle["data"]
@@ -275,6 +292,8 @@ def puzzle_explain(puzzle_id: str, req: AnswerRequest, request: Request):
 
 @app.get("/api/puzzle/{puzzle_id}/rematch")
 def puzzle_rematch(puzzle_id: str, request: Request, level: Level = "intermediate"):
+    if custom.is_custom_id(puzzle_id):
+        raise HTTPException(422, "Câu đố tự tạo không có bản luyện lại.")
     original = bank.get_puzzle(puzzle_id)
     followup = bank.select_puzzle(
         kind="rescue", topic=original["topic"], tier=original["tier"], level=level,
@@ -324,6 +343,19 @@ def rescue_debrief(req: DebriefRequest, request: Request):
                "topic_counts": topic_counts, "focus_topic": focus_topic, "mistakes": mistakes}
     reply = tutor.feedback("debrief", context, fallback, client=_client_ip(request))
     return {**reply, "focus_topic": focus_topic}
+
+
+# --------------------------------------------------------------------------- custom puzzle sets
+
+
+@app.post("/api/custom/sets")
+def custom_create(req: CustomSetRequest, request: Request):
+    return custom.create_set(req.code, req.level, _client_ip(request))
+
+
+@app.get("/api/custom/sets/{set_id}")
+def custom_get(set_id: str, level: Level = "intermediate"):
+    return custom.get_set(set_id, level)
 
 
 # --------------------------------------------------------------------------- Syntax Rows

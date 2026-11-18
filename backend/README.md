@@ -104,6 +104,9 @@ generator after making a reviewed change to a template.
 | `app/validator.py` | AST whitelist + restricted runner + error classification (shared by both modes) |
 | `app/bank.py` | Code Rescue bank access, selection (rescue / debug / last_commit), answer checking |
 | `app/hints.py` | Canned (authored) hints, `source: "canned"` |
+| `app/custom.py`, `app/custom_gen.py` | Paste-your-own-code puzzle sets: validation, generation, SQLite store (`data/custom.sqlite`) |
+| `app/sandbox.py`, `app/sandbox_worker.py` | Child-process runner for pasted code (timeouts, rlimits); see `docs/validator-and-safety.md` 5.1 |
+| `app/puzzle_tools.py` | Helpers shared by `scripts/generate_bank.py` and `custom_gen.py` |
 | `app/tutor.py` | Optional n8n tutor: AI feedback with cache, daily cap, usage log and canned fallback |
 | `app/rows.py` | Syntax Rows level loading, board -> program assembly, run + diagnosis |
 | `content/templates/*.yaml` | 16 Code Rescue templates (4 topics x 4 types) |

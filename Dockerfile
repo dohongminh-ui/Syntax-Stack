@@ -14,5 +14,10 @@ COPY frontend/*.png frontend/favicon.ico frontend/favicon.svg frontend/manifest.
 COPY frontend/css frontend/css
 COPY frontend/js frontend/js
 
+# Learner-made puzzle sets live outside the image (compose mounts a named volume here) so shared links
+# survive redeploys. backend/data stays writable as the fallback when no volume is mounted.
+RUN mkdir -p /var/lib/syntax-stack && chown 10001 /var/lib/syntax-stack backend/data
+ENV SYNTAX_STACK_CUSTOM_DB=/var/lib/syntax-stack/custom.sqlite
+
 ENV PYTHONDONTWRITEBYTECODE=1
 USER 10001

@@ -3,6 +3,9 @@ services:
     build: .
     network_mode: host
     restart: unless-stopped
+    volumes:
+      # custom puzzle sets (Tạo câu đố từ code); kept across rebuilds so shared /?set= links keep working
+      - custom-sets:/var/lib/syntax-stack
     environment:
       SYNTAX_STACK_TUTOR_URL: http://127.0.0.1:5678/webhook/syntax-stack-tutor
       SYNTAX_STACK_TUTOR_TOKEN: ${SYNTAX_STACK_TUTOR_TOKEN:-}
@@ -20,3 +23,6 @@ services:
       - ${SYNTAX_STACK_BIND:-127.0.0.1}
       - --port
       - "8000"
+
+volumes:
+  custom-sets:

@@ -17,6 +17,7 @@ Files:
 | `backend/scripts/generate_bank.py` | Offline generator and verifier |
 | `backend/data/puzzles.sqlite` | Generated output, committed to the repo |
 | `backend/app/bank.py` | Selection, public view, answer checking at play time |
+| `backend/app/puzzle_tools.py` | `mutations`, `build_bug_form`, `place_options`, `output_ok` and line helpers, shared by the generator and by the custom-code puzzles (`app/custom_gen.py`, see [api-contract.md](api-contract.md)) |
 
 Current bank (seed `20260516`): **706 rows = 559 playable puzzles + 147 debug-only `find_bug` forms**.
 `GET /api/health` reports 559, because `count_puzzles()` counts only `debug_only = 0`.

@@ -45,7 +45,7 @@ Outside `docs/`:
   code, the contract or the specs disagree, or something looks unfinished, it is listed under an
   "Open questions" heading at the end of the relevant document instead of being guessed.
 - Counts are from the repository state at the time of writing: 559 playable puzzles plus 147
-  debug-only forms in the bank, 16 templates, 5 Syntax Rows levels, 130 tests.
+  debug-only forms in the bank, 16 templates, 5 Syntax Rows levels, 252 tests.
 
 ## Glossary
 

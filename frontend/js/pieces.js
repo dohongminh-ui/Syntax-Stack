@@ -63,3 +63,8 @@ export function makePiece(rng = Math.random, weights = null) {
   const w = Math.max(...cells.map((c) => c[1])) + 1;
   return { id: 'p' + uid++, shape: key, cells, w, h, topic: pickTopic(rng, weights) };
 }
+
+// Puzzle types: stable order = column order of the skill map.
+export const PUZZLE_TYPES = ['fill_blank', 'predict_output', 'parsons', 'find_bug'];
+export const TYPE_NAMES = { fill_blank: 'Điền chỗ trống', predict_output: 'Dự đoán đầu ra', parsons: 'Sắp xếp dòng', find_bug: 'Sửa lỗi' };
+export const TYPE_SHORT = { fill_blank: 'Điền', predict_output: 'Đoán', parsons: 'Xếp', find_bug: 'Sửa' };

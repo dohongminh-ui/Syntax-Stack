@@ -15,6 +15,8 @@ import { initStrip, showStrip, setMode, setScore, setStatus, setStreak, setLedMo
 import { buildTitle, playWave, buildPreviews, buildBackdrop } from './start.js';
 import { initRows, openPracticeRows, openSelect, runDemo } from './rows-screen.js';
 import { setScreenTitle } from './title.js';
+import { initSkills, openSkills } from './skills.js';
+import { initCustom, openCustom } from './custom.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -51,7 +53,7 @@ function show(id) {
   setScreenTitle(id);
   for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
   if (['screen-start', 'screen-end'].includes(id)) showStrip(false);
-  $('strip').classList.toggle('strip-plain', id === 'screen-practice');
+  $('strip').classList.toggle('strip-plain', ['screen-practice', 'screen-skills', 'screen-custom'].includes(id));
   window.scrollTo(0, 0);
 }
 
@@ -86,6 +88,8 @@ function initStart() {
   $('btn-rows').addEventListener('click', () => openSelect());
   $('btn-practice-tray').addEventListener('click', () => showPractice());
   $('btn-judge-demo').addEventListener('click', () => showPractice(true));
+  $('btn-skills').addEventListener('click', () => openSkills());
+  $('btn-custom').addEventListener('click', () => openCustom());
   $('practice-home').addEventListener('click', goHome);
   for (const [card, btn] of [['card-rescue', 'btn-play'], ['card-rows', 'btn-rows']]) {
     $(card).addEventListener('click', (e) => {
@@ -630,6 +634,7 @@ function loadDebrief() {
 
 $('btn-again').addEventListener('click', () => startGame({ mode: G.mode, level: G.level }));
 $('btn-menu').addEventListener('click', goHome);
+$('btn-end-skills').addEventListener('click', () => openSkills());
 
 // ---- demo hooks (?mock=1&demo=board | lock | puzzle-<type> | rows-select | rows-3 | rows-3-fail | rows-pass | end) ----
 function demoSetup(s) {
@@ -661,12 +666,38 @@ function demoSetup(s) {
   }
 }
 
+// Sample skill data for ?demo=skills (shown only, never saved).
+function demoSkills() {
+  const now = Date.now();
+  const mk = (topic, type, recent, wrong = '') => ({ topic, type, attempts: recent.length + 2, correct: recent.filter(Boolean).length + 2, recent, lastWrongPrompt: wrong, updatedAt: now });
+  return {
+    loops_range_fill: mk('loops', 'fill_blank', [true, true, true, true, true, true]),
+    loops_x_bug: mk('loops', 'find_bug', [true, false, true, true, true], 'Tìm dòng sai để chương trình in ra 0, 1, 2.'),
+    loops_y_predict: mk('loops', 'predict_output', [false, false, true]),
+    vars_a_fill: mk('variables', 'fill_blank', [true, true, true, true]),
+    vars_a_parsons: mk('variables', 'parsons', [true, false, true, false]),
+    cond_a_bug: mk('conditions', 'find_bug', [false, true], 'Câu lệnh if phải kết thúc bằng dấu hai chấm (:).'),
+    func_a_fill: mk('functions', 'fill_blank', [true, true, true]),
+  };
+}
+
 async function boot() {
   initStrip();
   initRows({ show, home: goHome });
+  initSkills({
+    show,
+    home: goHome,
+    practice: (focusTopic) => startGame({ mode: 'practice', level: prefs.level, focusTopic }),
+    play: () => startGame({ mode: prefs.mode, level: prefs.level }),
+  });
+  initCustom({ show, home: goHome, level: () => prefs.level });
   initStart();
+  const setId = params.get('set');
+  if (setId) return openCustom({ shared: setId });
   const demo = params.get('demo');
   if (!demo) return;
+  if (demo === 'skills') return openSkills({ sample: demoSkills() });
+  if (demo === 'custom') return openCustom();
   if (demo === 'judge') return showPractice(true);
   if (demo.startsWith('rows-')) return runDemo(demo);
   const mode = params.get('mode') || 'rescue';

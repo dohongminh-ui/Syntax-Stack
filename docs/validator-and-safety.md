@@ -1,7 +1,7 @@
 # Validator and safety
 
-`backend/app/validator.py` is the only module that executes Python. Both game modes and the offline
-puzzle generator use it. It has two jobs: decide whether a program is allowed to run and run it
+`backend/app/validator.py` is the only module that executes Python. Both game modes, the offline
+puzzle generator and the custom-code sandbox (section 5.1) use it. It has two jobs: decide whether a program is allowed to run and run it
 under limits, and turn what happened into an `error_group` the game can show.
 
 Related: [architecture.md](architecture.md), [syntax-rows.md](syntax-rows.md),
@@ -197,9 +197,79 @@ This is the main control. The strongest line of defence is not the whitelist but
   only through `validator.diagnose`, and only for an editor to review.
 
 This matches the proposal's safety rule: code comes from a content bank and is checked in a limited
-environment; arbitrary player or AI code is not run on the main server. If free-form code is ever
-added, the proposal says a separate sandbox with time and resource limits is required. The
-in-process runner here is not that.
+environment; arbitrary player or AI code is not run on the main server. The proposal also says that if
+free-form code is ever added, a separate sandbox with time and resource limits is required. The
+in-process runner is not that sandbox. "Paste your own code" (section 5.1) is the one place free-form
+code exists, and it uses the separate-process sandbox described there.
+
+### 5.1 Custom code ("paste your own code") runs in a child process
+
+`POST /api/custom/sets` accepts a program typed or pasted by the learner and turns it into up to four
+puzzles. This is the only path where free-form text is executed, and it never reaches
+`validator.run_program` inside the web server process. Everything that runs it, for generation and for
+later answer checks of those puzzles, goes through `app/sandbox.py`.
+
+**Before anything runs** (`custom_gen.prepare_source`, text and AST only, no execution):
+
+| Rule | Detail |
+| --- | --- |
+| Size | At most 800 characters and 2 to 15 non-empty lines (comments and blank lines are dropped first). |
+| Layout | No tab characters; every indent is a multiple of 4 spaces. |
+| AST | Must pass `validator.check_ast` (the same whitelist as everywhere else; the integer cap 10**6 stays). |
+| No sequence multiplication | `*` is rejected when an operand is a string literal, f-string, list or tuple, `str(...)`, or a name or function result that the program assigned from one of those (`"ab" * n`, `[0] * n`, `s = "x"; s * n`). This is a static, best-effort check: it cannot follow every value (for example a function parameter), which is why the sandbox limits below exist. |
+
+**The sandbox** (`sandbox.py` and `sandbox_worker.py`):
+
+- One child per job: `python -I -c <bootstrap>` with the backend directory as working directory.
+  `-I` (isolated mode) ignores `PYTHON*` variables and the user site directory. The child gets a scrubbed
+  environment: nothing from the server's environment (so not the tutor token), only `SYSTEMROOT` on
+  Windows.
+- Generation is **one child call per set**. All candidate runs (the program, its mutated copies, the
+  fill-in alternatives) happen inside that one child. Answer checks that need execution (parsons) are
+  one child call each. fill_blank, predict_output and find_bug checks read the stored, already verified
+  option and run nothing.
+- The child imports `validator`, so the whitelist, restricted builtins, 20 000 step limit, 1.5 s clock
+  and 2048 character output cap still apply inside it. The wall-clock limit below catches what those
+  cannot (a single long C-level call such as `sum(range(10**12))`).
+- At most 4 children at once. A fifth request waits up to 3 s, then gets 429.
+- `custom_gen.generate` refuses to run unless the worker has switched on `custom_gen.ENABLED`, so
+  calling it from the web server by mistake raises instead of executing pasted code.
+- Per-client limit: 10 new sets per hour (in memory, keyed by a hash of `_client_ip`), answered with 429.
+  Rejected input (422 before anything runs) does not use the quota.
+
+| Limit | Linux (the Docker image) | Windows (development) |
+| --- | --- | --- |
+| Wall clock for a generation job | 5 s, then the parent kills the child | 5 s, then `TerminateProcess` |
+| Wall clock for an answer check | 2 s | 2 s |
+| `RLIMIT_AS` (address space) | 256 MB (a `MemoryError` inside the program is reported as a runtime error) | not available |
+| `RLIMIT_CPU` | 3 s soft (SIGXCPU), 4 s hard | not available |
+| `RLIMIT_NPROC` | 0: the worker cannot fork or start threads | not available |
+| `RLIMIT_FSIZE` / `NOFILE` / `CORE` | 1 MB / 32 / 0 | not available |
+| Result size | 512 KB read from the child | same |
+
+The rlimits are set by the child itself at start-up (`sandbox_worker.apply_limits`), not with
+`preexec_fn`: `preexec_fn` is documented as unsafe in a multi-threaded parent, and the web server
+runs requests in a thread pool. The effect is the same because it happens before any learner code is
+read. The Linux column is implemented and unit-tested with a stand-in `resource` module, but the
+real kernel enforcement could only be exercised on Linux, not on the Windows development machine.
+
+**What the sandbox does not guarantee.** It is a resource and crash boundary, not a security jail.
+
+- No network namespace and no seccomp filter: the child runs as the same OS user as the server, can
+  open sockets and can read any file that user can read, if code ever escaped the AST whitelist. What
+  keeps that from being reachable is the same two layers as before (node whitelist and minimal
+  builtins), now inside a process that holds no secrets in its environment.
+- No filesystem isolation (no chroot, no read-only mount, no separate user). `RLIMIT_FSIZE` caps what
+  one file write could be, nothing more.
+- On Windows only the wall-clock timeout applies; memory is not limited. Do not expose the custom
+  endpoint from a Windows host.
+- Memory is limited per child, not for all children together (4 x 256 MB at the worst).
+- A learner can still make the server spend about 5 s of CPU per request, within the 10 per hour and 4
+  at a time limits.
+
+Custom puzzles are stored in `backend/data/custom.sqlite` (created on demand, in `.gitignore`, deleted
+after 30 days). The Docker image has no volume for it, so sets are lost when the container is
+re-created.
 
 ### What is not protected
 
@@ -220,15 +290,18 @@ Be honest about these when presenting the project.
    module-level `threading.Lock` (`_RECURSION_LOCK`), so overlapping runs from the thread pool can no
    longer capture each other's lowered value. The cost is that program execution is serial. `sys.settrace`
    itself is per-thread and was never affected.
-4. **No rate limiting on run endpoints.** The tutor has a concurrency cap; `/run`, `/answer` and
-   `/puzzle/next` do not.
+4. **No rate limiting on run endpoints.** The tutor has a concurrency cap and `POST /api/custom/sets`
+   has a per-client limit; `/run`, `/answer` and `/puzzle/next` do not.
 5. **Not authentication.** Anyone who can reach the server can call any endpoint.
 6. **Python version.** The whitelist reads `node.type_params`, which only exists on Python 3.12+. The
    Dockerfile uses 3.12; the local virtual environment used for these docs is 3.14.7. Older versions
    are not supported: `app/main.py` raises a `RuntimeError` at import below 3.12.
 
 The design accepts these because the inputs are bank-only. That assumption is the thing to protect
-when changing the code: do not add an endpoint that sends player-typed text to `run_program`.
+when changing the code: do not add an endpoint that sends player-typed text to `run_program` in the
+web server process. Text a learner typed goes through `sandbox.py` (5.1) or nowhere. Items 1 to 3
+describe the in-process runner; the sandbox child has the same weaknesses, but a hang there ends at the
+wall-clock limit and a memory spike ends in the child.
 
 ## 6. Normalisation and messages used by both games
 

@@ -111,6 +111,78 @@ Response: `{ "text": "...", "source": "ai" | "canned", "focus_topic": "loops" }`
 
 ---
 
+# Custom puzzle sets ("paste your own code")
+
+A learner pastes one program; the server runs it in a sandbox child process (see
+`docs/validator-and-safety.md` section 5.1), and returns up to four verified puzzles built from it.
+Puzzle ids are `c-<setid>-<n>` (`setid` = 8 lowercase base32 characters: `a-z`, `2-7`). Sets live in
+`backend/data/custom.sqlite` for 30 days.
+
+## POST /api/custom/sets
+Request: `{ "code": "<program>", "level": "beginner" | "intermediate" | "advanced" }` (`level` optional,
+default `intermediate`; it only decides how many options a view shows, like everywhere else).
+
+Input rules (checked before anything runs; failures are 422): at most 800 characters; 2 to 15 non-empty
+lines (comments and blank lines are removed first); no tab; indentation in multiples of 4 spaces; must
+pass the validator whitelist (no import, attribute access, lambda, `**`, ...); `*` is refused when an
+operand is a string, f-string, list or tuple (`"ab" * n`, `[0] * n`). The program must then run without
+error and print 1 to 5 lines of at most 40 characters.
+
+Response 200:
+```json
+{
+  "id": "k3x7q2mf",
+  "topic": "loops",
+  "code": "total = 0\nfor i in range(1, 5):\n    total = total + i\nprint(total)",
+  "expected_output": "10",
+  "puzzles": [
+    { "id": "c-k3x7q2mf-1", "template_id": "custom", "topic": "loops", "type": "predict_output", "tier": 1,
+      "prompt": "...", "code": "...", "expected_output": null, "lines": null,
+      "options": [ { "id": "a", "text": "11" } ] }
+  ],
+  "skipped": [ { "type": "parsons", "reason": "Cần ít nhất 3 dòng để làm bài sắp xếp." } ]
+}
+```
+- `code` is the normalised source (comments and blank lines removed). `expected_output` is what the
+  program prints. (It is also the answer to the predict puzzle; the learner wrote the program, so this
+  is by design, but a UI that shows the set header should not show it before a predict puzzle is answered.)
+- `puzzles` holds the generated puzzles in this order, each only when it could be made unambiguous:
+  `predict_output`, `find_bug`, `fill_blank`, `parsons`. Each view has exactly the fields of
+  `POST /api/puzzle/next` (`bank.public_puzzle`) and never contains answers. `tier` is always 1,
+  `template_id` is `"custom"`, `topic` is inferred: a `def` means `functions`, else `for`/`while` means
+  `loops`, else `if` means `conditions`, else `variables`.
+- `skipped` lists every type that was not made, with a Vietnamese reason. `puzzles` is never empty on a
+  200.
+- Every option was verified by running it: the correct option gives the expected output, every wrong one
+  does not; predict outputs are distinct; find_bug options span at least two lines; a parsons starting
+  order does not already pass. Parsons needs 3 or more distinct lines and indents of at most 2 levels,
+  and is checked by running the assembled program, so any order and indent that prints the expected
+  output is accepted.
+
+Errors (`{ "detail": "<Vietnamese reason>" }`):
+
+| Status | When |
+| --- | --- |
+| 422 | too long / too short / too many lines, tab, indent not a multiple of 4, syntax error, unsafe construct, string or list multiplication, program raises an error, runs too long (step limit, 5 s wall clock or memory), prints nothing, prints more than 5 lines or a line over 40 characters, or no puzzle could be generated (the reasons are in the message). A missing `code` or an invalid `level` is the usual FastAPI 422 with a list `detail`. |
+| 429 | more than 10 sets per hour from the same client (`CF-Connecting-IP` or the peer address), or the sandbox is busy (4 programs already running). |
+
+## GET /api/custom/sets/{id}?level=beginner|intermediate|advanced
+Same body as the 200 above for the stored set, without running anything, except that `code` and
+`expected_output` are `null`: together they answer every puzzle in the set, so only the creator's POST
+response carries them. A student opening a shared link never receives them. `level` is optional (default
+`intermediate`). `404 { "detail": "..." }` for an unknown, malformed or expired (older than 30 days) id.
+
+## Existing puzzle endpoints with `c-` ids
+- `POST /api/puzzle/{id}/answer`, `GET /api/puzzle/{id}/hint?level=` and `POST /api/puzzle/{id}/explain`
+  accept custom ids and behave exactly as for bank puzzles. Answers for `fill_blank`, `predict_output` and
+  `find_bug` read the stored verified options; a `parsons` answer is run in the sandbox. If that run
+  times out or fails, the answer counts as wrong (`output_mismatch`). Hints are three generic Vietnamese
+  hints per type; the explanation is a short generic text per type. An unknown or expired id is 404.
+- `GET /api/puzzle/{id}/rematch` with a custom id returns 422
+  `{ "detail": "Câu đố tự tạo không có bản luyện lại." }`.
+
+---
+
 # Syntax Rows API (see `Syntax_Rows_Gameplay_Spec.md`)
 
 Levels live in `backend/content/levels/*.yaml` (5 Beginner levels from spec §7). Each level file holds: id, order, title, goal (Vietnamese), expected_output, rows, cols (10), tokens (id, text, w in 1..3, topic or "syntax", is_distractor), canonical solution as rows of token ids with indent, required AST constructs (e.g. `For`, `If`, `FunctionDef`), 3 general hints, and 3 hints per error_group.
@@ -209,4 +281,4 @@ An empty or passing board or an unavailable tutor returns `"canned"`.
 ---
 
 ## Errors
-`404 { "detail": "..." }` for unknown puzzle id or no puzzle matching the filters, `422` for a malformed body (including lists over their caps: `exclude_ids` 1000, `exclude_templates` 50, `order` 30, `rows`/`baseline` 30, `tokens` per row 30; ids up to 40 characters, `template_id` 80), `413 { "detail": "Yêu cầu quá lớn." }` for a request body over 64 KB.
+`404 { "detail": "..." }` for unknown puzzle id or no puzzle matching the filters (custom sets: see the custom section for 422 and 429), `422` for a malformed body (including lists over their caps: `exclude_ids` 1000, `exclude_templates` 50, `order` 30, `rows`/`baseline` 30, `tokens` per row 30; ids up to 40 characters, `template_id` 80), `413 { "detail": "Yêu cầu quá lớn." }` for a request body over 64 KB.

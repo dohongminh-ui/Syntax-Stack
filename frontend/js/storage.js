@@ -97,3 +97,54 @@ export function practiceFocus(topics) {
     puzzleId: recent.find((entry) => entry.topic === topic && entry.puzzleId)?.puzzleId,
   };
 }
+
+// ---- Skill map: per-template outcomes of Code Rescue bank puzzles ----
+const SKILLS_KEY = 'syntaxstack.skills';
+const SKILLS_SEEN_KEY = 'syntaxstack.skills.seen';
+
+/** { [templateId]: { topic, type, attempts, correct, recent: boolean[<=6], lastWrongPrompt, updatedAt } } */
+export function loadSkills() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SKILLS_KEY));
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+export function recordSkill({ templateId, topic, type, correct, prompt = '' }) {
+  if (!templateId || templateId === 'custom' || !topic || !type) return;
+  try {
+    const all = loadSkills();
+    const e = all[templateId] || { topic, type, attempts: 0, correct: 0, recent: [], lastWrongPrompt: '', updatedAt: 0 };
+    e.topic = topic;
+    e.type = type;
+    e.attempts += 1;
+    if (correct) e.correct += 1;
+    e.recent = [...(Array.isArray(e.recent) ? e.recent : []), !!correct].slice(-6);
+    if (!correct && prompt) e.lastWrongPrompt = String(prompt).slice(0, 300);
+    e.updatedAt = Date.now();
+    all[templateId] = e;
+    localStorage.setItem(SKILLS_KEY, JSON.stringify(all));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Mastery levels shown the last time the map was opened: { 'topic:type': 0..3 }. */
+export function loadSkillsSeen() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SKILLS_SEEN_KEY));
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveSkillsSeen(levels) {
+  try {
+    localStorage.setItem(SKILLS_SEEN_KEY, JSON.stringify(levels));
+  } catch {
+    /* ignore */
+  }
+}

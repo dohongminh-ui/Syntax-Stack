@@ -35,6 +35,11 @@ BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
 from app import validator as V  # noqa: E402
+# Shared with the custom-code puzzle generator (app/custom_gen.py); re-exported under the old names.
+from app.puzzle_tools import (  # noqa: E402,F401
+    MAX_OUTPUT_LINE_CHARS, MAX_OUTPUT_LINES, Drop, build_bug_form, join_lines, letter, mutations,
+    output_ok, place_options, split_lines,
+)
 
 TEMPLATE_DIR = BACKEND / "content" / "templates"
 MISTAKES_FILE = BACKEND / "content" / "mistakes.yaml"
@@ -43,17 +48,11 @@ DEFAULT_SEED = 20260516
 
 TOPICS = ["variables", "conditions", "loops", "functions"]
 TYPES = ["parsons", "fill_blank", "predict_output", "find_bug"]
-MAX_OUTPUT_LINES = 5
-MAX_OUTPUT_LINE_CHARS = 40
 MIN_PROGRAM_LINES, MAX_PROGRAM_LINES = 2, 7
 MAX_PROGRAM_LINE_CHARS = 48
 MAX_DISTRACTORS = 4
 MIN_TEMPLATE_VARIANTS = 20
 MIN_CELL_VARIANTS = 20
-
-
-class Drop(Exception):
-    """Variant rejected by a verification rule."""
 
 
 # ----------------------------------------------------------------------------- rendering
@@ -86,35 +85,12 @@ def ev(expr: str, ctx: dict):
 # ----------------------------------------------------------------------------- helpers
 
 
-def split_lines(code: str) -> list[tuple[int, str]]:
-    """'for ...:\\n    print(i)' -> [(0, 'for ...:'), (1, 'print(i)')]"""
-    out = []
-    for raw in code.rstrip("\n").split("\n"):
-        stripped = raw.lstrip(" ")
-        indent_spaces = len(raw) - len(stripped)
-        if indent_spaces % 4:
-            raise ValueError(f"indent not a multiple of 4: {raw!r}")
-        out.append((indent_spaces // 4, stripped))
-    return out
-
-
-def join_lines(items: list[tuple[int, str]]) -> str:
-    return "\n".join("    " * ind + text for ind, text in items)
-
-
 def check_program(code: str) -> None:
     lines = [l for l in code.split("\n") if l.strip()]
     if not (MIN_PROGRAM_LINES <= len(lines) <= MAX_PROGRAM_LINES):
         raise Drop("program_length")
     if any(len(l) > MAX_PROGRAM_LINE_CHARS for l in lines):
         raise Drop("program_line_too_long")
-
-
-def output_ok(out: str) -> bool:
-    if not out:
-        return False
-    lines = out.split("\n")
-    return len(lines) <= MAX_OUTPUT_LINES and all(len(l) <= MAX_OUTPUT_LINE_CHARS for l in lines)
 
 
 def run_expected(code: str) -> str:
@@ -130,25 +106,6 @@ def run_expected(code: str) -> str:
 
 def has_for_loop(code: str) -> bool:
     return any(isinstance(n, ast.For) for n in ast.walk(ast.parse(code)))
-
-
-def place_options(n_options: int, rng: random.Random) -> list[int]:
-    """Return for each option index (0 = correct, 1.. = distractors by priority) its slot 0..n-1.
-
-    The correct answer always lands in slots a-c so beginners (who only see a-c) always get
-    correct + 2 distractors; the lowest-priority distractor takes slot d.
-    """
-    if n_options <= 3:
-        slots = list(range(n_options))
-        rng.shuffle(slots)
-        return slots
-    p = rng.randrange(3)
-    free = [i for i in range(3) if i != p]
-    return [p, free[0], free[1], 3]
-
-
-def letter(i: int) -> str:
-    return "abcd"[i]
 
 
 # ----------------------------------------------------------------------------- variant makers
@@ -176,129 +133,6 @@ class Ctx:
 
 def note_for(name: str, mistakes: dict) -> str | None:
     return mistakes.get(name)
-
-
-# ----------------------------------------------------------------------------- find_bug v2 options
-
-_STR = re.compile(r"\"[^\"]*\"|'[^']*'")
-_INT = re.compile(r"\b\d+\b")
-_OP_SWAPS = [(" + ", " - "), (" - ", " + "), (" * ", " + "), (">=", ">"), ("<=", "<"), ("==", "!="),
-             (" > ", " >= "), (" < ", " <= ")]
-
-
-def _outside_strings(text: str):
-    """Split into (is_string, chunk) pieces so edits never touch string literals."""
-    out, pos = [], 0
-    for m in _STR.finditer(text):
-        if m.start() > pos:
-            out.append((False, text[pos:m.start()]))
-        out.append((True, m.group(0)))
-        pos = m.end()
-    if pos < len(text):
-        out.append((False, text[pos:]))
-    return out
-
-
-def mutations(text: str) -> list[str]:
-    """Plausible but wrong whole-line edits of a line (numbers off by one, swapped operators...)."""
-    if text.startswith("def ") or text.rstrip(":") in ("else", "try"):
-        return []
-    pieces = _outside_strings(text)
-    res: list[str] = []
-
-    def rebuild(idx, new_chunk):
-        return "".join(new_chunk if i == idx else c for i, (_, c) in enumerate(pieces))
-
-    for idx, (is_str, chunk) in enumerate(pieces):
-        if is_str:
-            continue
-        for m in _INT.finditer(chunk):
-            n = int(m.group(0))
-            for v in (n + 1, n - 1):
-                if v >= 0:
-                    res.append(rebuild(idx, chunk[:m.start()] + str(v) + chunk[m.end():]))
-        for old, new in _OP_SWAPS:
-            if old in chunk:
-                res.append(rebuild(idx, chunk.replace(old, new, 1)))
-    m = re.fullmatch(r"print\((\w+)\)", text)
-    if m:
-        res.append(f"print({m.group(1)} + 1)")
-    seen, out = {text}, []
-    for r in res:
-        if r not in seen:
-            seen.add(r)
-            out.append(r)
-    return out
-
-
-def build_bug_form(items, bug_idx, fix, wrong_fixes, expected, rng):
-    """find_bug v2: every option is a whole-line edit tied to a line_id; options span >= 2 lines.
-
-    items: buggy program [(indent, text)]; wrong_fixes: [{name, text, note}] wrong edits of the bug line.
-    Raises Drop when no valid option set exists.
-    """
-    def trial(idx, text):
-        t = list(items)
-        t[idx] = (items[idx][0], text)
-        return V.diagnose(join_lines(t), expected)
-
-    bug_id = f"l{bug_idx + 1}"
-    wf, seen = [], {fix, items[bug_idx][1]}
-    for w in wrong_fixes:
-        if w["text"] in seen:
-            continue
-        seen.add(w["text"])
-        diag = trial(bug_idx, w["text"])
-        if diag.passed:
-            raise Drop("ambiguous_distractor")
-        wf.append({"line_id": bug_id, "text": w["text"], "name": w["name"], "group": "wrong_fix",
-                   "actual_output": diag.actual_output, "message": diag.message, "note": w["note"]})
-    if not wf:
-        raise Drop("no_wrong_fix")
-
-    cands = []
-    for i, (_, t) in enumerate(items):
-        if i == bug_idx:
-            continue
-        for m in mutations(t):
-            diag = trial(i, m)
-            if diag.passed:
-                continue  # accidentally fixes the program: not a valid wrong option
-            cands.append((i, m, diag))
-    rng.shuffle(cands)
-    cands.sort(key=lambda c: not (c[2].run is not None and c[2].run.ok))  # prefer edits that still run
-    if not cands:
-        raise Drop("no_other_line_edits")
-
-    def other(c):
-        i, m, diag = c
-        return {"line_id": f"l{i + 1}", "text": m, "name": "edited_wrong_line", "group": "wrong_line",
-                "actual_output": diag.actual_output, "message": diag.message, "note": None}
-
-    o1 = cands[0]
-    o2 = next((c for c in cands[1:] if c[0] == o1[0]), None) or (cands[1] if len(cands) > 1 else None)
-    third = other(o2) if o2 else (wf[1] if len(wf) > 1 else None)
-    if third is None:
-        raise Drop("too_few_options")
-    # priority order: slots a-c get the first two, slot d the last; both orders keep beginners on >= 2 lines
-    if o2 is not None and rng.random() < 0.5:
-        dist = [other(o1), other(o2), wf[0]]
-    else:
-        dist = [wf[0], other(o1), third]
-    slots = place_options(4, rng)
-    opts: list = [None] * 4
-    opts[slots[0]] = {"line_id": bug_id, "text": fix, "correct": True, "name": None, "group": None,
-                      "actual_output": expected, "message": None, "note": None}
-    for k, d in enumerate(dist):
-        opts[slots[k + 1]] = dict(d, correct=False)
-    for i, o in enumerate(opts):
-        o["id"] = letter(i)
-    assert len({(o["line_id"], o["text"]) for o in opts}) == 4
-    assert len({o["line_id"] for o in opts[:3]}) >= 2 and len({o["line_id"] for o in opts}) >= 2
-    bdiag = V.diagnose(join_lines(items), expected)
-    return {"lines": [{"id": f"l{i + 1}", "text": t, "indent": ind} for i, (ind, t) in enumerate(items)],
-            "bug_line": bug_id, "options": opts, "buggy_output": bdiag.actual_output,
-            "buggy_message": bdiag.message}
 
 
 def make_fill(tpl, tier, block, ctx, rng, mistakes):

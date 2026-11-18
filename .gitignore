@@ -27,6 +27,9 @@ __pycache__/
 htmlcov/
 node_modules/
 
+# Learner-made puzzle sets (created on demand by the server)
+backend/data/custom.sqlite
+
 # SQLite runtime files beside the checked-in puzzle bank
 *.sqlite*-journal
 *.sqlite*-shm

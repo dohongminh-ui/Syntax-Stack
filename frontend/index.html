@@ -63,6 +63,7 @@
   <link rel="stylesheet" href="css/game.css">
   <link rel="stylesheet" href="css/rows.css">
   <link rel="stylesheet" href="css/modal.css">
+  <link rel="stylesheet" href="css/features.css">
 </head>
 <body>
 <noscript><p class="noscript">Syntax Stack cần JavaScript để chạy. Hãy bật JavaScript trong trình duyệt rồi tải lại trang.</p></noscript>
@@ -113,6 +114,8 @@
 
       <div class="practice-shortcuts">
         <button id="btn-practice-tray" class="btn" type="button">Luyện theo lỗi</button>
+        <button id="btn-skills" class="btn" type="button">Bản đồ kỹ năng</button>
+        <button id="btn-custom" class="btn" type="button">Tạo câu đố từ code</button>
         <button id="btn-judge-demo" class="btn" type="button">Demo cho giám khảo</button>
       </div>
 
@@ -144,6 +147,31 @@
       <p id="practice-focus" class="end-sub"></p>
       <ol id="practice-items" class="practice-list"></ol>
       <button id="practice-home" class="btn" type="button">Về màn hình chính</button>
+    </div>
+  </section>
+
+  <!-- SKILL MAP -->
+  <section id="screen-skills" class="screen skills" hidden>
+    <div class="sk-wrap">
+      <div class="sk-head">
+        <h1 id="sk-title" class="rs-title" tabindex="-1">Bản đồ kỹ năng</h1>
+        <p id="sk-summary" class="sk-summary" aria-live="polite"></p>
+      </div>
+      <div class="board-case sk-case" id="sk-case"></div>
+      <div id="sk-empty" class="sk-empty" hidden></div>
+      <div id="sk-detail" class="sk-detail" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- PASTE YOUR OWN CODE -->
+  <section id="screen-custom" class="screen custom" hidden>
+    <div class="cu-wrap">
+      <div class="cu-head">
+        <h1 id="cu-title" class="rs-title" tabindex="-1">Tạo câu đố từ code</h1>
+        <p id="cu-sub" class="rs-sub"></p>
+      </div>
+      <div id="cu-editor" class="cu-editor-slot"></div>
+      <div id="cu-result" class="cu-result" aria-live="polite"></div>
     </div>
   </section>
 
@@ -185,6 +213,7 @@
       <div id="end-practice" class="practice-row"></div>
       <div class="end-actions">
         <button id="btn-again" class="key key-btn enter-key t-neutral" type="button"><span class="cap-top"><span class="kb-label">Chơi lại</span><span class="ret" aria-hidden="true">↵</span></span></button>
+        <button id="btn-end-skills" class="btn" type="button">Xem bản đồ kỹ năng</button>
         <button id="btn-menu" class="btn" type="button">Về màn hình chính</button>
       </div>
     </div>

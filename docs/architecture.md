@@ -278,7 +278,7 @@ sextax/
 │   │   ├── puzzles.sqlite            generated bank (committed output)
 │   │   └── review/                   sample editorial review packet
 │   ├── scripts/                      generate_bank.py, review_content.py
-│   ├── tests/                        pytest suite (130 tests)
+│   ├── tests/                        pytest suite (252 tests)
 │   ├── requirements.txt, pytest.ini, README.md
 │   └── .venv/                        local virtual environment (not documented here)
 └── frontend/

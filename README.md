@@ -42,7 +42,7 @@ Open **http://localhost:8000/**. API explorer: http://localhost:8000/docs. Healt
 .venv/bin/python -m pytest -q        # Windows: .venv\Scripts\python -m pytest -q
 ```
 
-Expected: `179 passed`.
+Expected: `252 passed`.
 
 The tutor is optional. To enable it, set `SYNTAX_STACK_TUTOR_URL` and `SYNTAX_STACK_TUTOR_TOKEN` in the
 server's environment ([docs/ai-tutor.md](docs/ai-tutor.md)). Without them everything works with
@@ -82,6 +82,9 @@ sextax/
 │   │   ├── bank.py                    Code Rescue: select puzzles, build public view, check answers
 │   │   ├── rows.py                    Syntax Rows: levels, board assembly, run, trace, twist, practice
 │   │   ├── hints.py                   authored (canned) hints
+│   │   ├── custom.py, custom_gen.py   paste-your-own-code puzzle sets (store, API logic, generator)
+│   │   ├── sandbox.py, sandbox_worker.py  child-process runner for pasted code
+│   │   ├── puzzle_tools.py            helpers shared by generate_bank.py and custom_gen.py
 │   │   └── tutor.py                   optional n8n tutor client (cache, 2 slots, fallback)
 │   ├── content/
 │   │   ├── templates/*.yaml           16 Code Rescue templates (4 topics x 4 types)
@@ -93,7 +96,7 @@ sextax/
 │   ├── scripts/
 │   │   ├── generate_bank.py           offline bank generator and verifier
 │   │   └── review_content.py          editorial draft checker (needs the tutor webhook)
-│   ├── tests/                         pytest suite (130 tests)
+│   ├── tests/                         pytest suite (252 tests)
 │   ├── requirements.txt, pytest.ini, README.md
 └── frontend/
     ├── index.html                     all screens; loads js/main.js

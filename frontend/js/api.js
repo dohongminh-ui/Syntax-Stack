@@ -36,7 +36,9 @@ async function request(method, url, body, { timeout = TIMEOUT_MS } = {}) {
     } catch {
       /* ignore */
     }
-    throw new Error(typeof detail === 'string' && detail ? detail : 'Lỗi máy chủ (' + res.status + ')');
+    const err = new Error(typeof detail === 'string' && detail ? detail : 'Lỗi máy chủ (' + res.status + ')');
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }
@@ -129,4 +131,18 @@ export async function rowsHint(id, level, errorGroup, attempt) {
   const path = '/api/rows/levels/' + encodeURIComponent(id) + '/hint?level=' + level;
   if (attempt) return request('POST', path, attempt, { timeout: TUTOR_TIMEOUT_MS });
   return request('GET', path + (errorGroup ? '&error_group=' + encodeURIComponent(errorGroup) : ''));
+}
+
+// ---- Custom puzzle sets (pasted code) ----
+const CUSTOM_TIMEOUT_MS = 30000;
+
+/** body: { code, level? } -> { id, topic, code, expected_output, puzzles, skipped }. Errors carry `.status` (422, 429...). */
+export async function createCustomSet(body) {
+  if (isMock) return (await mock()).createCustomSet(body);
+  return request('POST', '/api/custom/sets', body, { timeout: CUSTOM_TIMEOUT_MS });
+}
+
+export async function getCustomSet(id, level) {
+  if (isMock) return (await mock()).getCustomSet(id, level);
+  return request('GET', '/api/custom/sets/' + encodeURIComponent(id) + (level ? '?level=' + encodeURIComponent(level) : ''));
 }

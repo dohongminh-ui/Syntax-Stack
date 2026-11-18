@@ -201,7 +201,8 @@ def _find_option(data: dict, option_id: Optional[str]) -> dict:
 
 
 def check_answer(row: dict, *, option_id: Optional[str] = None, order: Optional[list[dict]] = None,
-                 line_id: Optional[str] = None, reveal: bool = False) -> dict:
+                 line_id: Optional[str] = None, reveal: bool = False, diagnose=None) -> dict:
+    """``diagnose`` replaces ``validator.diagnose`` for parsons (custom puzzles pass the sandboxed one)."""
     typ, data = row["type"], row["data"]
     ok_msg = "Chính xác! Chương trình in đúng đầu ra."
 
@@ -231,12 +232,12 @@ def check_answer(row: dict, *, option_id: Optional[str] = None, order: Optional[
         return _result(row, False, reveal, "wrong_fix", opt["message"], opt["actual_output"], opt["note"])
 
     if typ == "parsons":
-        return _check_parsons(row, order, reveal)
+        return _check_parsons(row, order, reveal, diagnose or V.diagnose)
 
     raise Malformed("Loại câu đố không được hỗ trợ.")  # pragma: no cover
 
 
-def _check_parsons(row: dict, order: Optional[list[dict]], reveal: bool) -> dict:
+def _check_parsons(row: dict, order: Optional[list[dict]], reveal: bool, diagnose) -> dict:
     data = row["data"]
     if not order:
         raise Malformed("Thiếu 'order'.")
@@ -248,7 +249,7 @@ def _check_parsons(row: dict, order: Optional[list[dict]], reveal: bool) -> dict
         if not (0 <= o["indent"] <= MAX_INDENT):
             raise Malformed(f"indent phải từ 0 đến {MAX_INDENT}.")
     code = "\n".join("    " * o["indent"] + texts[o["line_id"]] for o in order)
-    diag = V.diagnose(code, row["expected_output"])
+    diag = diagnose(code, row["expected_output"])
     if diag.passed:
         return _result(row, True, reveal, None, "Chính xác! Chương trình in đúng đầu ra.", diag.actual_output)
 
