@@ -1,4 +1,4 @@
-# Syntax Stack — speaking script (finals, v3.1, 10 minutes)
+# Syntax Stack — speaking script (finals, v3.2, 10 minutes)
 
 v2 is kept in `presentation-script.v2.md`. v3 cuts the talk to **10 minutes including a 3-minute live
 demo**. Judges remember one strong moment, so the demo is one block, built around the live classroom.
@@ -160,9 +160,9 @@ predict, fix the bug, fill the blank, reorder. Every option was actually run. Pa
 
 **3. AI explains, never grades (0:45).** *(Switch tab: Syntax Rows, level 3.)*
 I predict this prints 0, 1, 2 and press Run. *(Run.)* It prints 0, 1: my prediction was wrong. I tap
-**"Vì sao?"** *(tap)* and the AI tutor explains **why**, using the validator's trace: `range(2)` stops
-before 2. The validator decided; the AI only explained. If the AI is down, a hand-written explanation
-appears instead.
+**"Vì sao?"** *(tap)* and **Misaki**, our AI tutor, explains **why**, using the validator's trace:
+`range(2)` stops before 2. The validator decided; Misaki only explained. If the AI is down, a
+hand-written explanation appears instead.
 
 *(If the network fails: play the recording on this slide and narrate the same three steps.)*
 
@@ -173,7 +173,7 @@ limits, and names the error. **559 puzzles** are generated from templates, and e
 **proven wrong** by running it. More than 400 automated tests protect all of it.
 
 ### Slide 13 — Business potential (0:45)
-**Free for students**, cheap to run: puzzles are generated once, in advance, and the AI tutor is capped
+**Free for students**, cheap to run: puzzles are generated once, in advance, and Misaki, the AI tutor, is capped
 with free hand-written fallbacks.
 
 And the paid part is no longer an idea. **You just used it**: a live classroom where a lecturer sees
@@ -188,8 +188,8 @@ don't claim it yet), and more languages like C# and JavaScript.
 ↳ Cut if short on time: Each player also has a **skill map** *(point at screenshot)*, sixteen skills
 that light up as they master them.
 
-↳ *(Only if 1v1 ships and is rehearsed)* And a real-time **1v1 mode**: solve a lock and you send bug
-lines to your opponent's board.
+↳ *(Only if 1v1 is rehearsed)* And a real-time **1v1 mode**: solve a lock and you send bug lines to your
+opponent's board, against a friend or against **Misaki**, who can also coach you while you play.
 
 ### Slide 15 — Close and questions (0:10)
 Syntax Stack keeps the feeling of a game people love, and puts **verified code** underneath it, so
@@ -220,13 +220,25 @@ every mistake becomes a lesson. Thank you. We'd be happy to take your questions.
   code, and a row clears only when the code is correct.
 - **"What does the AI cost?"** (Minh) It's capped per day and per visitor, cached, and the game works
   fully without it.
+- **"Who or what is Misaki?"** (Minh) Misaki is our AI character, with two jobs, and we're precise
+  about both. As the **tutor**, her explanations come from a large language model, **Google Gemini**,
+  through our own prompts, limits and hand-written fallbacks; she only explains what the validator has
+  already decided. As the **opponent**, she's a **search-based game AI**: she plans each move by
+  searching the possible placements and scoring the boards, the same family of technique classic game
+  engines use. She isn't trained on data and doesn't learn; her four levels differ in how far she
+  searches and how fast she plays.
+- **"Is Misaki machine learning?"** (Minh) No. The tutor uses an existing language model, and the
+  opponent is a search algorithm. We chose search for the opponent because it's predictable, explainable
+  and runs instantly on our server.
 - **"Is there competition between players?"** (Minh) Yes: a ranked leaderboard and friend races. The
   phone never sends a score; it sends only its moves, and the server replays the whole game with the
   same rules and computes the score itself. We check that the server's copy of the rules matches the
   game exactly by replaying hundreds of games in both. A faked score is simply rejected.
-- *(Only if 1v1 ships)* **"Can you play against each other live?"** (Minh) Yes, 1v1: both players get
-  the same pieces, solving a lock sends bug lines to the opponent, and the server runs both boards, so
-  nobody can cheat. There's also a bot opponent when nobody else is online.
+- **"Can you play against each other live?"** (Minh) Yes, 1v1: both players get the same pieces, solving
+  a lock sends bug lines to the opponent, and the server runs both boards, so nobody can cheat. When
+  nobody else is online you play **Misaki**: four levels you unlock by beating the one before, and a
+  training mode where she coaches you during the match. Players see their own progress by climbing
+  her levels.
 
 ### Slide 16 — Thank you
 Try it now at **syntax.screepai.moe**.

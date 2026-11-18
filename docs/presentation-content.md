@@ -1,12 +1,18 @@
-# Syntax Stack — presentation content (SERS template), v3.1 (finals)
+# Syntax Stack — presentation content (SERS template), v3.2 (finals)
 
 Slide-by-slide content for `Stack.pdf`, matched one-to-one with the speaking script
-`docs/presentation-script.md` (v3). The talk is **10 minutes including a 3-minute live demo**, so the
+`docs/presentation-script.md` (v3.2). The talk is **10 minutes including a 3-minute live demo**, so the
 deck is 16 slides and the slides carry headlines, not paragraphs: the speakers carry the depth.
 Each slide lists the **on-slide text**, a **visual**, and where the media comes from. Language: English,
 like the template; the game itself is in Vietnamese. v2 of this file is in git history.
 
 > Before presenting: double-check the three cited figures on slide 4 against the original papers.
+
+> **Wording rule for Misaki (read before editing any slide).** Misaki is one AI character with two
+> jobs. As the **tutor** she explains, using a large language model; as the **opponent** she is a
+> **search-based game AI**. On slides never write "trained", "learns", "machine learning" or "our own
+> model" about her. "AI tutor", "AI opponent" and "plans her moves with a search algorithm" are all true.
+> The vendor (Google Gemini) is not on the slides; it is in the spoken Q&A answer, ready if asked.
 
 ## Changes from v2
 
@@ -22,6 +28,9 @@ like the template; the game itself is in Vietnamese. v2 of this file is in git h
 - **Q&A updated:** "Isn't running user code dangerous?" no longer says players never type code (they
   can paste code now); the answer is the sandbox, with the limits tested on the live server.
 - **Still not claimed:** learning gains. Framed as the pilot.
+- **v3.2: Misaki.** The AI tutor and the 1v1 AI opponent are one character, Misaki. Slides 8, 11, 12
+  and 14 use her name; 1v1 (vs friends or Misaki, 4-level ladder, training mode with coaching) moves to
+  "Built" on the roadmap.
 
 ## Screenshots to capture (new)
 
@@ -35,7 +44,9 @@ mode, for anything on the business or demo slide (mock screens are labelled "mô
 | `leaderboard-phone.png` | `Bảng xếp hạng` after a few real ranked runs (not mock: mock is labelled "dữ liệu mẫu"). |
 | `custom-result-desktop.png` | `Tạo câu đố từ code` → paste the demo program → capture the four puzzle cards. |
 | `skills-map-phone.png` | Play a few Rescue runs first so the map has all four mastery levels, then `Bản đồ kỹ năng`. |
-| `predict-why-ai-phone.png` | Syntax Rows level 3, `range(2)`, predict 0 1 2, Run, tap "Vì sao?" with the tutor on. |
+| `predict-why-ai-phone.png` | Syntax Rows level 3, `range(2)`, predict 0 1 2, Run, tap "Vì sao?" with the tutor on: the "MISAKI · GIA SƯ AI" card. |
+| `misaki-ladder-phone.png` | `Đối kháng 1v1` → "Đấu với Misaki" after beating level 1, so one level shows unlocked and two locked. |
+| `misaki-coach-phone.png` | A training match ("Luyện tập cùng Misaki") with her coach bubble visible and a "Gợi ý nước đi" suggestion outlined on the board. |
 | `end-debrief-ai-phone.png` | Lose a Rescue run with 2 mistakes, capture the "Tổng kết" block. |
 | `demo-fallback.mp4` | 20-second screen recording of the three demo beats, for slide 11. |
 
@@ -129,9 +140,9 @@ Learn Python by stacking real code
 ## Slide 8 — Our solution
 
 1. **The board is the program.** Rows are lines; the column is the indentation.
-2. **A validator judges. AI only explains.** Every answer is checked by running the code. The optional
-   AI tutor explains a mistake the validator has already confirmed, is labelled as AI, and falls back
-   to hand-written text.
+2. **A validator judges. AI only explains.** Every answer is checked by running the code. **Misaki**,
+   our AI tutor, explains a mistake the validator has already confirmed, is labelled as AI, and falls
+   back to hand-written text.
 3. **No time pressure.** Thinking slowly is allowed.
 
 **Visual:** numbered-circle layout (SERS slide 9).
@@ -172,7 +183,7 @@ Learn Python by stacking real code
 
 1. **Live classroom:** the teacher sees *why* the class is wrong, live.
 2. **Any code → verified puzzles:** paste a program, get four puzzles.
-3. **AI explains, never grades:** "Vì sao?" after a wrong prediction.
+3. **Misaki explains, never grades:** "Vì sao?" after a wrong prediction.
 
 **Visual:** this slide is mostly a backdrop: the demo runs in the browser. Put
 `classroom-dashboard-desktop.png` behind the text and embed `demo-fallback.mp4` (hidden, play only
@@ -187,12 +198,14 @@ if the network fails).
 - **Validator:** whitelist of beginner Python, step/time/output limits, named error types, line trace.
 - **Puzzle bank:** 16 templates → **559 verified puzzles**; every wrong option is proven wrong by running it.
 - **Pasted code:** runs in an **isolated sandbox process** (time, 3 s CPU, 256 MB memory limits).
-- **AI tutor (optional):** explains only, capped per day and per visitor, hand-written fallback.
+- **Misaki, AI tutor:** explains only, capped per day and per visitor, hand-written fallback.
+- **Misaki, AI opponent:** plans her moves with a search algorithm on the server; 4 levels.
 - **Ranked play is server-verified:** the phone sends only its moves; the server replays the game and computes the score.
 - **More than 400 automated tests.**
 
 **Visual:** architecture strip: Phone/Browser → FastAPI → Validator → SQLite bank; side boxes
-"Sandbox (pasted code)" and "AI tutor (explains only)" with a dashed "hand-written fallback" arrow.
+"Sandbox (pasted code)", "Misaki · tutor (explains only)" with a dashed "hand-written fallback" arrow,
+and "Misaki · opponent (search AI)" next to a "Live 1v1 (WebSocket)" box.
 
 ---
 
@@ -210,16 +223,18 @@ if the network fails).
 ## Slide 14 — Roadmap
 
 - **Built:** ranked leaderboard and friend races (scores verified by server replay), random friendly
-  names, skill map.
+  names, skill map, and **real-time 1v1**: against a friend, or against **Misaki** at four levels you
+  unlock one by one, with a training mode where she coaches you.
 - **Next:** a pilot with real students to measure learning, using the classroom dashboard as the
   instrument. *(Learning gains are not claimed yet.)*
 - **Later:** more Syntax Rows levels (Intermediate, Advanced); more languages (C#, JavaScript), which
   the validator design allows; more topics (lists, strings).
 
-**Visual:** `skills-map-phone.png` and `leaderboard-phone.png` (new), small.
+**Visual:** `skills-map-phone.png`, `leaderboard-phone.png` and `misaki-ladder-phone.png` (new), small.
+Optionally `misaki-coach-phone.png` instead of the skill map.
 
-> Real-time 1v1 is being built. If it ships and has been rehearsed, add it to "Built" with one line
-> ("solve a lock, send bug lines to your opponent") and a screenshot; otherwise leave it off the slide.
+> 1v1 is shown here, not demoed: the 3-minute demo stays on the classroom. Only mention it aloud if it
+> has been rehearsed (the script marks that line as cuttable).
 
 ---
 
