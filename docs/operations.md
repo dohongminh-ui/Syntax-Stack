@@ -318,6 +318,37 @@ needed.
 | Browser console shows CORS errors | The page is not served by the FastAPI app | See the CORS section below. |
 | `docker compose up` starts but the tutor cannot be reached | `network_mode: host` may not behave like Linux (Docker Desktop), or n8n is not on `127.0.0.1:5678` | Change `SYNTAX_STACK_TUTOR_URL`, or run without Docker. |
 
+### Unexpected duel endings
+
+The server writes single-line JSON diagnostics prefixed with `pvp ` through Uvicorn's INFO logger.
+Read them with `docker compose logs --since 30m game | grep 'pvp '`. Group records by `match`; the
+`seed` and elapsed match time are included. Logs contain no nicknames, device ids or match/socket tokens.
+
+- `start`: match kind, game difficulty, bot/Misaki levels and training flags.
+- `incoming`: receiver's side (0 or 1), source (`opponent` or `overtime`), rows, pending queue size and
+  cumulative received count. Opponent attacks also identify the sender's side.
+- `landing`: placement and its cells, pending/landed row count, board before and after, and end reason.
+  Boards are eight strings, top row first: `.` empty, `#` normal block, `B` bug block. The before-board
+  excludes the new placement; `cells` identifies the cells it added. A fatal landing leaves that placed
+  board intact, so the exact cells that would have crossed the top can be inspected.
+- `stale_place`: a move rejected because its received count predates an incoming attack.
+- `end`: winner's side, reason, both boards and each side's sent/received/score counters.
+
+A single incoming row can cause a top-out if a block (including the piece just placed) occupies the
+top row. Empty space elsewhere does not prevent this. Overtime contributes incoming rows even if the
+opponent sent none.
+
+To autoplay locally, from `backend/` run:
+
+```bash
+python -m tests.pvp_audit --games 100 --log pvp-audit.jsonl
+```
+
+This uses the existing deterministic bot-vs-bot harness and virtual clock on the real match engine.
+It checks each landing's legality, exact board shift, top-out condition, attack counts and final result;
+prints a summary and appends the JSON evidence to the requested file. It does not drive a browser or
+contact production. HTTP/WebSocket autoplay remains covered by `tests/test_pvp_match.py`.
+
 ### Tutor unavailable, game uses canned text
 
 The game cannot tell a user that the tutor failed; it returns `source: "canned"`. Check in this

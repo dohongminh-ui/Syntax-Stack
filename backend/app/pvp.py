@@ -30,6 +30,8 @@ from . import bank, nicknames, pvp_bot, pvp_coach, ranked, rooms
 from . import rescue_engine as E
 
 log = logging.getLogger("syntax_stack.pvp")
+# Uvicorn configures this logger's parent at INFO, so diagnostics reach the server console by default.
+diagnostics = logging.getLogger("uvicorn.error.pvp")
 
 # --- limits (docs/pvp.md section 7) and timings (seconds of match clock)
 MAX_LIVE_MATCHES = 200
@@ -281,6 +283,10 @@ def _stats(p: Player) -> dict:
     return {"score": g.score, "sent": g.sent, "received": g.received, "locks": g.locks_cleared}
 
 
+def _board_rows(g: E.RescueGame) -> list[str]:
+    return ["".join("." if cell is None else "B" if cell["bug"] else "#" for cell in row) for row in g.grid]
+
+
 # --------------------------------------------------------------------------- the match
 
 
@@ -315,6 +321,10 @@ class Match:
 
     def elapsed(self) -> float:
         return max(0.0, now() - self.started_at) if self.phase != "lobby" else 0.0
+
+    def trace(self, event: str, **fields: Any) -> None:
+        diagnostics.info("pvp %s", json.dumps({"event": event, "match": self.id, "seed": self.seed,
+                                              "elapsed_s": round(self.elapsed(), 3), **fields}, separators=(",", ":")))
 
     def seat(self, p: Player, index: int) -> None:
         self.sides[index] = p
@@ -448,6 +458,9 @@ class Match:
         self.started_at = now()
         self.start_wall = time.time()
         self.countdown_at = None
+        self.trace("start", kind=self.kind, level=self.level,
+                   players=[{"side": p.index, "bot": p.bot, "misaki": p.misaki, "training": p.training}
+                            for p in self.players()])
         for p in self.players():
             p.game = E.RescueGame(self.seed, self.level, "pvp")
             if p.bot:
@@ -512,9 +525,17 @@ class Match:
     # ---- actions (the same code for a human's message and for the bot) ----
     def do_place(self, p: Player, i: int, r: int, c: int) -> bool:
         g = p.game
+        pending = len(g.pending)
+        before = _board_rows(g) if pending else None
+        piece = g.tray[i] if 0 <= i < len(g.tray) else None
         res = g.place(i, r, c) if g.phase == "play" else None
         if res is None:
             return False
+        if res["landed"]:
+            self.trace("landing", side=p.index, move={"i": i, "r": r, "c": c},
+                       cells=[[r + dr, c + dc] for dr, dc in piece.cells],
+                       pending_before=pending, rows=res["landed"], received=g.received,
+                       board_before=before, board_after=_board_rows(g), end_reason=g.end_reason)
         if res["lock"]:
             g.phase = "locked"
             p.reset_lock()
@@ -656,6 +677,8 @@ class Match:
             topic = res["topic"]
             entries = [{"topic": topic, "template_id": _template_of(topic, res["template_id"])}] * send
             o.game.queue_incoming(entries)
+            self.trace("incoming", side=o.index, source="opponent", sender=p.index, rows=send,
+                       pending=len(o.game.pending), received=o.game.received)
             o.send({"t": "incoming", "lines": send, "from_topic": topic})
             self.push_state(o)
             o.opp_dirty = p.opp_dirty = True
@@ -687,6 +710,10 @@ class Match:
             return
         self.phase = "over"
         self.winner, self.reason, self.ended_at = winner, reason, now()
+        self.trace("end", winner=winner, reason=reason,
+                   players=[{"side": p.index, "bot": p.bot, **_stats(p),
+                             "pending": len(p.game.pending) if p.game else 0,
+                             "board": _board_rows(p.game) if p.game else None} for p in self.players()])
         humans = self.humans()
         rated: Optional[tuple] = None
         if (self.kind != "bot" and len(humans) == 2 and reason not in ("both_disconnected", "server_restart")
@@ -781,6 +808,8 @@ class Match:
                 if p.game.phase == "over":
                     continue
                 p.game.queue_incoming([{"topic": topic, "template_id": f"{topic}_bug"}])
+                self.trace("incoming", side=p.index, source="overtime", rows=1,
+                           pending=len(p.game.pending), received=p.game.received)
                 p.send({"t": "incoming", "lines": 1, "from_topic": topic, "overtime": True})
                 self.push_state(p)
                 p.opp_dirty = True
@@ -898,6 +927,8 @@ def _dispatch(p: Player, msg: dict) -> None:
                 if not _is_int(received) or received < 0:
                     return _error(p, "bad_message")
                 if received != p.game.received:
+                    m.trace("stale_place", side=p.index, seen_received=received, received=p.game.received,
+                            move={"i": msg["i"], "r": msg["r"], "c": msg["c"]})
                     _error(p, "stale_state")
                     m.push_state(p)
                     return

@@ -5,6 +5,7 @@ take fractions of a second. The rules themselves are covered by test_pvp_rules.p
 """
 import contextlib
 import json
+import logging
 import random
 import secrets
 import time
@@ -355,6 +356,44 @@ def test_unseen_incoming_rows_do_not_turn_an_in_flight_move_into_a_loss(tc, bot,
     a.send(t="place", i=0, r=7, c=0, received=a.state["received"])
     end = a.until("end")
     assert end["winner"] == "opponent" and end["reason"] == "topped_out"
+
+
+@pytest.mark.parametrize("top_row", [True, False])
+def test_single_line_landing_logs_the_exact_board_and_attack_source(duo, caplog, top_row):
+    caplog.set_level(logging.INFO, logger="uvicorn.error.pvp")
+    a, _ = duo
+    m, p = match_of(a), side_of(a)
+    with pvp._lock:
+        g = p.game
+        g.grid[0 if top_row else 2][7] = {"topic": "loops", "bug": False, "bug_id": None}
+        g.tray[0] = E.Piece("dot", ((0, 0),), "variables")
+        m.deliver(p.opponent, {"send": 1, "cancelled": 0, "topic": "loops", "template_id": "loops_bug"})
+    a.until("state")
+    a.send(t="place", i=0, r=7, c=0, received=a.state["received"])
+    a.until("end" if top_row else "landed")
+    # The sender and receiver both use a single authoritative landing, including a fatal one.
+    if not top_row:
+        a.until("state")
+    events = [json.loads(rec.getMessage().removeprefix("pvp ")) for rec in caplog.records
+              if rec.name == "uvicorn.error.pvp"]
+    incoming = next(e for e in events if e["event"] == "incoming")
+    landing = next(e for e in events if e["event"] == "landing")
+    assert incoming["source"] == "opponent" and incoming["rows"] == 1
+    assert incoming["sender"] == p.opponent.index and incoming["side"] == p.index
+    assert landing["match"] == m.id and landing["seed"] == m.seed
+    assert landing["rows"] == landing["pending_before"] == landing["received"] == 1
+    assert landing["cells"] == [[7, 0]]
+    assert sum(row.count("#") for row in landing["board_before"]) == 1
+    if top_row:
+        assert landing["board_before"][0] == ".......#"
+        assert landing["board_after"][0] == ".......#" and landing["board_after"][7] == "#......."
+        assert landing["end_reason"] == "topped_out"
+        end = next(e for e in events if e["event"] == "end")
+        assert end["winner"] == p.opponent.index and end["reason"] == "topped_out"
+    else:
+        assert landing["end_reason"] is None and landing["board_after"][7] == "BBBBBBBB"
+        assert landing["board_after"][1] == ".......#" and landing["board_after"][6] == "#......."
+    assert all(secret not in caplog.text for secret in [p.ticket, p.token, p.device_hash, p.nickname])
 
 
 def test_wrong_answer_makes_a_bug_line_and_it_can_be_fixed_without_a_crash(duo, tc):
