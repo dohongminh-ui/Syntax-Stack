@@ -11,6 +11,9 @@ const TITLES = {
   'screen-room-teach': 'Bảng điều khiển lớp — Syntax Stack',
   'screen-room-join': 'Vào phòng — Syntax Stack',
   'screen-end': 'Kết quả — Syntax Stack',
+  'screen-leaderboard': 'Bảng xếp hạng — Syntax Stack',
+  'screen-race-new': 'Đấu tốc độ — Syntax Stack',
+  'screen-race': 'Đấu tốc độ — Syntax Stack',
 };
 
 export function setScreenTitle(id) {

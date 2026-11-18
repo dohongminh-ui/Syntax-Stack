@@ -8,7 +8,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import bank, custom, hints, rooms, rows, tutor
+from . import bank, custom, hints, nicknames, ranked, rescue_engine, rooms, rows, tutor
 from . import validator as V
 
 if sys.version_info < (3, 12):  # the validator reads ast node.type_params (3.12+)
@@ -41,6 +41,9 @@ app.add_middleware(
 # /next with every puzzle seen this game); without a limit a single 100 MB body would be parsed
 # into memory before validation even starts.
 MAX_BODY_BYTES = 64 * 1024
+# A ranked run's move list (up to 3000 moves, ~35 bytes each) is the one legitimately big body.
+MAX_FINISH_BODY_BYTES = 192 * 1024
+_FINISH_PATH = re.compile(r"^/api/runs/[0-9a-f]{16}/finish$")
 
 
 class _BodyLimit:
@@ -53,8 +56,9 @@ class _BodyLimit:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope["method"] in ("GET", "HEAD", "OPTIONS"):
             return await self.app(scope, receive, send)
+        limit = MAX_FINISH_BODY_BYTES if _FINISH_PATH.match(scope.get("path", "")) else self.limit
         declared = dict(scope.get("headers") or []).get(b"content-length", b"")
-        if declared.isdigit() and int(declared) > self.limit:
+        if declared.isdigit() and int(declared) > limit:
             response = JSONResponse({"detail": "Yêu cầu quá lớn."}, status_code=413)
             return await response(scope, receive, send)
         seen = 0
@@ -64,7 +68,7 @@ class _BodyLimit:
             message = await receive()
             if message["type"] == "http.request":
                 seen += len(message.get("body", b""))
-                if seen > self.limit:
+                if seen > limit:
                     raise ValueError("request body over the size limit")
             return message
 
@@ -148,6 +152,9 @@ class NextRequest(BaseModel):
     # list caps: far above real play (a game sees well under 200 puzzles; the client sends the last 500)
     exclude_ids: list[str] = Field(default_factory=list, max_length=1000)
     exclude_templates: list[str] = Field(default_factory=list, max_length=50)
+    # Ranked run / race: with a valid pair the server picks the puzzle deterministically and records it.
+    run_id: Optional[str] = Field(default=None, max_length=32)
+    run_token: Optional[str] = Field(default=None, max_length=64)
 
 
 class CustomSetRequest(BaseModel):
@@ -169,15 +176,20 @@ class AnswerRequest(BaseModel):
     # Live classroom: when both are valid the server logs the checked result for the teacher dashboard.
     room: Optional[str] = Field(default=None, max_length=16)
     player_token: Optional[str] = Field(default=None, max_length=64)
+    # Ranked run / race: when both are valid the server records the checked result for the replay.
+    run_id: Optional[str] = Field(default=None, max_length=32)
+    run_token: Optional[str] = Field(default=None, max_length=64)
 
 
 class RoomCreateRequest(BaseModel):
     level: Level = "intermediate"
     title: Optional[str] = Field(default=None, max_length=200)  # real limit (40) is a Vietnamese 422 in rooms.py
+    names: Literal["random", "free"] = "random"
 
 
 class RoomJoinRequest(BaseModel):
-    nickname: str = Field(max_length=200)  # real limit (20) is a Vietnamese 422 in rooms.py
+    # Ignored in "random" rooms; in "free" rooms the real limit (20) is a Vietnamese 422 in rooms.py
+    nickname: Optional[str] = Field(default=None, max_length=200)
 
 
 class RoomProgressRequest(BaseModel):
@@ -230,6 +242,27 @@ class DebriefRequest(BaseModel):
     wrong: list[WrongAttempt] = Field(min_length=1, max_length=12)
 
 
+class RunCreateRequest(BaseModel):
+    kind: Literal["ranked", "race"]
+    level: Optional[Level] = None  # required for "ranked"; a race brings its own level
+    nickname: str = Field(max_length=200)  # real limit (20) is a Vietnamese 422 in rooms.py
+    device_id: str = Field(max_length=64)
+    race: Optional[str] = Field(default=None, max_length=16)
+
+
+class RunFinishRequest(BaseModel):
+    run_token: str = Field(max_length=64)
+    # Entries are checked by the replay (a malformed move makes the run "rejected"); only the size is bounded here.
+    moves: list[dict[str, Any]] = Field(max_length=rescue_engine.MAX_MOVES)
+    client_score: Optional[int] = Field(default=None, ge=0, le=10_000_000)  # logged only, never trusted
+
+
+class RaceCreateRequest(BaseModel):
+    level: Level
+    nickname: str = Field(max_length=200)
+    device_id: str = Field(max_length=64)
+
+
 # Vietnamese topic names, as the frontend shows them (frontend/js/pieces.js: TOPIC_NAMES).
 TOPIC_NAMES_VI = {"variables": "Biến", "conditions": "Điều kiện", "loops": "Vòng lặp", "functions": "Hàm"}
 PREDICT_TRACE_STEPS = 40
@@ -250,6 +283,11 @@ def puzzle_next(req: NextRequest):
             raise HTTPException(422, "kind 'debug' cần có template_id.")
     elif req.kind == "rescue" and (req.topic is None or req.tier is None):
         raise HTTPException(422, "kind 'rescue' cần có topic và tier.")
+    run = ranked.serve_puzzle(req.run_id, req.run_token, kind=req.kind, topic=req.topic, tier=req.tier,
+                              template_id=req.template_id)
+    if run is not None:  # a valid ranked run / race: deterministic pick, already recorded
+        row, level = run
+        return bank.public_puzzle(row, level)
     row = bank.select_puzzle(
         kind=req.kind, topic=req.topic, tier=req.tier, level=req.level, template_id=req.template_id,
         exclude_ids=req.exclude_ids, exclude_templates=req.exclude_templates)
@@ -275,12 +313,19 @@ def puzzle_answer(puzzle_id: str, req: AnswerRequest):
         line_id=req.line_id, reveal=req.reveal, diagnose=_diagnoser(puzzle_id))
     if req.room and req.player_token and not custom.is_custom_id(puzzle_id):
         rooms.log_answer(req.room, req.player_token, row, req.option_id, result)  # never raises
+    if req.run_id and req.run_token and not custom.is_custom_id(puzzle_id):
+        ranked.record_answer(req.run_id, req.run_token, puzzle_id, result["correct"])  # never raises
     return result
 
 
 @app.get("/api/puzzle/{puzzle_id}/hint")
-def puzzle_hint(puzzle_id: str, level: int = Query(..., ge=1, le=3)):
-    return hints.puzzle_hint(_get_puzzle(puzzle_id), level)
+def puzzle_hint(puzzle_id: str, level: int = Query(..., ge=1, le=3),
+                run_id: Optional[str] = Query(default=None, max_length=32),
+                run_token: Optional[str] = Query(default=None, max_length=64)):
+    hint = hints.puzzle_hint(_get_puzzle(puzzle_id), level)
+    if run_id and run_token and not custom.is_custom_id(puzzle_id):
+        ranked.record_hint(run_id, run_token, puzzle_id, level)  # never raises
+    return hint
 
 
 @app.post("/api/puzzle/{puzzle_id}/explain")
@@ -390,7 +435,7 @@ def _join_url(request: Request, code: str) -> str:
 
 @app.post("/api/rooms")
 def rooms_create(req: RoomCreateRequest, request: Request):
-    made = rooms.create_room(req.level, req.title, _client_ip(request))
+    made = rooms.create_room(req.level, req.title, _client_ip(request), req.names)
     return {**made, "join_url": _join_url(request, made["code"])}
 
 
@@ -402,6 +447,12 @@ def rooms_get(code: str):
 @app.post("/api/rooms/{code}/join")
 def rooms_join(code: str, req: RoomJoinRequest):
     return rooms.join_room(code, req.nickname)
+
+
+@app.post("/api/rooms/{code}/players/{player_id}/kick", status_code=204)
+def rooms_kick(code: str, player_id: str, x_teacher_key: Optional[str] = Header(default=None)):
+    rooms.kick_player(code, player_id, x_teacher_key)
+    return Response(status_code=204)
 
 
 @app.post("/api/rooms/{code}/progress", status_code=204)
@@ -431,6 +482,44 @@ def rooms_qr(code: str, request: Request):
     info = rooms.room_info(code)
     svg = rooms.qr_svg(_join_url(request, info["code"]))
     return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "private, max-age=300"})
+
+
+# --------------------------------------------------------------------------- ranked runs and races
+
+
+@app.get("/api/nickname")
+def nickname_new(request: Request):
+    """A fresh generated nickname; 60 per minute per client IP."""
+    ranked.take_nickname_slot(_client_ip(request))
+    return {"nickname": nicknames.generate()}
+
+
+@app.post("/api/runs")
+def runs_create(req: RunCreateRequest, request: Request):
+    return ranked.create_run(req.kind, req.level, req.nickname, req.device_id, req.race, _client_ip(request))
+
+
+@app.post("/api/runs/{run_id}/finish")
+def runs_finish(run_id: str, req: RunFinishRequest):
+    return ranked.finish_run(run_id, req.run_token, req.moves, req.client_score)
+
+
+@app.get("/api/leaderboard")
+def leaderboard(level: Level, period: Literal["day", "week", "all"] = "all",
+                device_id: Optional[str] = Query(default=None, max_length=64)):
+    return ranked.leaderboard(level, period, device_id)
+
+
+@app.post("/api/races")
+def races_create(req: RaceCreateRequest, request: Request):
+    made = ranked.create_race(req.level, req.nickname, req.device_id, _client_ip(request))
+    base = rooms.public_base(headers=request.headers, scheme=request.url.scheme, netloc=request.url.netloc)
+    return {**made, "url": f"{base}/?race={made['code']}"}
+
+
+@app.get("/api/races/{code}")
+def races_get(code: str, device_id: Optional[str] = Query(default=None, max_length=64)):
+    return ranked.race_info(code, device_id)
 
 
 # --------------------------------------------------------------------------- Syntax Rows

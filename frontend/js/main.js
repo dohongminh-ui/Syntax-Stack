@@ -18,6 +18,11 @@ import { setScreenTitle } from './title.js';
 import { initSkills, openSkills } from './skills.js';
 import { initCustom, openCustom } from './custom.js';
 import * as Rooms from './rooms.js';
+import { mulberry } from './rng.js';
+import * as RunLog from './runlog.js';
+import * as Ranked from './ranked.js';
+import { initLeaderboard, openLeaderboard } from './leaderboard.js';
+import { initRace, openRace } from './race.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -40,21 +45,11 @@ let ui = { selected: null, bomb: false };
 const prefs = { mode: 'rescue', level: 'beginner', ...store.loadPrefs() };
 const LEVEL_NAME = { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' };
 
-function mulberry(a) {
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 function show(id) {
   setScreenTitle(id);
   for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
   if (['screen-start', 'screen-end'].includes(id)) showStrip(false);
-  $('strip').classList.toggle('strip-plain', ['screen-practice', 'screen-skills', 'screen-custom'].includes(id));
+  $('strip').classList.toggle('strip-plain', ['screen-practice', 'screen-skills', 'screen-custom', 'screen-leaderboard', 'screen-race-new', 'screen-race'].includes(id));
   Rooms.syncChip(id);
   window.scrollTo(0, 0);
 }
@@ -70,6 +65,7 @@ function enterKey(label, onclick, { id } = {}) {
 // ---- start screen -----------------------------------------------------------------------------
 function goHome() {
   G = null;
+  Ranked.detach();
   Rooms.leaveAll();
   show('screen-start');
   const hs = store.getHighScore();
@@ -87,7 +83,10 @@ function initStart() {
       }),
     );
   }
-  $('btn-play').addEventListener('click', () => startGame({ mode: prefs.mode, level: prefs.level }));
+  $('btn-play').addEventListener('click', () => playPrefs());
+  const syncRankedNote = () => { $('ranked-note').hidden = prefs.mode !== 'ranked'; };
+  document.querySelectorAll('input[name=mode]').forEach((i) => i.addEventListener('change', syncRankedNote));
+  syncRankedNote();
   $('btn-rows').addEventListener('click', () => openSelect());
   $('btn-practice-tray').addEventListener('click', () => showPractice());
   $('btn-judge-demo').addEventListener('click', () => showPractice(true));
@@ -196,6 +195,19 @@ function ensureBoard() {
 
 async function exitGame() {
   if (busy) return;
+  if (RunLog.active()) {
+    // a ranked / race run ends with a "quit" move and is scored as it stands
+    const ch = await confirmDialog({
+      title: 'Kết thúc ván này?',
+      text: 'Ván sẽ kết thúc ngay và được tính theo điểm hiện tại.',
+      buttons: [{ label: 'Kết thúc ván', value: 'go', variant: 'danger' }, { label: 'Chơi tiếp', value: 'no', variant: 'ghost' }],
+    });
+    if (ch === 'go' && !busy && G && G.phase !== 'over') {
+      busy = true;
+      await finish('quit');
+    }
+    return;
+  }
   const ch = await confirmDialog({
     title: 'Thoát ván chơi?',
     text: 'Tiến trình ván này sẽ mất.',
@@ -204,10 +216,33 @@ async function exitGame() {
   if (ch === 'go') goHome();
 }
 
-function startGame(opts, setup) {
+/** Plays what the home setup says: a ranked run (server seed, move log) or a normal game. */
+function playPrefs() {
+  if (prefs.mode === 'ranked') return playRun('ranked', prefs.level);
+  startGame({ mode: prefs.mode, level: prefs.level });
+}
+
+let runStarting = false;
+/** Ranked / race run: nickname + POST /api/runs, then a rescue game dealt from the server seed. */
+async function playRun(kind, level, race = null) {
+  if (runStarting) return;
+  runStarting = true;
+  try {
+    const res = await Ranked.beginRun({ kind, level, race });
+    if (!res) return;
+    if (res.unranked) startGame({ mode: 'rescue', level });
+    else startGame({ mode: 'rescue', level: res.run.level }, null, res.run);
+  } finally {
+    runStarting = false;
+  }
+}
+
+/** run (optional) = ranked/race run from Ranked.beginRun: the game is dealt from mulberry(run.seed) and every move is logged. */
+function startGame(opts, setup, run = null) {
   ensureBoard();
   Rooms.resetProgress();
-  const rng = params.get('demo') ? mulberry(7) : Math.random;
+  Ranked.attach(run);
+  const rng = run ? mulberry(run.seed) : params.get('demo') ? mulberry(7) : Math.random;
   G = Game.newGame({ ...opts, rng });
   ui = { selected: null, bomb: false };
   busy = false;
@@ -215,7 +250,8 @@ function startGame(opts, setup) {
   show('screen-game');
   showStrip(true, { back: exitGame, backLabel: 'Thoát ván chơi' });
   setLedMode('rescue');
-  setMode(`CODE RESCUE · ${LEVEL_NAME[G.level]} · ${G.mode === 'rescue' ? 'Rescue' : 'Luyện tập'}`);
+  const modeWord = run ? (run.kind === 'race' ? 'Đấu tốc độ' : 'Xếp hạng') : G.mode === 'rescue' ? 'Rescue' : 'Luyện tập';
+  setMode(`CODE RESCUE · ${LEVEL_NAME[G.level]} · ${modeWord}`);
   render();
   if (G.lock) {
     G.phase = 'locked';
@@ -266,6 +302,7 @@ async function onPlace(idx, r, c) {
     busy = false;
     return;
   }
+  RunLog.place(idx, r, c);
   ui.selected = null;
   render({ dropped: res.placed, lock: !!res.lock });
   if (res.expired.length) toast('Bug line đã tự biến mất.');
@@ -288,6 +325,7 @@ function onItem(key) {
     render();
     if (ui.bomb) toast('Chạm vào một ô để nổ vùng 3×3.', 2200);
   } else if (key === 'shuffle' && Game.shuffle(G)) {
+    RunLog.shuffle();
     ui.selected = null;
     render();
     toast('Đã xáo khay khối.');
@@ -305,6 +343,7 @@ async function onBomb(r, c) {
     render();
     return;
   }
+  RunLog.bomb(r, c);
   busy = true;
   board.lastPlaced = [[r, c]];
   sfx('bomb');
@@ -317,6 +356,7 @@ async function onBomb(r, c) {
 
 function doUndo() {
   if (busy || !Game.undo(G)) return;
+  RunLog.undo();
   ui.selected = null;
   render();
   toast('Đã hoàn tác lần đặt khối.');
@@ -368,9 +408,11 @@ async function runLock() {
   const base = Game.baseFor(L);
   let maxHint = 0;
   let failed = null;
+  const served = [];
 
   for (let i = 0; i < parts; i++) {
     const puzzle = await fetchPuzzle({ topic: L.topic, tier: L.boss ? 3 : L.tier, kind: 'rescue' });
+    served.push(puzzle.id);
     const countText = L.boss ? 'Boss' : `${L.count} hàng`;
     const res = await openPuzzle({
       puzzle,
@@ -393,6 +435,7 @@ async function runLock() {
     }
   }
 
+  RunLog.lock(served, useDbg);
   if (!failed) {
     const r = Game.applyCorrect(G, { base, maxHint, free, lines: L.count });
     sfx('clear', { streak: G.streak });
@@ -443,6 +486,7 @@ async function onBugTap(bugId) {
     onResult: (r) => { if (!r.correct && G.mode === 'rescue') setStatus('crash'); },
     awardText: () => `+${Game.BUG_FIX_POINTS} điểm Redemption`,
   });
+  RunLog.bugfix(bugId, puzzle.id);
   if (res.correct) {
     const fx = Game.fixBug(G, bugId);
     sfx('crack');
@@ -506,6 +550,7 @@ async function afterResolution() {
       penalties: false,
       awardText: () => 'Dọn 3 hàng đầy nhất!',
     });
+    RunLog.lastCommit(puzzle.id);
     if (!res.correct) {
       Game.failLastCommit(G, { puzzle, response: res.response, answer: res.answer });
       await finish('nofit', true);
@@ -522,10 +567,11 @@ async function afterResolution() {
 
 async function finish(reason, alreadyOver) {
   if (!alreadyOver) Game.endGame(G, reason);
+  RunLog.end(reason);
   render();
   if (reason === 'crash') await board.animateCrash();
   else await wait(500);
-  if (G.mode === 'rescue') store.setHighScore(G.score);
+  if (G.mode === 'rescue' && !Ranked.isRun()) store.setHighScore(G.score);
   showEnd();
 }
 
@@ -564,14 +610,16 @@ function showEnd() {
   badge.className = 'end-badge';
   badge.textContent = '';
   badge.append(el('i', { class: 'led on', style: { '--c': crash ? 'var(--crash)' : 'var(--warn)' } }), crash ? 'SYSTEM CRASH' : 'GAME OVER');
-  $('end-title').textContent = crash ? 'Hệ thống sập' : 'Hết chỗ đặt khối';
-  $('end-sub').textContent = crash ? 'Bạn đã sai lần thứ hai trong ván này.' : 'Không còn khối nào đặt vừa lưới.';
+  const quit = G.endReason === 'quit';
+  $('end-title').textContent = crash ? 'Hệ thống sập' : quit ? 'Ván đã kết thúc' : 'Hết chỗ đặt khối';
+  $('end-sub').textContent = crash ? 'Bạn đã sai lần thứ hai trong ván này.' : quit ? 'Bạn đã chọn kết thúc ván.' : 'Không còn khối nào đặt vừa lưới.';
   $('end-score').textContent = G.score;
+  $('end-score').dataset.v = String(G.score);
   $('end-streak').textContent = G.bestStreak;
   $('end-bugs').textContent = G.bugsFixed;
   $('end-mist').textContent = G.wrongLog.length;
   const hs = store.getHighScore();
-  $('end-hs').textContent = G.mode === 'rescue' ? (G.score >= hs && G.score > 0 ? 'Kỷ lục mới!' : `Điểm cao nhất: ${hs}`) : 'Chế độ Luyện tập không tính điểm xếp hạng.';
+  $('end-hs').textContent = Ranked.isRun() ? '' : G.mode === 'rescue' ? (G.score >= hs && G.score > 0 ? 'Kỷ lục mới!' : `Điểm cao nhất: ${hs}`) : 'Chế độ Luyện tập không tính điểm xếp hạng.';
 
   const ul = $('end-report');
   ul.textContent = '';
@@ -603,6 +651,7 @@ function showEnd() {
   pr.append(row);
   show('screen-end');
   $('end-title').focus({ preventScroll: true });
+  Ranked.afterEnd(G);
   loadDebrief();
 }
 
@@ -637,7 +686,11 @@ function loadDebrief() {
   });
 }
 
-$('btn-again').addEventListener('click', () => startGame({ mode: G.mode, level: G.level }));
+$('btn-again').addEventListener('click', () => {
+  const run = Ranked.lastRun(); // ranked: a fresh ranked run; race: a new run of the same race code
+  if (run) playRun(run.kind, run.level, run.race);
+  else startGame({ mode: G.mode, level: G.level });
+});
 $('btn-menu').addEventListener('click', goHome);
 $('btn-end-skills').addEventListener('click', () => openSkills());
 
@@ -693,15 +746,20 @@ async function boot() {
     show,
     home: goHome,
     practice: (focusTopic) => startGame({ mode: 'practice', level: prefs.level, focusTopic }),
-    play: () => startGame({ mode: prefs.mode, level: prefs.level }),
+    play: () => playPrefs(),
   });
   initCustom({ show, home: goHome, level: () => prefs.level });
   initStart();
+  Ranked.initRanked({ openBoard: (level) => openLeaderboard({ level }) });
+  initLeaderboard({ show, home: goHome, level: () => prefs.level, playRun });
+  initRace({ show, home: goHome, level: () => prefs.level, playRun });
   Rooms.initRooms({ show, home: goHome, level: () => prefs.level, play: (level) => startGame({ mode: 'rescue', level: LEVEL_NAME[level] ? level : prefs.level }) });
   const teach = params.get('teach');
   if (teach) return Rooms.openTeach(teach);
   const roomCode = params.get('room');
   if (roomCode) return Rooms.openJoin(roomCode);
+  const raceCode = params.get('race');
+  if (raceCode) return openRace(raceCode);
   const setId = params.get('set');
   if (setId) return openCustom({ shared: setId });
   const demo = params.get('demo');
@@ -712,6 +770,9 @@ async function boot() {
   if (demo.startsWith('rows-')) return runDemo(demo);
   const mode = params.get('mode') || 'rescue';
   if (demo === 'end') {
+    // ?mock=1&demo=end&run=ranked|race[&rcode=DEMO1] shows the ranked / race end screen (needs a saved nickname)
+    const kind = params.get('run');
+    const begun = kind ? await Ranked.beginRun({ kind, level: params.get('level') || 'beginner', race: kind === 'race' ? params.get('rcode') || 'DEMO1' : null }) : null;
     startGame({ mode, level: params.get('level') || 'beginner' }, (s) => {
       demoSetup(s);
       s.grid = s.grid.map((r) => r.map(() => null));
@@ -723,8 +784,9 @@ async function boot() {
       s.bugsFixed = 1;
       s.bestStreak = 5;
       s.score = 2180;
-    });
+    }, begun?.run || null);
     Game.endGame(G, 'crash');
+    RunLog.end('crash');
     store.setHighScore(1500);
     return showEnd();
   }

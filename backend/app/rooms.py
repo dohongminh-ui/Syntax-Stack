@@ -25,7 +25,7 @@ from typing import Optional
 
 import yaml
 
-from . import bank, custom
+from . import bank, custom, nicknames
 
 DB_PATH = Path(os.environ.get("SYNTAX_STACK_ROOMS_DB", custom.DB_PATH.parent / "rooms.sqlite"))
 TTL_S = 12 * 3600
@@ -37,6 +37,7 @@ MAX_ANSWERS_PER_PLAYER = 1000   # keeps a spamming client from growing the file 
 MAX_ANSWERS_PER_ROOM = 20_000
 MAX_NICKNAME = 20
 MAX_TITLE = 40
+NAME_MODES = ("random", "free")
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 CODE_LEN = 5
 
@@ -182,7 +183,8 @@ def _db_path() -> Path:
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS rooms (
     code TEXT PRIMARY KEY, teacher_hash TEXT NOT NULL, level TEXT NOT NULL, title TEXT NOT NULL,
-    created_at REAL NOT NULL, last_activity REAL NOT NULL, open INTEGER NOT NULL DEFAULT 1);
+    created_at REAL NOT NULL, last_activity REAL NOT NULL, open INTEGER NOT NULL DEFAULT 1,
+    names TEXT NOT NULL DEFAULT 'random');
 CREATE TABLE IF NOT EXISTS players (
     id TEXT PRIMARY KEY, room TEXT NOT NULL, nickname TEXT NOT NULL, token_hash TEXT NOT NULL,
     joined_at REAL NOT NULL, last_seen REAL NOT NULL,
@@ -206,6 +208,9 @@ def _connect() -> sqlite3.Connection:
         with _db_lock:
             con.execute("PRAGMA journal_mode=WAL")
             con.executescript(_SCHEMA)
+            cols = [r["name"] for r in con.execute("PRAGMA table_info(rooms)")]
+            if "names" not in cols:  # file from before generated nicknames: those rooms used free names
+                con.execute("ALTER TABLE rooms ADD COLUMN names TEXT NOT NULL DEFAULT 'free'")
             _ready.add(key)
     return con
 
@@ -262,7 +267,9 @@ def _clean_text(text: str, limit: int, what: str, *, required: bool) -> str:
 # --------------------------------------------------------------------------- public API
 
 
-def create_room(level: str, title: Optional[str], client: Optional[str]) -> dict:
+def create_room(level: str, title: Optional[str], client: Optional[str], names: str = "random") -> dict:
+    if names not in NAME_MODES:
+        raise RoomError("Chế độ đặt tên không hợp lệ.", 422)
     title = _clean_text(title or "", MAX_TITLE, "Tên phòng", required=False)
     _take_slot(client_key(client))
     teacher_key = secrets.token_hex(16)
@@ -272,15 +279,16 @@ def create_room(level: str, title: Optional[str], client: Optional[str]) -> dict
         for _ in range(20):
             code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LEN))
             try:
-                con.execute("INSERT INTO rooms VALUES (?,?,?,?,?,?,1)",
-                            (code, _hash(teacher_key), level, title, now, now))
+                con.execute("INSERT INTO rooms (code, teacher_hash, level, title, created_at, last_activity, open, names) "
+                            "VALUES (?,?,?,?,?,?,1,?)",
+                            (code, _hash(teacher_key), level, title, now, now, names))
                 break
             except sqlite3.IntegrityError:
                 continue
         else:  # pragma: no cover
             raise RoomError("Không tạo được phòng học, hãy thử lại.", 503)
         con.commit()
-    return {"code": code, "teacher_key": teacher_key, "level": level, "title": title}
+    return {"code": code, "teacher_key": teacher_key, "level": level, "title": title, "names": names}
 
 
 def room_info(code: str) -> dict:
@@ -288,24 +296,36 @@ def room_info(code: str) -> dict:
         row = _load_room(con, code)
         players = con.execute("SELECT COUNT(*) FROM players WHERE room = ?", (row["code"],)).fetchone()[0]
     return {"code": row["code"], "level": row["level"], "title": row["title"],
-            "open": bool(row["open"]), "players": players}
+            "open": bool(row["open"]), "players": players, "names": row["names"]}
 
 
-def join_room(code: str, nickname: str) -> dict:
-    nickname = _clean_text(nickname, MAX_NICKNAME, "Biệt danh", required=True)
+def join_room(code: str, nickname: Optional[str]) -> dict:
     with closing(_connect()) as con, _db_lock:
         _purge(con)
         room = _load_room(con, code)
+        random_mode = room["names"] == "random"
+        if not random_mode:
+            nickname = _clean_text(nickname or "", MAX_NICKNAME, "Biệt danh", required=True)
+            if not nicknames.is_allowed_free(nickname):
+                raise RoomError("Biệt danh này không được dùng. Hãy chọn tên khác.", 422)
         if not room["open"]:
             raise RoomError("Phòng học này đã đóng.", 410)
         existing = [r["nickname"].casefold() for r in
                     con.execute("SELECT nickname FROM players WHERE room = ?", (room["code"],))]
         if len(existing) >= MAX_PLAYERS:
             raise RoomError(f"Phòng học đã đủ {MAX_PLAYERS} người.", 409)
-        final, n = nickname, 1
-        while final.casefold() in existing:
-            n += 1
-            final = f"{nickname} {n}"
+        if random_mode:
+            for _ in range(200):
+                final = nicknames.generate()
+                if final.casefold() not in existing:
+                    break
+            else:  # pragma: no cover - 60 players against ~60k names
+                raise RoomError("Không tạo được biệt danh, hãy thử lại.", 503)
+        else:
+            final, n = nickname, 1
+            while final.casefold() in existing:
+                n += 1
+                final = f"{nickname} {n}"
         player_id = "p" + secrets.token_hex(4)
         token = secrets.token_hex(16)
         now = _now()
@@ -314,6 +334,20 @@ def join_room(code: str, nickname: str) -> dict:
         con.execute("UPDATE rooms SET last_activity = ? WHERE code = ?", (now, room["code"]))
         con.commit()
     return {"player_id": player_id, "player_token": token, "nickname": final, "level": room["level"]}
+
+
+def kick_player(code: str, player_id: str, teacher_key: Optional[str]) -> None:
+    """Remove a player and all their answers. Their token stops working; they can only rejoin as a new player."""
+    with closing(_connect()) as con, _db_lock:
+        room = _load_room(con, code)
+        _check_teacher(room, teacher_key)
+        row = con.execute("SELECT id FROM players WHERE room = ? AND id = ?",
+                          (room["code"], player_id or "")).fetchone()
+        if row is None:
+            raise RoomError("Không tìm thấy người chơi này.", 404)
+        con.execute("DELETE FROM answers WHERE room = ? AND player_id = ?", (room["code"], row["id"]))
+        con.execute("DELETE FROM players WHERE id = ?", (row["id"],))
+        con.commit()
 
 
 def _find_player(con: sqlite3.Connection, code: str, token: str) -> Optional[sqlite3.Row]:
@@ -455,7 +489,7 @@ def summary(code: str, teacher_key: Optional[str]) -> dict:
         for a in reversed(answers[-10:])]
 
     board = sorted(
-        ({"nickname": p["nickname"], "score": p["score"], "status": p["status"],
+        ({"player_id": p["id"], "nickname": p["nickname"], "score": p["score"], "status": p["status"],
           "answers": per_player[p["id"]][0], "correct": per_player[p["id"]][1],
           "last_seen_s": max(0, int(now - p["last_seen"]))} for p in players),
         key=lambda r: (-r["score"], r["nickname"].casefold()))
@@ -474,9 +508,9 @@ def summary(code: str, teacher_key: Optional[str]) -> dict:
 _HOST_RE = re.compile(r"^[A-Za-z0-9.\-]+(:\d{1,5})?$|^\[[0-9A-Fa-f:.]+\](:\d{1,5})?$")
 
 
-def join_url(code: str, *, headers, scheme: str, netloc: str) -> str:
-    """Absolute join link. ``SYNTAX_STACK_PUBLIC_URL`` wins; else the forwarded proto/host the reverse
-    proxy sends, else the request's own."""
+def public_base(*, headers, scheme: str, netloc: str) -> str:
+    """Absolute base URL of the site. ``SYNTAX_STACK_PUBLIC_URL`` wins; else the forwarded proto/host the
+    reverse proxy sends, else the request's own."""
     base = os.getenv("SYNTAX_STACK_PUBLIC_URL", "").strip().rstrip("/")
     if not base:
         proto = (headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
@@ -486,7 +520,12 @@ def join_url(code: str, *, headers, scheme: str, netloc: str) -> str:
         if not host or not _HOST_RE.match(host):
             host = headers.get("host") or netloc
         base = f"{proto}://{host}"
-    return f"{base}/?room={code}"
+    return base
+
+
+def join_url(code: str, *, headers, scheme: str, netloc: str) -> str:
+    """Absolute join link for a classroom room."""
+    return f"{public_base(headers=headers, scheme=scheme, netloc=netloc)}/?room={code}"
 
 
 def qr_svg(url: str) -> str:

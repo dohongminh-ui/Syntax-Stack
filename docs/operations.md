@@ -77,6 +77,7 @@ Do not use `--reload` in production: Syntax Rows levels are cached after first u
 | `SYNTAX_STACK_TUTOR_CLIENT_LIMIT` | `app/tutor.py` (read on every call) | `40` | Maximum real tutor calls per visitor (IP) per local day, so one visitor cannot use up the daily limit for everyone. Over it: canned text (reason `client_limit`). |
 | `SYNTAX_STACK_PUBLIC_URL` | `app/rooms.py` (read on every call) | unset | Public base URL used for live-classroom join links and QR codes (e.g. `https://syntaxstack.example`). Unset: the proxy's `X-Forwarded-Proto` / `X-Forwarded-Host`, else the request host. |
 | `SYNTAX_STACK_ROOMS_DB` | `app/rooms.py` (read at import) | `rooms.sqlite` next to `SYNTAX_STACK_CUSTOM_DB` | Path of the live-classroom database (nicknames and answer log, rooms expire 12 h after last activity). |
+| `SYNTAX_STACK_RANKED_DB` | `app/ranked.py` (read at import) | `ranked.sqlite` next to `SYNTAX_STACK_CUSTOM_DB` | Path of the ranked-runs database (nicknames, hashed device ids, served puzzles, scores). Abandoned runs are purged after 3 h, finished runs after 90 days, races after 7 days. Keep it on the data volume. |
 | `SYNTAX_STACK_API_DOCS` | `app/main.py` (at startup) | off | `1` turns the interactive API docs (`/docs`, `/redoc`, `/openapi.json`) back on. Leave off in production. |
 | `SYNTAX_STACK_BIND` | `compose.yaml` only | `127.0.0.1` | Address uvicorn binds to inside the compose service. Use the host's LAN address to allow LAN access. |
 | `PYTHONDONTWRITEBYTECODE` | `Dockerfile` | `1` | Avoids `.pyc` files in the image. |

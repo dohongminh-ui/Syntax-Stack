@@ -330,4 +330,5 @@ export async function getCustomSet(id, level) {
 
 // Syntax Rows mock lives in mock-rows.js
 export { rowsLevels, rowsLevel, rowsRun, rowsHint } from './mock-rows.js';
-export { createRoom, getRoom, joinRoom, roomSummary, closeRoom, deleteRoom } from './mock-rooms.js';
+export { createRoom, getRoom, joinRoom, roomSummary, closeRoom, deleteRoom, kickPlayer } from './mock-rooms.js';
+export { createRun, finishRun, leaderboard, createRace, getRace, fetchNickname } from './mock-ranked.js';

@@ -2,7 +2,7 @@
 // Pure presentation + thin API glue. The server owns all data; nothing here decides scores.
 import * as api from './api.js';
 import { TOPICS, TOPIC_NAMES, TOPIC_GLYPH, PUZZLE_TYPES, TYPE_NAMES, TYPE_SHORT } from './pieces.js';
-import { el, anim, toast, confirmDialog } from './ui.js';
+import { el, anim, toast, confirmDialog, wait } from './ui.js';
 import { icon } from './icons.js';
 import { keycap } from './keycap.js';
 import { showStrip, setMode, setStreak } from './strip.js';
@@ -138,6 +138,9 @@ export function openRoomNew() {
   const r = document.querySelector(`input[name=room-level][value=${lv}]`);
   if (r) r.checked = true;
   showErr('room-new-err', '');
+  const rn = document.querySelector('input[name=room-names][value=random]');
+  if (rn) rn.checked = true;
+  paintNamesNote();
   const form = $('room-new-form');
   const act = $('room-new-act');
   if (!act.firstChild) act.append(submitKey('Mở phòng'));
@@ -145,6 +148,7 @@ export function openRoomNew() {
   key.disabled = false;
   if (!form._wired) {
     form._wired = true;
+    document.querySelectorAll('input[name=room-names]').forEach((i) => i.addEventListener('change', paintNamesNote));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (key.disabled) return;
@@ -153,7 +157,8 @@ export function openRoomNew() {
       try {
         const level = document.querySelector('input[name=room-level]:checked')?.value || 'beginner';
         const title = $('room-title-in').value.trim();
-        const res = await api.createRoom(title ? { level, title } : { level });
+        const names = document.querySelector('input[name=room-names]:checked')?.value === 'free' ? 'free' : 'random';
+        const res = await api.createRoom({ level, names, ...(title ? { title } : {}) });
         const all = loadRooms();
         all[res.code] = { teacher_key: res.teacher_key, created: Date.now() };
         saveRooms(all);
@@ -167,6 +172,11 @@ export function openRoomNew() {
     });
   }
   $('room-new-title').focus({ preventScroll: true });
+}
+
+function paintNamesNote() {
+  const free = document.querySelector('input[name=room-names]:checked')?.value === 'free';
+  $('room-names-note').textContent = free ? 'Có bộ lọc từ ngữ; giáo viên có thể ẩn người chơi' : 'Nên dùng khi chiếu lên màn hình lớn';
 }
 
 // ---- teacher: dashboard --------------------------------------------------------------------------
@@ -476,7 +486,8 @@ function renderSummary(s) {
               el('span', { class: 'sr-only', text: stale ? 'không hoạt động' : word })),
             el('span', { class: 'pl-name', text: p.nickname }),
             el('span', { class: 'pl-ok' }, icon('check', { size: 14 }), `${p.correct}/${p.answers}`),
-            el('b', { class: 'pl-score', text: String(p.score) }));
+            el('b', { class: 'pl-score', text: String(p.score) }),
+            p.player_id ? el('button', { class: 'pl-hide', type: 'button', 'aria-label': `Ẩn ${p.nickname} khỏi phòng`, text: 'Ẩn', onclick: (ev) => hidePlayer(p, ev.currentTarget.closest('.pl-row')) }) : null);
         })
       : [el('li', { class: 'tp-none', text: 'Chưa có ai vào phòng.' })]));
   }
@@ -490,6 +501,30 @@ function renderSummary(s) {
         el('span', { class: 'rc-what', text: [TOPIC_NAMES[r.topic], TYPE_SHORT[r.type] && TYPE_NAMES[r.type], !r.correct && r.mistake_label].filter(Boolean).join(' · ') }),
         el('span', { class: 'rc-ago', text: agoText(r.ago_s) })))
     : [el('li', { class: 'tp-none', text: 'Chưa có hoạt động.' })]));
+}
+
+async function hidePlayer(p, row) {
+  if (!teachView) return;
+  const { code, key } = teachView;
+  const ch = await confirmDialog({
+    title: 'Ẩn người chơi?',
+    text: `Ẩn ${p.nickname} khỏi phòng? Người này sẽ không được tính nữa.`,
+    buttons: [{ label: 'Ẩn người chơi', value: 'go', variant: 'danger' }, { label: 'Giữ lại', value: 'no', variant: 'ghost' }],
+  });
+  if (ch !== 'go') return;
+  try {
+    await api.kickPlayer(code, p.player_id, key);
+  } catch (e) {
+    if (e.status !== 404) {
+      toast('Không ẩn được người chơi: ' + e.message);
+      return;
+    }
+  }
+  if (row?.isConnected) row.remove();
+  if (!$('tp-players').children.length) $('tp-players').append(el('li', { class: 'tp-none', text: 'Chưa có ai vào phòng.' }));
+  teachView.json.players = null; // next poll re-renders from the server list
+  toast(`Đã ẩn ${p.nickname}.`);
+  pollNow();
 }
 
 // ---- student: join -------------------------------------------------------------------------------
@@ -508,6 +543,9 @@ export async function openJoin(code) {
   const key = act.firstChild;
   key.disabled = true;
   const input = $('rj-nick');
+  $('rj-free').hidden = true;
+  $('rj-random').hidden = true;
+  $('rj-got').hidden = true;
   const prev = getStudent();
   if (prev && prev.code === code) input.value = prev.nickname;
   const form = $('room-join-form');
@@ -520,8 +558,10 @@ export async function openJoin(code) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (key.disabled || !form._info) return;
-      const nickname = input.value.trim();
-      if (!nickname) {
+      const free = form._info.names === 'free';
+      const tok = form._tok;
+      const nickname = free ? input.value.trim() : '';
+      if (free && !nickname) {
         showErr('rj-err', 'Hãy nhập một biệt danh.');
         input.focus();
         return;
@@ -530,11 +570,20 @@ export async function openJoin(code) {
       showErr('rj-err', '');
       try {
         const r = await api.joinRoom(form._code, nickname);
-        setStudent({ code: form._code, player_token: r.player_token, nickname: r.nickname || nickname, level: r.level });
+        const name = r.nickname || nickname;
+        setStudent({ code: form._code, player_token: r.player_token, nickname: name, level: r.level });
         setUrl({ room: form._code });
+        if (!free && name) {
+          // random mode: show the assigned name for a moment before the game starts
+          const got = $('rj-got');
+          got.replaceChildren('Tên của bạn: ', el('b', { text: name }));
+          got.hidden = false;
+          await wait(1400);
+          if (form._tok !== tok) return;
+        }
         nav.play(r.level || form._info.level);
       } catch (err) {
-        const msg = { 404: 'Không tìm thấy phòng', 410: 'Phòng đã đóng', 409: 'Phòng đã đủ người', 422: 'Biệt danh chưa hợp lệ. Dùng 1 đến 20 ký tự.' }[err.status] || err.message;
+        const msg = { 404: 'Không tìm thấy phòng', 410: 'Phòng đã đóng', 409: 'Phòng đã đủ người' }[err.status] || (err.status === 422 ? err.message || 'Biệt danh này không được dùng. Hãy chọn tên khác.' : err.message);
         showErr('rj-err', msg);
         if (err.status === 404 || err.status === 410 || err.status === 409) key.disabled = true;
         else setBusy(key, false, 'Vào phòng');
@@ -563,8 +612,12 @@ export async function openJoin(code) {
     $('rj-title').focus({ preventScroll: true });
     return;
   }
+  const free = info.names === 'free';
+  $('rj-free').hidden = !free;
+  $('rj-random').hidden = free;
   key.disabled = false;
-  input.focus({ preventScroll: true });
+  if (free) input.focus({ preventScroll: true });
+  else key.focus({ preventScroll: true });
 }
 
 // ---- student: progress reporting -------------------------------------------------------------------

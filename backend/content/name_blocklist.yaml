@@ -1,0 +1,92 @@
+# Names refused in classroom rooms that allow free nicknames. Generated names never pass through this.
+#
+# Matching works on a normalised form of the nickname: lowercase, Vietnamese diacritics removed (đ -> d),
+# common look-alikes mapped (0->o, 1->i, 3->e, 4->a, 5->s, 7->t, @->a, $->s), any other non-letter
+# removed, and runs of the same letter collapsed ("fuuuck" -> "fuck").
+#
+# - substring: refused if it appears anywhere in the name with all spaces removed. Only long, unambiguous
+#   words go here, so ordinary names are not caught.
+# - word: refused only as a whole word (split on spaces and symbols). Short abbreviations go here,
+#   because as substrings they would hit innocent names ("cl" in "clara", "ngu" in "nguyen").
+#
+# This list will never be complete. In free-name mode the teacher also has a hide/kick button, and for
+# anything shown on a projector the room should use generated names (the default).
+
+substring:
+  # English
+  - fuck
+  - shit
+  - bitch
+  - cunt
+  - pussy
+  - asshole
+  - bastard
+  - whore
+  - slut
+  - nigger
+  - nigga
+  - faggot
+  - retard
+  - porn
+  - rape
+  - hitler
+  - nazi
+  - penis
+  - vagina
+  # Vietnamese (diacritics removed)
+  - ditme
+  - dittme
+  - dumay
+  - dume
+  - dumma
+  - duma
+  - ditmemay
+  - concac
+  - caiconcac
+  - lonme
+  - buoime
+  - occho
+  - oclon
+  - matlon
+  - mattlon
+  - thangngu
+  - conngu
+  - donguu
+  - dochet
+  - chochet
+  - sucvat
+
+word:
+  # English
+  - ass
+  - dick
+  - cock
+  - sex
+  - fag
+  - cum
+  - tit
+  - tits
+  - wtf
+  - stfu
+  # Vietnamese abbreviations and short words (diacritics removed)
+  - dm
+  - dmm
+  - dcm
+  - dkm
+  - vcl
+  - vkl
+  - vl
+  - cl
+  - clm
+  - cc
+  - cmm
+  - dit
+  - lon
+  - buoi
+  - cac
+  - deo
+  - dech
+  - ngu
+  - cho
+  - dien
+  - khung

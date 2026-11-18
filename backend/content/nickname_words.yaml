@@ -1,0 +1,66 @@
+# Generated nicknames: "<animal> <adjective> <NN>", e.g. "Mèo Xanh 42", "Cánh Cụt Vui 17".
+# Used for ranked runs and races (always) and for classroom rooms in "random names" mode (default).
+# Every animal x adjective combination must read as friendly. Left out on purpose:
+#   Chó, Lợn, Heo, Bò, Khỉ (used as insults), Gà (slang for "noob"), Cá (cá vàng = poor memory),
+#   and any adjective about bodies, age or intelligence in the negative.
+# Names longer than 20 characters are never generated (the generator re-draws).
+
+animals:
+  - Mèo
+  - Cáo
+  - Gấu
+  - Thỏ
+  - Cú
+  - Hổ
+  - Sóc
+  - Rùa
+  - Voi
+  - Ngựa
+  - Nai
+  - Hươu
+  - Cò
+  - Vẹt
+  - Ong
+  - Bướm
+  - Cua
+  - Tôm
+  - Vịt
+  - Chim
+  - Sáo
+  - Én
+  - Báo
+  - Rồng
+  - Sư Tử
+  - Cánh Cụt
+  - Cá Heo
+  - Cá Voi
+  - Kỳ Lân
+  - Chuột Túi
+
+adjectives:
+  - Xanh
+  - Đỏ
+  - Vàng
+  - Tím
+  - Cam
+  - Hồng
+  - Bạc
+  - Nhanh
+  - Vui
+  - Hiền
+  - Sáng
+  - Mạnh
+  - Khéo
+  - Lanh Lợi
+  - Tò Mò
+  - Dũng Cảm
+  - Thông Minh
+  - Chăm Chỉ
+  - Bình Tĩnh
+  - Nhanh Nhẹn
+  - Tinh Nghịch
+  - Kiên Nhẫn
+
+numbers:
+  min: 10
+  max: 99

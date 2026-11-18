@@ -39,6 +39,8 @@ for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, ensur
 
 export function haptic(pattern) {
   if (muted) return;
+  // Browsers block (and log an error for) vibrate() before the first real tap on the page.
+  if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
   try {
     if (navigator.vibrate) navigator.vibrate(pattern);
   } catch { /* unsupported */ }

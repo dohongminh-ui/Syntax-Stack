@@ -264,6 +264,12 @@ A teacher opens a room (`POST /api/rooms`), students join with a nickname, and a
   group) in one cheap insert wrapped in try/except: logging can never fail or slow the answer. Nothing the
   client says about correctness is ever stored; only the leaderboard (`score`, `status`, `bugs_fixed`) is
   client-reported, and it is labelled that way.
+- **Names.** A room's `names` mode is `random` (default) or `free`. In `random` mode every student gets a
+  generated nickname (`"<animal> <adjective> <NN>"`, `backend/app/nicknames.py` with the friendly word lists in
+  `backend/content/nickname_words.yaml`), so no student can type anything onto a projector and no real name is
+  needed. In `free` mode the nickname is checked against `backend/content/name_blocklist.yaml` (diacritics,
+  look-alikes and repeated letters normalised); that list is never complete, so the teacher can also remove a
+  player (`POST /api/rooms/{code}/players/{player_id}/kick`, which deletes the player and their answers).
 - **Privacy.** Nicknames only: no names, accounts, emails or IPs are stored (the IP is hashed in memory
   for the 5-rooms-per-hour rate limit only). A room expires 12 hours after the last student activity and
   is purged lazily (on create, join and lookup); the teacher can delete it at once.
@@ -272,6 +278,20 @@ A teacher opens a room (`POST /api/rooms`), students join with a nickname, and a
 - **Limits.** 60 players per room, 1000 logged answers per player and 20000 per room.
 - **Join link.** `SYNTAX_STACK_PUBLIC_URL`, else the proxy's `X-Forwarded-Proto` / `X-Forwarded-Host`, else
   the request's own host; `GET /api/rooms/{code}/qr.svg` renders it with `segno` (pure Python).
+
+## 8b. Ranked runs and races
+
+Ranked play never trusts a score from the browser (`backend/app/ranked.py`, `backend/app/rescue_engine.py`,
+contract in [`ranked-and-race.md`](ranked-and-race.md)). A run has a server-chosen seed: the browser deals
+the pieces with `mulberry32(seed)` and the server picks every puzzle from the same seed, recording the
+puzzle served, the hints opened and the checked answer in `ranked.sqlite` (beside `rooms.sqlite` on the
+volume). At the end the browser sends only its move list and `rescue_engine.replay` replays the whole game
+with a Python port of `game.js` / `pieces.js`, so the score, locks and streaks are computed on the server.
+An illegal move list, or a puzzle the server did not serve for that exact situation, is stored as
+`rejected` and never ranked. Races are runs that share one seed (so every racer faces the same pieces and
+puzzles) and are kept out of the leaderboard. A Node harness (`backend/tests/js_harness/play.mjs`) plays
+hundreds of games with the real `game.js` and the test suite requires the Python replay to match, so the
+two implementations cannot drift unnoticed.
 
 ## 9. Directory map
 
@@ -289,7 +309,7 @@ sextax/
 │   └── n8n-tutor.json                importable n8n workflow for the tutor webhook
 ├── docs/                             this documentation (see docs/README.md)
 ├── backend/
-│   ├── app/                          FastAPI package (main, validator, bank, rows, hints, tutor, custom, rooms)
+│   ├── app/                          FastAPI package (main, validator, bank, rows, hints, tutor, custom, rooms, ranked, rescue_engine)
 │   ├── content/
 │   │   ├── templates/*.yaml          16 Code Rescue templates
 │   │   ├── mistakes.yaml             named common mistakes -> short Vietnamese notes
@@ -298,7 +318,7 @@ sextax/
 │   │   ├── puzzles.sqlite            generated bank (committed output)
 │   │   └── review/                   sample editorial review packet
 │   ├── scripts/                      generate_bank.py, review_content.py
-│   ├── tests/                        pytest suite (296 tests)
+│   ├── tests/                        pytest suite (incl. tests/js_harness/play.mjs, the Node golden harness for the replay engine)
 │   ├── requirements.txt, pytest.ini, README.md
 │   └── .venv/                        local virtual environment (not documented here)
 └── frontend/

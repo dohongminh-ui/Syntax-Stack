@@ -22,6 +22,7 @@ def _isolated(tmp_path, monkeypatch):
 
 
 def make_room(client, **extra):
+    extra.setdefault("names", "free")   # most tests choose their own nicknames; random mode has its own tests
     r = client.post("/api/rooms", json={"level": "intermediate", "title": "Lớp 10A", **extra})
     assert r.status_code == 200, r.text
     return r.json()
@@ -99,7 +100,7 @@ def answer_is_correct(row, body):
 
 def test_create_room_shape(client):
     room = make_room(client)
-    assert set(room) == {"code", "teacher_key", "join_url", "level", "title"}
+    assert set(room) == {"code", "teacher_key", "join_url", "level", "title", "names"}
     assert len(room["code"]) == 5 and set(room["code"]) <= CODE_CHARS
     assert len(room["teacher_key"]) == 32 and int(room["teacher_key"], 16) >= 0
     assert room["join_url"] == f"http://testserver/?room={room['code']}"
@@ -120,7 +121,7 @@ def test_get_room_case_insensitive_and_unknown(client):
     r = client.get(f"/api/rooms/{room['code'].lower()}")
     assert r.status_code == 200
     assert r.json() == {"code": room["code"], "level": "intermediate", "title": "Lớp 10A",
-                        "open": True, "players": 1}
+                        "open": True, "players": 1, "names": "free"}
     assert client.get("/api/rooms/ZZZZZ").status_code == 404
     assert client.get("/api/rooms/abc").status_code == 404
 
@@ -561,3 +562,96 @@ def test_every_template_mistake_has_a_short_dashboard_label():
     too_long = sorted(n for n, v in labels.items() if len(v) > 34)
     assert not too_long, too_long
     assert rooms.mistake_label("repeated_one_less") == "Lặp thiếu một lần"
+
+
+
+# --------------------------------------------------------------------------- generated names and moderation
+
+
+def test_random_mode_is_the_default_and_ignores_a_supplied_nickname(client):
+    from app import nicknames
+    room = client.post("/api/rooms", json={"level": "beginner"}).json()
+    assert room["names"] == "random"
+    assert client.get(f"/api/rooms/{room['code']}").json()["names"] == "random"
+    a = client.post(f"/api/rooms/{room['code']}/join", json={"nickname": "Fuck You"}).json()
+    b = client.post(f"/api/rooms/{room['code']}/join", json={}).json()      # nickname is optional
+    assert nicknames.is_generated(a["nickname"]) and nicknames.is_generated(b["nickname"])
+    assert "fuck" not in a["nickname"].lower()
+    assert a["nickname"] != b["nickname"]
+
+
+def test_random_names_are_unique_within_a_room(client):
+    room = client.post("/api/rooms", json={"level": "beginner"}).json()
+    got = [client.post(f"/api/rooms/{room['code']}/join", json={}).json()["nickname"] for _ in range(rooms.MAX_PLAYERS)]
+    assert len({n.casefold() for n in got}) == rooms.MAX_PLAYERS
+
+
+def test_random_name_redraws_on_collision(client, monkeypatch):
+    room = client.post("/api/rooms", json={"level": "beginner"}).json()
+    seq = iter(["Mèo Xanh 42", "Mèo Xanh 42", "mèo xanh 42", "Cáo Vui 10"])
+    monkeypatch.setattr(rooms.nicknames, "generate", lambda rng=None: next(seq))
+    assert client.post(f"/api/rooms/{room['code']}/join", json={}).json()["nickname"] == "Mèo Xanh 42"
+    assert client.post(f"/api/rooms/{room['code']}/join", json={}).json()["nickname"] == "Cáo Vui 10"
+
+
+def test_invalid_names_mode_is_422(client):
+    assert client.post("/api/rooms", json={"names": "both"}).status_code == 422
+
+
+@pytest.mark.parametrize("bad", ["Fuuuck", "đ1t", "D.M", "v c l", "Mèo Lớn"])
+def test_free_mode_rejects_blocked_names(client, bad):
+    room = make_room(client, names="free")
+    r = client.post(f"/api/rooms/{room['code']}/join", json={"nickname": bad})
+    assert r.status_code == 422 and r.json()["detail"] == "Biệt danh này không được dùng. Hãy chọn tên khác."
+    assert summary(client, room)["totals"]["players"] == 0
+
+
+def test_free_mode_accepts_innocent_names_and_still_validates(client):
+    room = make_room(client, names="free")
+    for ok in ("Nguyễn An", "Clara", "Adam"):
+        assert join(client, room["code"], ok)["nickname"] == ok
+    assert client.post(f"/api/rooms/{room['code']}/join", json={}).status_code == 422
+    assert client.post(f"/api/rooms/{room['code']}/join", json={"nickname": "x" * 21}).status_code == 422
+
+
+def test_summary_players_carry_player_id(client):
+    room = make_room(client)
+    a = join(client, room["code"], "An")
+    assert summary(client, room)["players"][0]["player_id"] == a["player_id"]
+
+
+def test_kick_removes_the_player_everywhere_and_kills_the_token(client, all_rows):
+    room = make_room(client)
+    a, b = join(client, room["code"], "An"), join(client, room["code"], "Bình")
+    fill = of_type(all_rows, "fill_blank")[0]
+    wrong = next(o for o in fill["data"]["options"] if not o["correct"])
+    for who in (a, b):
+        answer(client, fill["id"], {"option_id": wrong["id"]}, room, who["player_token"])
+    answer(client, fill["id"], {"option_id": wrong["id"]}, room, a["player_token"])
+    s = summary(client, room)
+    assert s["totals"]["players"] == 2 and s["totals"]["answers"] == 3 and len(s["unsolved"]) == 1
+
+    url = f"/api/rooms/{room['code']}/players/{a['player_id']}/kick"
+    assert client.post(url, headers={"X-Teacher-Key": "wrong"}).status_code == 403
+    assert client.post(url).status_code == 403
+    assert client.post(f"/api/rooms/{room['code']}/players/pnope/kick",
+                       headers={"X-Teacher-Key": room["teacher_key"]}).status_code == 404
+    assert client.post(url, headers={"X-Teacher-Key": room["teacher_key"]}).status_code == 204
+
+    s = summary(client, room)
+    assert [p["nickname"] for p in s["players"]] == ["Bình"]
+    assert s["totals"] == {"players": 1, "answers": 1, "correct": 0}
+    assert all(r["nickname"] == "Bình" for r in s["recent"]) and len(s["recent"]) == 1
+    assert sum(c["answers"] for t in s["grid"].values() for c in t.values()) == 1
+    assert sum(m["count"] for m in s["top_mistakes"]) == 1 and s["unsolved"] == []
+
+    # the kicked token is dead: nothing is logged and progress is refused
+    answer(client, fill["id"], {"option_id": wrong["id"]}, room, a["player_token"])
+    assert summary(client, room)["totals"]["answers"] == 1
+    r = client.post(f"/api/rooms/{room['code']}/progress",
+                    json={"player_token": a["player_token"], "score": 5, "status": "playing", "bugs_fixed": 0})
+    assert r.status_code == 403
+    # a second kick is a 404, and rejoining as a new player works
+    assert client.post(url, headers={"X-Teacher-Key": room["teacher_key"]}).status_code == 404
+    again = join(client, room["code"], "An")
+    assert again["player_id"] != a["player_id"] and summary(client, room)["totals"]["players"] == 2

@@ -23,13 +23,14 @@ const UNSOLVED = [
   { puzzle_id: 'mock_u2', prompt: 'Chương trình sau in ra gì khi vòng lặp for chạy với range(1, 4) và tổng cộng dồn?', topic: 'loops', base: 4 },
   { puzzle_id: 'mock_u3', prompt: 'Tìm bug trong câu lệnh if so sánh hai chuỗi.', topic: 'conditions', base: 3 },
 ];
-const NAMES = ['Minh', 'Lan', 'Hải', 'Thảo', 'Quân', 'Vy', 'Nam', 'Trang'];
+const NAMES = ['Mèo Xanh 42', 'Cáo Đỏ 17', 'Gấu Tím 63', 'Hổ Vàng 28', 'Cú Cam 85', 'Rùa Bạc 31', 'Thỏ Hồng 56', 'Sói Nâu 74'];
+let nextPid = 1;
 const rand = (a) => a[Math.floor(Math.random() * a.length)];
 
 const rooms = new Map();
 
-function newRoom(code, level = 'beginner', title = '') {
-  const r = { code, level, title, open: true, created: Date.now(), players: [], grid: {}, mistakes: {}, unsolved: UNSOLVED.map((u) => ({ ...u, attempts: 0, who: new Set() })), recent: [], lastStep: 0, key: 'mock-key', sim: false };
+function newRoom(code, level = 'beginner', title = '', names = 'random') {
+  const r = { code, level, title, names, open: true, created: Date.now(), players: [], grid: {}, mistakes: {}, unsolved: UNSOLVED.map((u) => ({ ...u, attempts: 0, who: new Set() })), recent: [], lastStep: 0, key: 'mock-key', sim: false };
   for (const t of TOPICS) {
     r.grid[t] = {};
     for (const ty of TYPES) r.grid[t][ty] = { answers: 0, correct: 0 };
@@ -40,8 +41,9 @@ function newRoom(code, level = 'beginner', title = '') {
 
 function step(r, now) {
   if (!r.open) return;
-  if (r.players.length < NAMES.length && (r.players.length < 3 || Math.random() < 0.25)) {
-    r.players.push({ nickname: NAMES[r.players.length], score: 0, status: 'playing', answers: 0, correct: 0, seen: now });
+  const free = NAMES.find((n) => !r.players.some((p) => p.nickname === n));
+  if (free && (r.players.length < 3 || Math.random() < 0.25)) {
+    r.players.push({ player_id: 'mock-p' + nextPid++, nickname: free, score: 0, status: 'playing', answers: 0, correct: 0, seen: now });
   }
   const n = 1 + Math.floor(Math.random() * 3);
   for (let i = 0; i < n && r.players.length; i++) {
@@ -95,8 +97,8 @@ function ensure(code) {
 export async function createRoom(body) {
   await sleep(250);
   const code = Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
-  newRoom(code, body.level, body.title || '');
-  return { code, teacher_key: 'mock-key', join_url: `${location.origin}/?room=${code}`, level: body.level, title: body.title || '' };
+  newRoom(code, body.level, body.title || '', body.names === 'free' ? 'free' : 'random');
+  return { code, teacher_key: 'mock-key', join_url: `${location.origin}/?room=${code}`, level: body.level, title: body.title || '', names: body.names === 'free' ? 'free' : 'random' };
 }
 
 export async function getRoom(code) {
@@ -104,15 +106,23 @@ export async function getRoom(code) {
   if (code === 'NOPE0') throw fail(404, 'Không tìm thấy phòng');
   if (code === 'CLOSD') throw fail(410, 'Phòng đã đóng');
   const r = rooms.get(code) || newRoom(code, 'beginner', 'Lớp Python 10A (mô phỏng)');
-  return { code, level: r.level, title: r.title, open: r.open, players: r.players.length };
+  return { code, level: r.level, title: r.title, names: r.names, open: r.open, players: r.players.length };
 }
 
 export async function joinRoom(code, nickname) {
   await sleep(250);
   const r = rooms.get(code) || newRoom(code, 'beginner', 'Lớp Python 10A (mô phỏng)');
   if (!r.open) throw fail(410, 'Phòng đã đóng');
-  if (!nickname.trim()) throw fail(422, 'Biệt danh không hợp lệ');
-  return { player_id: 'mock-player', player_token: 'mock-token', nickname: nickname.trim(), level: r.level };
+  let name = String(nickname || '').trim();
+  if (r.names === 'free') {
+    if (!name) throw fail(422, 'Biệt danh không hợp lệ');
+    if (/^(admin|fuck|dm)$/i.test(name)) throw fail(422, 'Biệt danh này không được dùng. Hãy chọn tên khác.');
+  } else {
+    name = NAMES[Math.floor(Math.random() * NAMES.length)].replace(/\d+$/, '') + (10 + Math.floor(Math.random() * 90));
+  }
+  const player_id = 'mock-p' + nextPid++;
+  r.players.push({ player_id, nickname: name, score: 0, status: 'playing', answers: 0, correct: 0, seen: Date.now(), joined: true });
+  return { player_id, player_token: 'mock-token', nickname: name, level: r.level };
 }
 
 export async function roomSummary(code, key) {
@@ -140,7 +150,7 @@ export async function roomSummary(code, key) {
   return {
     code, title: r.title, level: r.level, open: r.open, created_at: new Date(r.created).toISOString(),
     totals: { players: r.players.length, answers, correct },
-    players: r.players.map((p) => ({ nickname: p.nickname, score: p.score, status: p.status, answers: p.answers, correct: p.correct, last_seen_s: ago(p.seen) })),
+    players: r.players.map((p) => ({ player_id: p.player_id, nickname: p.nickname, score: p.score, status: p.status, answers: p.answers, correct: p.correct, last_seen_s: ago(p.seen) })),
     grid,
     top_mistakes: Object.values(r.mistakes).sort((a, b) => b.count - a.count).slice(0, 5)
       .map((m) => ({ key: m.key, label: m.label, count: m.count, topic: m.topic, players: m.who.size })),
@@ -148,6 +158,15 @@ export async function roomSummary(code, key) {
       .map((u) => ({ puzzle_id: u.puzzle_id, prompt: u.prompt, topic: u.topic, attempts: u.attempts, players: u.who.size })),
     recent: r.recent.slice(-8).reverse().map((e) => ({ nickname: e.nickname, topic: e.topic, type: e.type, correct: e.correct, mistake_label: e.mistake_label, ago_s: ago(e.at) })),
   };
+}
+
+export async function kickPlayer(code, playerId, key) {
+  await sleep(120);
+  if (key !== 'mock-key') throw fail(403, 'Sai khoá phòng');
+  const r = rooms.get(code);
+  if (!r) throw fail(404, 'Không tìm thấy phòng');
+  r.players = r.players.filter((p) => p.player_id !== playerId);
+  return null;
 }
 
 export async function closeRoom(code, key) {

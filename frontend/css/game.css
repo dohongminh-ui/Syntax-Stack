@@ -16,6 +16,25 @@
 /* ---------------- start screen ---------------- */
 .start { padding: 32px var(--gutter) 64px; display: flex; justify-content: center; }
 
+/* ---------------- home hub: secondary actions grouped by audience ---------------- */
+.hub {
+  width: 100%;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0;
+  border-top: 1px solid var(--line); padding-top: 18px;
+}
+.hub-col { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0 12px; min-width: 0; }
+.hub-col + .hub-col { border-left: 1px solid var(--line); }
+.hub-h { margin: 0 0 4px; font: 700 11px/1 var(--f-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); }
+.hub .room-row { margin-top: 4px; }
+@media (max-width: 719px) {
+  /* phones: one row per group, heading on the left, actions wrapping on the right */
+  .hub { grid-template-columns: 1fr; gap: 14px; }
+  .hub-col { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 2px 14px; padding: 0; }
+  .hub-col + .hub-col { border-left: 0; border-top: 1px solid var(--line); padding-top: 14px; }
+  .hub-h { flex: 0 0 100%; margin: 0; }
+  .hub .room-row { flex: 0 0 100%; justify-content: flex-start; margin: 4px 0 0; }
+}
+
 /* ---------------- home backdrop (only while the start screen is shown) ---------------- */
 .home-bg {
   display: none;

@@ -108,7 +108,7 @@
 
 /* leaderboard */
 .tp-players { display: flex; flex-direction: column; max-height: 440px; overflow-y: auto; }
-.pl-row { display: grid; grid-template-columns: 2.2ch 14px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 9px 4px; border-top: 1px solid var(--line); }
+.pl-row { position: relative; display: grid; grid-template-columns: 2.2ch 14px minmax(0, 1fr) auto auto auto; align-items: center; gap: 12px; padding: 9px 4px; border-top: 1px solid var(--line); }
 .pl-row:first-child { border-top: 0; }
 .pl-row.is-stale { opacity: 0.45; }
 .pl-rank { font: 700 14px/1 var(--f-mono); color: var(--muted); text-align: right; }
@@ -118,6 +118,22 @@
 .pl-ok { display: inline-flex; align-items: center; gap: 4px; font: 500 14px/1 var(--f-mono); color: var(--muted); }
 .pl-ok .ico { color: var(--ok); }
 .pl-score { font: 700 22px/1 var(--f-mono); letter-spacing: -0.02em; min-width: 4ch; text-align: right; }
+
+/* hide-player action: always visible on touch; on a fine pointer it only shows on row hover / keyboard focus so the projector view stays clean */
+.pl-hide {
+  min-width: 44px; min-height: 44px; margin: -10px -4px -10px 0; padding: 0 8px; border: 0; border-radius: var(--r-ctl);
+  background: none; color: var(--muted); font: 700 13px/1 var(--f-mono); letter-spacing: 0.04em;
+}
+.pl-hide:focus-visible { outline: 2px solid var(--mustard); outline-offset: 1px; }
+@media (hover: hover) and (pointer: fine) {
+  .pl-hide { position: absolute; right: 0; top: 50%; translate: 0 -50%; margin: 0; min-height: 32px; min-width: 0; padding: 0 10px; background: var(--plate); box-shadow: inset 0 0 0 1px var(--line-2); opacity: 0; transition: opacity 120ms ease; }
+  .pl-row:hover .pl-hide, .pl-row:focus-within .pl-hide { opacity: 1; }
+  .pl-hide:hover { color: #ff8f8f; }
+  .pl-row.is-stale { opacity: 0.45; }
+}
+
+.rj-got { font: 600 18px/1.4 var(--f-ui); color: var(--ok); }
+.rj-got b { font-weight: 800; color: var(--text); overflow-wrap: anywhere; }
 
 /* recent ticker */
 .tp-recent-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px 36px; }

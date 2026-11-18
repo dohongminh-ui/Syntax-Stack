@@ -65,6 +65,7 @@
   <link rel="stylesheet" href="css/modal.css">
   <link rel="stylesheet" href="css/features.css">
   <link rel="stylesheet" href="css/rooms.css">
+  <link rel="stylesheet" href="css/ranked.css">
 </head>
 <body>
 <noscript><p class="noscript">Syntax Stack cần JavaScript để chạy. Hãy bật JavaScript trong trình duyệt rồi tải lại trang.</p></noscript>
@@ -114,22 +115,6 @@
         </article>
       </div>
 
-      <div class="practice-shortcuts">
-        <button id="btn-practice-tray" class="btn" type="button">Luyện theo lỗi</button>
-        <button id="btn-skills" class="btn" type="button">Bản đồ kỹ năng</button>
-        <button id="btn-custom" class="btn" type="button">Tạo câu đố từ code</button>
-        <button id="btn-judge-demo" class="btn" type="button">Demo cho giám khảo</button>
-        <button id="btn-room-new" class="btn" type="button">Lớp học trực tiếp</button>
-      </div>
-      <div class="room-row">
-        <form id="room-code-form" class="room-code-form" autocomplete="off">
-          <label class="sr-only" for="room-code-in">Mã phòng (5 ký tự)</label>
-          <input id="room-code-in" class="room-input room-code-in" type="text" maxlength="5" autocapitalize="characters" spellcheck="false" placeholder="MÃ PHÒNG" aria-describedby="room-code-err">
-          <button class="btn" type="submit">Vào phòng</button>
-        </form>
-        <p id="room-code-err" class="room-code-err" role="alert" hidden></p>
-      </div>
-
       <div class="setup" aria-label="Thiết lập Code Rescue">
         <div class="setup-group">
           <span class="setup-l">Cấp độ</span>
@@ -144,10 +129,38 @@
           <div class="switch">
             <label class="key keyopt"><input class="sr-only" type="radio" name="mode" value="rescue" checked><span class="cap-top"><span class="kb-label">Rescue</span></span></label>
             <label class="key keyopt"><input class="sr-only" type="radio" name="mode" value="practice"><span class="cap-top"><span class="kb-label">Luyện tập</span></span></label>
+            <label class="key keyopt"><input class="sr-only" type="radio" name="mode" value="ranked"><span class="cap-top"><span class="kb-label">Xếp hạng</span></span></label>
           </div>
           <p class="setup-note">Rescue: 1 lần trả lời mỗi câu, sai 2 lần là thua. Luyện tập: không thua, 3 lần trả lời mỗi câu.</p>
+          <p id="ranked-note" class="setup-note setup-ranked" hidden>Xếp hạng: luật như Rescue. Điểm được máy chủ chơi lại và xác minh.</p>
         </div>
       </div>
+      <nav class="hub" aria-label="Các chức năng khác">
+        <div class="hub-col">
+          <h2 class="hub-h">Học</h2>
+          <button id="btn-practice-tray" class="btn" type="button">Luyện theo lỗi</button>
+          <button id="btn-skills" class="btn" type="button">Bản đồ kỹ năng</button>
+        </div>
+        <div class="hub-col">
+          <h2 class="hub-h">Thi đấu</h2>
+          <button id="btn-leaderboard" class="btn" type="button">Bảng xếp hạng</button>
+          <button id="btn-race-new" class="btn" type="button">Đấu tốc độ</button>
+          <div class="room-row">
+            <form id="room-code-form" class="room-code-form" autocomplete="off">
+              <label class="sr-only" for="room-code-in">Mã phòng (5 ký tự)</label>
+              <input id="room-code-in" class="room-input room-code-in" type="text" maxlength="5" autocapitalize="characters" spellcheck="false" placeholder="MÃ PHÒNG" aria-describedby="room-code-err">
+              <button class="btn" type="submit">Vào phòng</button>
+            </form>
+            <p id="room-code-err" class="room-code-err" role="alert" hidden></p>
+          </div>
+        </div>
+        <div class="hub-col">
+          <h2 class="hub-h">Giáo viên</h2>
+          <button id="btn-room-new" class="btn" type="button">Lớp học trực tiếp</button>
+          <button id="btn-custom" class="btn" type="button">Tạo câu đố từ code</button>
+          <button id="btn-judge-demo" class="btn" type="button">Demo cho giám khảo</button>
+        </div>
+      </nav>
       <p id="hs-line" class="hs"></p>
     </div>
   </section>
@@ -186,6 +199,14 @@
           <label class="key keyopt"><input class="sr-only" type="radio" name="room-level" value="intermediate"><span class="cap-top"><span class="kb-label">Intermediate</span></span></label>
           <label class="key keyopt"><input class="sr-only" type="radio" name="room-level" value="advanced"><span class="cap-top"><span class="kb-label">Advanced</span></span></label>
         </div>
+      </div>
+      <div class="setup-group">
+        <span class="setup-l" id="room-names-l">Tên người chơi</span>
+        <div class="keyrow" role="radiogroup" aria-labelledby="room-names-l" aria-describedby="room-names-note">
+          <label class="key keyopt"><input class="sr-only" type="radio" name="room-names" value="random" checked><span class="cap-top"><span class="kb-label">Ngẫu nhiên</span></span></label>
+          <label class="key keyopt"><input class="sr-only" type="radio" name="room-names" value="free"><span class="cap-top"><span class="kb-label">Tự đặt</span></span></label>
+        </div>
+        <p id="room-names-note" class="setup-note" aria-live="polite">Nên dùng khi chiếu lên màn hình lớn</p>
       </div>
       <div class="setup-group">
         <label class="setup-l" for="room-title-in">Tên phòng (không bắt buộc)</label>
@@ -253,14 +274,97 @@
       <span id="rj-code" class="chip t-neutral"></span>
       <h1 id="rj-title" tabindex="-1">Vào phòng</h1>
       <p id="rj-sub" class="end-sub"></p>
-      <div class="setup-group">
+      <div id="rj-free" class="setup-group" hidden>
         <label class="setup-l" for="rj-nick">Biệt danh</label>
         <input id="rj-nick" class="room-input" type="text" maxlength="20" autocomplete="nickname" spellcheck="false" aria-describedby="rj-note rj-err">
         <p id="rj-note" class="setup-note">Chỉ dùng biệt danh, không nhập tên thật.</p>
       </div>
+      <p id="rj-random" class="setup-note" hidden>Hệ thống sẽ đặt cho bạn một tên ngẫu nhiên khi vào phòng.</p>
+      <p id="rj-got" class="rj-got" role="status" hidden></p>
       <p id="rj-err" class="rs-error" role="alert" hidden></p>
       <div id="rj-act" class="end-actions"></div>
     </form>
+  </section>
+
+  <!-- LEADERBOARD -->
+  <section id="screen-leaderboard" class="screen lb" hidden>
+    <div class="lb-wrap">
+      <div class="lb-head">
+        <h1 id="lb-title" class="rs-title" tabindex="-1">Bảng xếp hạng</h1>
+        <p class="rs-sub">Chỉ tính ván Xếp hạng đã được máy chủ xác minh. Mỗi người giữ một kết quả tốt nhất. Tuần bắt đầu từ thứ Hai, giờ Việt Nam.</p>
+        <span id="lb-mock" class="tp-mock" hidden>dữ liệu mẫu (mock)</span>
+      </div>
+      <div class="lb-controls">
+        <div class="setup-group">
+          <span class="setup-l" id="lb-period-l">Khoảng thời gian</span>
+          <div class="switch" role="radiogroup" aria-labelledby="lb-period-l">
+            <label class="key keyopt"><input class="sr-only" type="radio" name="lb-period" value="day" checked><span class="cap-top"><span class="kb-label">Hôm nay</span></span></label>
+            <label class="key keyopt"><input class="sr-only" type="radio" name="lb-period" value="week"><span class="cap-top"><span class="kb-label">Tuần này</span></span></label>
+            <label class="key keyopt"><input class="sr-only" type="radio" name="lb-period" value="all"><span class="cap-top"><span class="kb-label">Mọi lúc</span></span></label>
+          </div>
+        </div>
+        <div class="setup-group">
+          <span class="setup-l" id="lb-level-l">Cấp độ</span>
+          <div class="keyrow" role="radiogroup" aria-labelledby="lb-level-l">
+            <label class="key keyopt"><input class="sr-only" type="radio" name="lb-level" value="beginner" checked><span class="cap-top"><span class="kb-label">Beginner</span></span></label>
+            <label class="key keyopt"><input class="sr-only" type="radio" name="lb-level" value="intermediate"><span class="cap-top"><span class="kb-label">Intermediate</span></span></label>
+            <label class="key keyopt"><input class="sr-only" type="radio" name="lb-level" value="advanced"><span class="cap-top"><span class="kb-label">Advanced</span></span></label>
+          </div>
+        </div>
+      </div>
+      <div class="lb-panel panel">
+        <div id="lb-list" class="lb-body" aria-live="polite"></div>
+      </div>
+      <div class="lb-nickrow">
+        <span class="setup-l">Tên của bạn</span>
+        <span id="lb-nick" class="lb-nick"></span>
+        <button id="lb-nick-btn" class="btn" type="button">Đổi</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- RACE: create -->
+  <section id="screen-race-new" class="screen end" hidden>
+    <form id="race-new-form" class="end-card room-card" novalidate>
+      <h1 id="race-new-title" tabindex="-1">Đấu tốc độ</h1>
+      <p class="end-sub">Tạo một trận rồi gửi liên kết cho bạn bè. Mọi người chơi cùng một đề Code Rescue. Điểm cao hơn thắng, bằng điểm thì ai nhanh hơn thắng.</p>
+      <div class="setup-group">
+        <span class="setup-l" id="race-level-l">Cấp độ</span>
+        <div class="keyrow" role="radiogroup" aria-labelledby="race-level-l">
+          <label class="key keyopt"><input class="sr-only" type="radio" name="race-level" value="beginner" checked><span class="cap-top"><span class="kb-label">Beginner</span></span></label>
+          <label class="key keyopt"><input class="sr-only" type="radio" name="race-level" value="intermediate"><span class="cap-top"><span class="kb-label">Intermediate</span></span></label>
+          <label class="key keyopt"><input class="sr-only" type="radio" name="race-level" value="advanced"><span class="cap-top"><span class="kb-label">Advanced</span></span></label>
+        </div>
+        <p class="setup-note">Không tính vào bảng xếp hạng.</p>
+      </div>
+      <p id="race-new-err" class="rs-error" role="alert" hidden></p>
+      <div id="race-new-act" class="end-actions"></div>
+    </form>
+  </section>
+
+  <!-- RACE: lobby (creator and invited players) -->
+  <section id="screen-race" class="screen end" hidden>
+    <div class="end-card race-card">
+      <div class="race-top"><span id="rc-level" class="chip t-neutral"></span><span id="rc-mock" class="tp-mock" hidden>dữ liệu mẫu (mock)</span></div>
+      <h1 id="rc-title" tabindex="-1">Đấu tốc độ</h1>
+      <p id="rc-sub" class="end-sub"></p>
+      <div id="rc-code" class="rc-code" role="img"></div>
+      <div class="cu-share">
+        <label class="setup-l" for="rc-link">Liên kết mời</label>
+        <div class="cu-share-row">
+          <input id="rc-link" class="cu-link" type="text" readonly>
+          <button id="rc-copy" class="btn cu-copy" type="button">Sao chép liên kết</button>
+        </div>
+      </div>
+      <p id="rc-note" class="rk-note">Không tính vào bảng xếp hạng. Mọi người chơi cùng một đề.</p>
+      <p id="rc-err" class="rs-error" role="alert" hidden></p>
+      <div id="rc-act" class="end-actions"></div>
+      <section class="rc-results" aria-labelledby="rc-res-h">
+        <div class="rc-res-head"><h2 id="rc-res-h" class="report-h">Kết quả</h2><span id="rc-sync"></span></div>
+        <div id="rc-results" class="rt-host" aria-live="polite"></div>
+      </section>
+      <div class="end-actions"><button id="rc-home" class="btn" type="button">Về màn hình chính</button></div>
+    </div>
   </section>
 
   <!-- PASTE YOUR OWN CODE -->
@@ -301,8 +405,10 @@
       <div id="end-badge" class="end-badge"></div>
       <h1 id="end-title" tabindex="-1">Hết ván</h1>
       <p id="end-sub" class="end-sub"></p>
-      <div class="end-score"><span class="es-l">ĐIỂM</span><b id="end-score" class="es-n">0</b></div>
+      <div class="end-score"><span id="end-score-l" class="es-l">ĐIỂM</span><b id="end-score" class="es-n">0</b></div>
       <p id="end-hs" class="hs"></p>
+      <div id="end-ranked" class="rk-panel" hidden></div>
+      <section id="end-race" class="rk-panel rk-race" aria-label="Kết quả trận" hidden></section>
       <dl class="receipt" aria-label="Thống kê ván chơi">
         <div><dt>streak_max</dt><dd id="end-streak">0</dd></div>
         <div><dt>bugs_fixed</dt><dd id="end-bugs">0</dd></div>

@@ -129,7 +129,10 @@ def public_puzzle(row: dict, level: str = "intermediate") -> dict:
 
 def select_puzzle(*, kind: str, topic: Optional[str], tier: Optional[int], level: str,
                   template_id: Optional[str], exclude_ids: list[str],
-                  exclude_templates: list[str]) -> dict:
+                  exclude_templates: list[str], rng: Optional[random.Random] = None) -> dict:
+    """Pick one puzzle. With ``rng`` (ranked runs and races) the pick is reproducible: the candidates are
+    put in a fixed order and every random choice comes from ``rng`` instead of the global generator."""
+    rand = rng if rng is not None else random
     excl_ids = set(exclude_ids or [])
     excl_tpl = set(exclude_templates or [])
     con = _connect()
@@ -142,19 +145,23 @@ def select_puzzle(*, kind: str, topic: Optional[str], tier: Optional[int], level
             if not rows:
                 raise NotFound(f"Không tìm thấy mẫu câu đố '{template_id}'.")
             rows = [r for r in rows if r["id"] not in excl_ids]
+            if rng is not None:
+                rows.sort(key=lambda r: r["id"])
             bug_rows = [r for r in rows if r["type"] == "find_bug"]
             pool = bug_rows or [r for r in rows if not r["debug_only"]]
             if not pool:
                 raise NotFound("Không còn biến thể nào của mẫu này để dùng cho câu đố Debug.")
         else:
             if topic is None:
-                topic = random.choice(TOPICS)
+                topic = rand.choice(TOPICS)
             if tier is None:
                 tier = 3
             rows = con.execute(
                 "SELECT id, template_id, type FROM puzzles WHERE topic = ? AND tier = ? AND debug_only = 0",
                 (topic, tier)).fetchall()
             rows = [r for r in rows if r["id"] not in excl_ids]
+            if rng is not None:
+                rows.sort(key=lambda r: r["id"])
             if template_id:
                 rows = [r for r in rows if r["template_id"] == template_id]
             if not rows:
@@ -162,10 +169,10 @@ def select_puzzle(*, kind: str, topic: Optional[str], tier: Optional[int], level
             preferred = [r for r in rows if r["template_id"] not in excl_tpl]
             pool = preferred or rows  # exclude_templates is only a soft preference
         if kind == "debug":
-            chosen = random.choice(pool)
+            chosen = rand.choice(pool)
         else:
             weights = TYPE_WEIGHTS.get(level, TYPE_WEIGHTS["intermediate"])
-            chosen = random.choices(pool, weights=[weights[r["type"]] for r in pool], k=1)[0]
+            chosen = rand.choices(pool, weights=[weights[r["type"]] for r in pool], k=1)[0]
         r = con.execute("SELECT * FROM puzzles WHERE id = ?", (chosen["id"],)).fetchone()
         return _row_to_dict(r)
     finally:

@@ -48,7 +48,15 @@ export async function health() {
   return isMock ? (await mock()).health() : request('GET', '/api/health');
 }
 
+// While a ranked / race run is in progress, every next-puzzle, hint and answer call carries run_id + run_token
+// (body for POST, query for GET). main.js sets it when the run starts (ranked.js) and clears it the moment the game ends.
+let runCtx = null;
+export function setRunContext(ctx) {
+  runCtx = ctx && ctx.id && ctx.token ? { run_id: ctx.id, run_token: ctx.token } : null;
+}
+
 export async function nextPuzzle(params) {
+  if (runCtx) params = { ...params, ...runCtx };
   if (isMock) return (await mock()).nextPuzzle(params);
   return request('POST', '/api/puzzle/next', params);
 }
@@ -59,15 +67,18 @@ export function setRoomContext(ctx) {
   roomCtx = ctx && ctx.code && ctx.player_token ? { room: ctx.code, player_token: ctx.player_token } : null;
 }
 
+// `room: false` (standalone practice) skips both the room fields and the run fields.
 export async function submitAnswer(id, body, { room = true } = {}) {
   if (roomCtx && room) body = { ...body, ...roomCtx };
+  if (runCtx && room) body = { ...body, ...runCtx };
   if (isMock) return (await mock()).submitAnswer(id, body);
   return request('POST', '/api/puzzle/' + encodeURIComponent(id) + '/answer', body);
 }
 
 export async function getHint(id, level) {
   if (isMock) return (await mock()).getHint(id, level);
-  return request('GET', '/api/puzzle/' + encodeURIComponent(id) + '/hint?level=' + level);
+  const run = runCtx ? '&run_id=' + encodeURIComponent(runCtx.run_id) + '&run_token=' + encodeURIComponent(runCtx.run_token) : '';
+  return request('GET', '/api/puzzle/' + encodeURIComponent(id) + '/hint?level=' + level + run);
 }
 
 export async function explainChoice(id, body) {
@@ -159,7 +170,7 @@ export async function getCustomSet(id, level) {
 const keyHeader = (key) => ({ 'X-Teacher-Key': key });
 const room = (code) => '/api/rooms/' + encodeURIComponent(code);
 
-/** body: { level, title? } -> { code, teacher_key, join_url, level, title }. 429 = rate limited. */
+/** body: { level, title?, names?: 'random'|'free' } -> { code, teacher_key, join_url, level, title, names }. 429 = rate limited. */
 export async function createRoom(body) {
   if (isMock) return (await mock()).createRoom(body);
   return request('POST', '/api/rooms', body);
@@ -170,10 +181,16 @@ export async function getRoom(code) {
   return request('GET', room(code));
 }
 
-/** -> { player_id, player_token, nickname, level }. 409 full, 410 closed, 404, 422 bad nickname. */
+/** Random-names room: `nickname` is omitted and the server assigns one. -> { player_id, player_token, nickname, level }. 409 full, 410 closed, 404, 422 filtered name (free mode). */
 export async function joinRoom(code, nickname) {
   if (isMock) return (await mock()).joinRoom(code, nickname);
-  return request('POST', room(code) + '/join', { nickname });
+  return request('POST', room(code) + '/join', nickname ? { nickname } : {});
+}
+
+/** Teacher hides a player: 204. That player's token stops working. */
+export async function kickPlayer(code, playerId, key) {
+  if (isMock) return (await mock()).kickPlayer(code, playerId, key);
+  return request('POST', room(code) + '/players/' + encodeURIComponent(playerId) + '/kick', null, { headers: keyHeader(key) });
 }
 
 /** body: { player_token, score, status: playing|crash|nofit, bugs_fixed } */
@@ -197,7 +214,50 @@ export async function deleteRoom(code, key) {
   return request('DELETE', room(code), null, { headers: keyHeader(key) });
 }
 
-export const roomQrUrl = (code) => (isMock ? mockQr(code) : room(code) + '/qr.svg');
+/** -> { nickname } a random generated name ("Mèo Xanh 42"). 429 when asked too often. */
+export async function fetchNickname() {
+  if (isMock) return (await mock()).fetchNickname();
+  return request('GET', '/api/nickname');
+}
+
+// ---- Ranked runs, leaderboard, races (docs/ranked-and-race.md) ----
+/** body: { kind: 'ranked'|'race', level, nickname, device_id, race? } -> { run_id, run_token, seed, level, kind, race? }. 404/410 race, 422, 429. */
+export async function createRun(body) {
+  if (isMock) return (await mock()).createRun(body);
+  return request('POST', '/api/runs', body);
+}
+
+/** body: { run_token, moves, client_score } -> { status: 'verified', score, locks, mistakes, bugs_fixed, best_streak, duration_s, rank, race? } | { status: 'rejected', reason } */
+export async function finishRun(id, body) {
+  if (isMock) return (await mock()).finishRun(id, body);
+  return request('POST', '/api/runs/' + encodeURIComponent(id) + '/finish', body, { timeout: 30000 });
+}
+
+/** -> { level, period, entries: [{ rank, nickname, score, locks, at }], you: { rank, score } | null } */
+export async function leaderboard({ level, period, device_id }) {
+  if (isMock) return (await mock()).leaderboard({ level, period, device_id });
+  const q = new URLSearchParams({ level, period });
+  if (device_id) q.set('device_id', device_id);
+  return request('GET', '/api/leaderboard?' + q.toString());
+}
+
+/** body: { level, nickname, device_id } -> { code, seed, level, url } */
+export async function createRace(body) {
+  if (isMock) return (await mock()).createRace(body);
+  return request('POST', '/api/races', body);
+}
+
+/** -> { code, level, created_by, created_at, expires_at, results: [{ rank, nickname, score, locks, mistakes, duration_s, finished_at, you? }], playing }
+ *  Sends this browser's device id so the server can mark the player's own row (`you: true`). */
+export async function getRace(code) {
+  if (isMock) return (await mock()).getRace(code);
+  let device = '';
+  try { device = localStorage.getItem('syntaxstack.device') || ''; } catch { /* storage blocked */ }
+  const q = /^[0-9a-f]{32}$/.test(device) ? '?device_id=' + device : '';
+  return request('GET', '/api/races/' + encodeURIComponent(code) + q, null, { timeout: 8000 });
+}
+
+export const roomQrUrl =(code) => (isMock ? mockQr(code) : room(code) + '/qr.svg');
 
 // Mock only: a decorative placeholder (not a scannable code), as a data URI.
 function mockQr(code) {

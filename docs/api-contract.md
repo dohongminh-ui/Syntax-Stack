@@ -290,10 +290,10 @@ expires 12 hours after its last student activity (create, join, answer, progress
 All errors are `{ "detail": "<Vietnamese message>" }`. Room codes are case-insensitive.
 
 ## POST /api/rooms
-`{ "level": "beginner"|"intermediate"|"advanced", "title"?: str (max 40, no control characters) }` ->
+`{ "level": "beginner"|"intermediate"|"advanced", "title"?: str (max 40, no control characters), "names"?: "random"|"free" (default "random") }` ->
 ```json
 { "code": "K7M2Q", "teacher_key": "<32 hex, secret>", "join_url": "https://host/?room=K7M2Q",
-  "level": "intermediate", "title": "Lớp 10A" }
+  "level": "intermediate", "title": "Lớp 10A", "names": "random" }
 ```
 `code` is 5 characters from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`. `title` is `""` when omitted. `join_url` is
 built from the request, honouring `X-Forwarded-Proto` / `X-Forwarded-Host`; the env var
@@ -301,12 +301,15 @@ built from the request, honouring `X-Forwarded-Proto` / `X-Forwarded-Host`; the 
 only here (the server keeps just its hash). Limit: 5 rooms per hour per client IP, then 429.
 
 ## GET /api/rooms/{code}
--> `{ "code", "level", "title", "open": true, "players": 12 }` (players = count). 404 for an unknown or expired room.
+-> `{ "code", "level", "title", "open": true, "players": 12, "names": "random"|"free" }` (players = count). 404 for an unknown or expired room.
 
 ## POST /api/rooms/{code}/join
-`{ "nickname": str }` (trimmed, 1 to 20 characters, no control or invisible-format characters; 422
-otherwise) -> `{ "player_id", "player_token": "<32 hex>", "nickname", "level" }`. A nickname already in
-the room (case-insensitive) gets " 2", " 3", ... appended and `nickname` returns the final one. 404 unknown
+`{ "nickname"?: str }`. In a `random` room the body's nickname is optional and ignored: the server assigns a
+generated name (`"<animal> <adjective> <NN>"`, see `GET /api/nickname`) that is unique in the room. In a `free`
+room `nickname` is required (trimmed, 1 to 20 characters, no control or invisible-format characters; 422
+otherwise) and is also checked against the name blocklist: `422 "Biệt danh này không được dùng. Hãy chọn tên khác."`.
+A free nickname already in the room (case-insensitive) gets " 2", " 3", ... appended. Response:
+`{ "player_id", "player_token": "<32 hex>", "nickname", "level" }`, where `nickname` is always the final name. 404 unknown
 room, 410 closed room, 409 when the room already has 60 players. Keep `player_token`; it is the player's
 only credential.
 
@@ -329,7 +332,7 @@ ignores it (204).
 ```json
 { "code": "K7M2Q", "title": "Lớp 10A", "level": "intermediate", "open": true, "created_at": 1767225600,
   "totals": { "players": 12, "answers": 140, "correct": 96 },
-  "players": [ { "nickname": "An", "score": 420, "status": "playing", "answers": 14, "correct": 11, "last_seen_s": 8 } ],
+  "players": [ { "player_id": "p1a2b3c4", "nickname": "An", "score": 420, "status": "playing", "answers": 14, "correct": 11, "last_seen_s": 8 } ],
   "grid": { "loops": { "fill_blank": { "answers": 9, "correct": 6 }, "predict_output": {}, "parsons": {}, "find_bug": {} } },
   "top_mistakes": [ { "key": "off_by_one_high", "label": "Lệch một đơn vị (thừa)", "count": 7, "topic": "loops", "players": 5 } ],
   "unsolved": [ { "puzzle_id": "loops_range_fill__003", "prompt": "...", "topic": "loops", "attempts": 4, "players": 3 } ],
@@ -349,6 +352,16 @@ ignores it (204).
 - `unsolved`: puzzles with at least 2 wrong attempts and 0 correct ones, top 5 by `attempts` (wrong attempts).
 - `recent`: the last 10 answers, newest first; `mistake_label` is `null` for correct answers.
 
+## POST /api/rooms/{code}/players/{player_id}/kick   (header `X-Teacher-Key`; 403 if wrong or missing)
+-> `204`. 404 for an unknown player. The player and all their answers disappear from every part of the summary
+(players, grid, top_mistakes, unsolved, recent, totals); their `player_token` stops working (answers are not
+logged, `progress` answers 403) and cannot be used to rejoin. Joining again creates a new player; to stop that,
+close the room.
+
+## GET /api/nickname
+-> `{ "nickname": "Mèo Xanh 42" }`, a fresh random generated name on every call. 60 per minute per client IP, then 429.
+Ranked runs and races accept only such names (`422 "Hãy dùng tên được tạo ngẫu nhiên."` otherwise).
+
 ## POST /api/rooms/{code}/close   (header `X-Teacher-Key`)
 -> `{ "open": false }`. New joins get 410, answers stop being logged, the summary stays readable.
 
@@ -359,6 +372,29 @@ ignores it (204).
 `image/svg+xml` QR code of the room's `join_url`: dark modules `#141518` on white (dark-on-light so phone cameras can scan it),
 quiet zone 2, `Cache-Control: private, max-age=300`. 404 for an unknown room. (The page CSP already
 allows it: `img-src 'self'`.)
+
+---
+
+# Ranked runs, leaderboard and races
+
+Full contract and rules: [`ranked-and-race.md`](ranked-and-race.md). Summary of the endpoints (errors are
+`{ "detail": "<Vietnamese message>" }`):
+
+| Endpoint | Body / query | Response |
+| --- | --- | --- |
+| `POST /api/runs` | `{kind: "ranked"\|"race", level?, nickname, device_id, race?}` | `{run_id, run_token, seed, level, kind, race?}`. 404 unknown race, 410 race expired or full (30 runs), 422 bad nickname / device id / missing level or race code, 429 over 30 runs per hour per client IP |
+| `POST /api/runs/{run_id}/finish` | `{run_token, moves: [...], client_score?}` (up to 3000 moves; body limit 192 KB) | `{status: "verified", score, locks, mistakes, bugs_fixed, best_streak, duration_s, rank, race?}` or `{status: "rejected", reason}`. 403 bad token, 404 unknown, 409 already finished, 410 older than 3 hours |
+| `GET /api/leaderboard` | `level`, `period=day\|week\|all` (default `all`), `device_id?` | `{level, period, entries: [{rank, nickname, score, locks, at}], you: {rank, score} \| null}` (top 50, ranked runs only, Asia/Ho_Chi_Minh day / week) |
+| `POST /api/races` | `{level, nickname, device_id}` | `{code, seed, level, url}`; 10 races per hour per client IP |
+| `GET /api/races/{code}` | `device_id?` | `{code, level, created_by, created_at, expires_at, results: [{rank, nickname, score, locks, mistakes, duration_s, finished_at, you?}], playing}`; `you` only with a valid `device_id` |
+
+Extended existing endpoints (all fields optional; invalid values are ignored and never change the response):
+
+- `POST /api/puzzle/next` also accepts `run_id` + `run_token`. With a valid pair the puzzle is picked
+  deterministically from the run's seed (the run's level is used and `exclude_*` are ignored) and recorded.
+- `GET /api/puzzle/{id}/hint?level=n` also accepts `run_id` + `run_token` (query) and records the highest hint level.
+- `POST /api/puzzle/{id}/answer` also accepts `run_id` + `run_token` and records the checked result (first
+  answer counts). Room fields keep working alongside.
 
 ---
 
