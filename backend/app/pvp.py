@@ -26,7 +26,7 @@ import time
 from collections import deque
 from typing import Any, Optional
 
-from . import bank, nicknames, pvp_bot, ranked, rooms
+from . import bank, nicknames, pvp_bot, pvp_coach, ranked, rooms
 from . import rescue_engine as E
 
 log = logging.getLogger("syntax_stack.pvp")
@@ -54,12 +54,15 @@ SPEED = 1.0                      # tests: > 1 runs the match clock faster
 MAX_SERVED_PER_PLAYER = 1000
 HISTORY_IDS = 500
 HISTORY_TEMPLATES = 3
+SUGGEST_EVERY_S = 3.0            # training: a `suggest` more often than this (real time) is dropped
+COACH_LOOK_S = 0.5               # training: how often the coach looks at the player's board (besides after every change)
 
 LEVELS = E.LEVELS
 _ERR = {
     "bad_message": "Tin nhắn không hợp lệ.",
     "not_playing": "Ván đấu chưa bắt đầu hoặc đã kết thúc.",
     "illegal": "Nước đi không hợp lệ.",
+    "not_training": "Gợi ý chỉ có trong chế độ luyện tập cùng Misaki.",
 }
 
 
@@ -206,6 +209,12 @@ class Player:
         self.lock_debugger = False
         self.open_debug: Optional[Served] = None
         self.brain: Optional[pvp_bot.BotBrain] = None
+        # Misaki (docs/pvp.md section 5): the chosen ladder level (None: the generic "Máy" bot), training mode, coach
+        self.misaki: Optional[int] = None
+        self.training = False
+        self.coach: Optional[pvp_coach.Coach] = None
+        self.last_suggest = -1e9
+        self.last_look = -1e9
 
     def send(self, msg: dict) -> None:
         if self.conn is not None:
@@ -294,6 +303,7 @@ class Match:
         self.code: Optional[str] = None                    # private duels
         self.rematch = [False, False]                      # private duels: who asked for another round
         self.rematch_until: Optional[float] = None
+        self.training = False                              # bot matches: Misaki also coaches (section 5.4)
 
     # ---- helpers ----
     def players(self) -> list[Player]:
@@ -314,9 +324,17 @@ class Match:
         o = p.opponent
         starts = None if self.countdown_at is None else max(0, math.ceil(self.countdown_at - now()))
         return {"t": "lobby", "you": {"nickname": p.nickname, "rating": p.rating}, "level": self.level,
-                "opponent": None if o is None else {"nickname": o.nickname, "bot": o.bot, "connected": o.connected,
-                                                    "rating": o.rating},
-                "starts_in": starts}
+                "opponent": None if o is None else self.opponent_lobby(o), "starts_in": starts}
+
+    @staticmethod
+    def opponent_lobby(o: Player) -> dict:
+        out = {"nickname": o.nickname, "bot": o.bot, "connected": o.connected, "rating": o.rating}
+        if o.bot and o.misaki:
+            # `misaki` / `title` are the level the player CHOSE; `plays_as` is the level she really plays at (one lower
+            # in training mode)
+            out.update({"misaki": o.misaki, "title": pvp_bot.title(o.misaki), "training": o.training,
+                        "plays_as": pvp_bot.effective_level(o.misaki, o.training)})
+        return out
 
     def push_lobby(self) -> None:
         if self.phase != "lobby":
@@ -432,8 +450,13 @@ class Match:
         for p in self.players():
             p.game = E.RescueGame(self.seed, self.level, "pvp")
             if p.bot:
-                p.brain = pvp_bot.BotBrain(self.seed, self.level)
-                p.brain.next_at = self.started_at + pvp_bot.FIRST_MOVE_S
+                chosen = p.misaki or pvp_bot.LEGACY_LEVEL[self.level]
+                p.brain = pvp_bot.BotBrain(self.seed, pvp_bot.effective_level(chosen, p.training), p.training,
+                                           stream=f"bot:{p.index}")
+                p.brain.next_at = self.started_at + p.brain.place_delay()
+            elif self.training:
+                p.coach = pvp_coach.Coach(self.seed)
+                p.last_look = -1e9
             self.send_start(p)
             self.push_state(p, bump=True)
             p.opp_dirty = True
@@ -454,6 +477,27 @@ class Match:
             o.opp_dirty = True
         if p.game.phase == "over" and self.phase == "playing":
             self.finish(1 - p.index, p.game.end_reason or "topped_out")
+        elif p.coach is not None:
+            self.coach_look(p)
+
+    # ---- training mode: Misaki coaches (docs/pvp.md section 5.4) ----
+    def coach_say(self, p: Player, msg: Optional[dict]) -> None:
+        if msg is not None:
+            p.send(msg)
+
+    def coach_event(self, p: Player, kind: str, **kw: Any) -> None:
+        if p.coach is not None and self.phase == "playing":
+            self.coach_say(p, p.coach.event(kind, now(), **kw))
+
+    def coach_look(self, p: Player) -> None:
+        """The coach looks at the player's board (after every change and about twice a second)."""
+        c = p.coach
+        if c is None or self.phase != "playing" or p.game is None:
+            return
+        t = now()
+        p.last_look = t
+        self.coach_say(p, c.due(t))
+        self.coach_say(p, c.observe(p.game, t))
 
     def push_opponents(self) -> None:
         t = now()
@@ -573,8 +617,17 @@ class Match:
                 return                                          # a boss lock: the second puzzle is next
             parts = [{"correct": s.correct, "hint": s.hint, "topic": s.topic, "template_id": s.template_id}
                      for s in p.lock_parts]
+            lines = g.lock["count"]
             res = g.pvp_resolve_lock(p.lock_debugger, parts)
             p.reset_lock()
+            if p.coach is not None:
+                if res["result"] == "bug":
+                    self.coach_event(p, "wrong", topic=pvp_coach.TOPIC_VI.get(res["topic"], ""))
+                else:
+                    if lines >= 2:
+                        self.coach_event(p, "good", n=lines)
+                    if g.streak == 3:
+                        self.coach_event(p, "streak", n=3)
             self.deliver(p, res)
             self.changed(p)
         elif sv.kind == "debug":
@@ -595,6 +648,8 @@ class Match:
         send, cancelled = res["send"], res["cancelled"]
         if send or cancelled:
             p.send({"t": "sent", "lines": send, "cancelled": cancelled})
+        if cancelled:
+            self.coach_event(p, "cancel", n=cancelled)
         o = p.opponent
         if send and o is not None and o.game is not None and o.game.phase != "over":
             topic = res["topic"]
@@ -603,6 +658,27 @@ class Match:
             o.send({"t": "incoming", "lines": send, "from_topic": topic})
             self.push_state(o)
             o.opp_dirty = p.opp_dirty = True
+            self.coach_event(o, "incoming")
+            if o.coach is not None:
+                self.coach_look(o)
+
+    def suggest(self, p: Player) -> None:
+        """Training mode: Misaki's level-4 search on the player's own state (``{"t": "suggest"}``)."""
+        if not self.training:
+            return _error(p, "not_training")
+        g = p.game
+        if self.phase != "playing" or g is None or g.phase == "over":
+            return _error(p, "not_playing")
+        t = _real()
+        if t - p.last_suggest < SUGGEST_EVERY_S:
+            return                                              # at most one every 3 s: dropped silently
+        p.last_suggest = t
+        sg = pvp_bot.suggest(g)
+        if sg is None:
+            p.send({"t": "suggestion", "none": True, "why": pvp_coach.suggestion_text("none")})
+        else:
+            p.send({"t": "suggestion", "i": sg.i, "r": sg.r, "c": sg.c, "cells": sg.cells,
+                    "why": pvp_coach.suggestion_text(sg.reason, sg.n)})
 
     # ---- the end ----
     def finish(self, winner: Optional[int], reason: str) -> None:
@@ -624,6 +700,13 @@ class Match:
                     g.phase = "over"              # the winner's board just stops (no end reason of its own)
                 else:
                     g.end_game(reason)
+        ladder: Optional[dict] = None                 # a match against Misaki: the ladder result (section 5.2)
+        bot = next((x for x in self.players() if x.bot and x.misaki), None)
+        if self.kind == "bot" and bot is not None and len(humans) == 1:
+            ladder = {"level": bot.misaki, "unlocked_now": None}
+            if not bot.training and winner is not None and reason not in ("both_disconnected", "server_restart"):
+                ladder["unlocked_now"] = ranked.misaki_record(humans[0].device_hash, bot.misaki,
+                                                              winner == humans[0].index)
         for p in humans:
             o = p.opponent
             who = "draw" if winner is None else ("you" if winner == p.index else "opponent")
@@ -632,6 +715,8 @@ class Match:
             if rated is not None:
                 before, after = rated[p.index]
                 msg["rating"] = {"before": before, "after": after}
+            if ladder is not None:
+                msg["misaki"] = dict(ladder)
             p.final = msg
             if p.game is not None:
                 self.push_state(p)
@@ -702,6 +787,10 @@ class Match:
         for p in self.players():
             if p.bot and self.phase == "playing":
                 self.bot_act(p, t)
+        # training: the coach looks at the human's board twice a second (deferred messages, the bug line timer)
+        for p in self.humans():
+            if p.coach is not None and self.phase == "playing" and t - p.last_look >= COACH_LOOK_S:
+                self.coach_look(p)
         # disconnect grace
         if self.phase == "playing":
             expired = [p for p in self.humans() if p.dropped_at is not None and t - p.dropped_at >= GRACE_S]
@@ -713,57 +802,32 @@ class Match:
         if self.phase == "playing":
             self.push_opponents()
 
-    # ---- the bot ----
+    # ---- the bot (Misaki, docs/pvp.md section 5) ----
     def bot_act(self, p: Player, t: float) -> None:
+        """Run what the bot's brain wants now through the same code a human's messages and answers take."""
         g, brain = p.game, p.brain
-        if g.phase == "over" or t < brain.next_at:
+        act = brain.step(g, t)
+        if act is None:
             return
-        if g.phase == "locked":
-            lk = g.lock
-            need = 2 if lk["boss"] else 1
-            if brain.think_until is None:
-                brain.think_until = t + brain.think_time(3 if lk["boss"] else lk["tier"], need)
-                return
-            if t < brain.think_until:
-                return
-            brain.think_until = None
-            for _ in range(need):
-                row = self.serve(p, "rescue", None)
-                self.answered(p, p.served[row["id"]], brain.answers_right())
-                if g.phase != "locked":
-                    break
-            brain.next_at = t + brain.place_pause()
-            return
-        # phase "play": a bug line to fix?
-        if brain.task is not None:
-            bug = int(brain.task)
-            if t < brain.think_until:
-                return
-            brain.task, brain.think_until = None, None
-            if any(b["id"] == bug for b in g.bug_lines):
-                row = self.serve(p, "debug", bug)
-                self.answered(p, p.served[row["id"]], brain.answers_right())
-            brain.next_at = t + brain.place_pause()
-            return
-        spot = pvp_bot.bomb_target(g)
-        if spot is not None and pvp_bot.filled(g) >= 30:
-            self.do_bomb(p, *spot)
-            brain.next_at = t + brain.place_pause()
-            return
-        best = pvp_bot.best_placement(g, brain.rng)
-        if best is None:                                       # cannot happen: no fit ends the game
-            return
-        if g.items["shuffle"] > 0 and best[0] < 2.0:
-            if self.do_shuffle(p):
-                brain.next_at = t + brain.place_pause()
-                return
-        if brain.wants_bug_fix(g):
-            brain.task = str(g.bug_lines[0]["id"])
-            brain.think_until = t + brain.think_time(1)
-            return
-        _, i, r, c = best
-        self.do_place(p, i, r, c)
-        brain.next_at = t + brain.place_pause()
+        kind = act[0]
+        try:
+            if kind == "solve":
+                for ok in act[1]:
+                    row = self.serve(p, "rescue", None)
+                    self.answered(p, p.served[row["id"]], ok)
+                    if g.phase != "locked":
+                        break
+            elif kind == "fix":
+                row = self.serve(p, "debug", act[1])
+                self.answered(p, p.served[row["id"]], act[2])
+            elif kind == "place":
+                self.do_place(p, act[1], act[2], act[3])
+            elif kind == "bomb":
+                self.do_bomb(p, act[1], act[2])
+            elif kind == "shuffle":
+                self.do_shuffle(p)
+        except PvpError:                                        # e.g. the puzzle server refused: she tries again later
+            log.exception("bot action failed")
 
 
 # --------------------------------------------------------------------------- messages from a browser
@@ -814,6 +878,8 @@ def _dispatch(p: Player, msg: dict) -> None:
         return
     if m is None:
         return _error(p, "not_playing")
+    if kind == "suggest":
+        return m.suggest(p)
     if kind == "rematch":
         return m.ask_rematch(p)
     if kind not in ("place", "bomb", "shuffle", "undo", "resign"):
@@ -1027,16 +1093,37 @@ def private_join(code: str, nickname: str, device_id: str, client: Optional[str]
     return {"ticket": p.ticket}
 
 
-def bot_start(level: str, nickname: str, device_id: str, client: Optional[str]) -> dict:
+def bot_start(level: str, nickname: str, device_id: str, client: Optional[str], misaki: Optional[int] = None,
+              training: bool = False) -> dict:
+    """A match against the bot. ``misaki`` (1..4) picks Misaki of that ladder level (403 while it is locked for the
+    device); without it the generic "Máy <animal>" bot plays (ladder level from the game level). ``training``: section
+    5.4 (needs ``misaki``; nothing ranked or unlocked)."""
+    if training and not misaki:
+        raise PvpError("Chế độ luyện tập cần chọn một cấp của Misaki.", 422)
+    if misaki is not None and not 1 <= misaki <= pvp_bot.MAX_LEVEL:
+        raise PvpError("Cấp của Misaki phải từ 1 đến 4.", 422)
+    _, device_hash = ranked._clean_identity(nickname, device_id)
+    if misaki and misaki > ranked.misaki_unlocked(device_hash):
+        raise PvpError("Bạn chưa mở khóa cấp này của Misaki. Hãy thắng cấp trước đó.", 403)
     p = _new_player(level, nickname, device_id, client, "bot")
     with _lock:
         _sweep(now())
         _check_room()
-        bot = Player(level, f"Máy {random.SystemRandom().choice(nicknames.ANIMALS)}", None, "bot", bot=True)
+        name = pvp_bot.NAME if misaki else f"Máy {random.SystemRandom().choice(nicknames.ANIMALS)}"
+        bot = Player(level, name, None, "bot", bot=True)
+        bot.misaki, bot.training = misaki, bool(training)
         _tickets[p.ticket] = p
         m = _pair(level, "bot", p, bot)
         m.kind = "bot"
+        m.training = bool(training)
     return {"ticket": p.ticket}
+
+
+def misaki_status(device_id: Any) -> dict:
+    """``GET /api/pvp/misaki``: the ladder progress of a device."""
+    if not isinstance(device_id, str) or not ranked._DEVICE_RE.match(device_id):
+        raise PvpError("Mã thiết bị không hợp lệ.", 422)
+    return ranked.misaki_progress(ranked._device_hash(device_id))
 
 
 # --------------------------------------------------------------------------- HTTP: puzzles of a live match

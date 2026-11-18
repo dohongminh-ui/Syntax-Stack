@@ -407,10 +407,17 @@ per hour per client IP across the four POST endpoints (429); 503 when 200 matche
 - `DELETE /api/pvp/queue/{ticket}` → 204; 404 unknown ticket; 409 match already started.
 - `POST /api/pvp/private` `{level, nickname, device_id}` → `{code, ticket, url}` (`url` = `<public base>/?duel=<code>`).
 - `POST /api/pvp/private/{code}/join` `{nickname, device_id}` → `{ticket}`. 404 unknown, 409 full, 410 expired.
-- `POST /api/pvp/bot` `{level, nickname, device_id}` → `{ticket}`. A match against the built-in bot (no rating).
+- `POST /api/pvp/bot` `{level, nickname, device_id, misaki?, training?}` → `{ticket}`. A match against the built-in bot
+  (no rating). `misaki` (1..4) plays Misaki, the search-based AI opponent, of that ladder level: 403 while it is locked
+  for the device, 422 for a value outside 1..4. `training` (needs `misaki`) adds coaching; nothing is ranked or
+  unlocked in training. Without `misaki`: the generic "Máy <animal>" bot. See [`pvp.md`](pvp.md) section 5.
+- `GET /api/pvp/misaki?device_id=` → `{unlocked: n, wins: {"1": k, ...}, games: {"1": k, ...}}` (the Misaki ladder of a
+  device; 422 for a bad device id).
 - `GET /api/pvp/ws?ticket=<ticket>` (WebSocket). JSON messages `{"t": ...}`; client → server `ready, place, bomb,
-  shuffle, undo, resign, ping, rematch`; server → client `lobby, start, state, opponent, sent, incoming, landed,
-  opponent_status, end, rematch_status, error, pong`. Same-origin only in the page's CSP (`connect-src` names
+  shuffle, undo, resign, ping, rematch, suggest` (`suggest`: training matches only, else `error not_training`);
+  server → client `lobby, start, state, opponent, sent, incoming, landed, opponent_status, end, rematch_status,
+  coach, suggestion, error, pong`. Against Misaki the lobby `opponent` also has `misaki, title, training, plays_as`
+  (`misaki`/`title` = the level the player chose) and `end` has `misaki: {level, unlocked_now}`. Same-origin only in the page's CSP (`connect-src` names
   `wss://<host>` explicitly).
 
 Puzzle endpoints inside a match (fields from the `start` message):

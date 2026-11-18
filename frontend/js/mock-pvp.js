@@ -2,10 +2,12 @@
 // real one and runs both games in the browser: you, and a fake opponent that places pieces, answers locks after a
 // "thinking" delay and sends bug lines. Everything is labelled "mô phỏng" in the UI.
 //
-// QA switches (URL): ?pvpwait=30 quick match takes 30 s to find someone (to see the "Đấu với máy" offer)
+// QA switches (URL): ?pvpwait=30 quick match takes 30 s to find someone (to see the "Đấu với Misaki" offer)
 //   ?pvpot=20 overtime starts at 0:20   ?pvpdrop=1 drops your socket once, 15 s into the match
 //   ?pvpoppdrop=1 the opponent drops for ~12 s   ?pvpaggr=1 the opponent sends lines fast and never misses
 //   ?pvpitems=1 start with one of every item   ?pvpfail=429 queue / private / bot answer 429
+//   Misaki: ?mkunlock=3 levels 1..3 are open (default: what your mock wins unlocked)   ?mkend=win|lose ends a Misaki match
+//   after 20 s so the end screens (and the unlock line) can be seen   ?mkcoach=1 training: the coach speaks every kind every 5 s
 import * as Game from './game.js';
 import { mulberry } from './rng.js';
 import { TOPICS } from './pieces.js';
@@ -24,6 +26,40 @@ const humanName = () => `${pick(ANIMALS)} ${pick(COLORS)} ${10 + Math.floor(Math
 const TEMPLATE = { variables: 'var_name_bug', conditions: 'cond_colon_bug', loops: 'loop_range_bug', functions: 'func_return_bug' };
 const ACCURACY = { beginner: 0.7, intermediate: 0.8, advanced: 0.88 };
 const RATING_KEY = 'syntaxstack.pvp.rating';
+const MK_KEY = 'syntaxstack.mock.misaki';
+const MK_NAMES = ['', 'Tập sự', 'Khá', 'Giỏi', 'Bậc thầy'];
+const MK_ACC = [0, 0.6, 0.72, 0.84, 0.93];
+const MK_PACE = [0, 1.7, 1.3, 1, 0.7]; // multiplies the fake opponent's think time
+const TOPIC_VI = { variables: 'Biến', conditions: 'Điều kiện', loops: 'Vòng lặp', functions: 'Hàm' };
+// Misaki's coaching lines (a short copy of backend/content/misaki_coach.yaml; the server picks the real ones)
+const COACH = {
+  danger: ['Cẩn thận! {n} dòng lỗi sắp đẩy bàn lên. Dọn các ô đỏ ở trên cùng trước nhé.', 'Vùng đỏ là chỗ sắp bị đẩy ra ngoài. Đừng đặt khối ở {n} hàng trên cùng lúc này.'],
+  incoming: ['Đối thủ vừa gửi dòng lỗi! Chúng xếp hàng ở thanh bên cạnh, bạn còn thời gian chặn.'],
+  cancel: ['Tuyệt! Bạn vừa chặn được {n} dòng lỗi. Tấn công cũng là phòng thủ đấy.'],
+  streak: ['{n} câu đúng liên tiếp! Giữ chuỗi này để gửi thêm dòng lỗi sang đối thủ.'],
+  wrong: ['Không sao, sai là để học. Chạm vào dòng lỗi mới để sửa, hoặc hỏi tôi “Vì sao mình sai?”.', 'Hàng đó thành dòng lỗi rồi. Sửa nó bằng một câu cùng chủ đề {topic} nhé, bạn làm được.'],
+  bugline: ['Bạn còn một dòng lỗi chưa sửa. Chạm vào nó: sửa xong là bàn rộng thêm một hàng.'],
+  nofit_risk: ['Chỉ còn một khối đặt vừa thôi. Ưu tiên giải hàng để mở thêm chỗ.'],
+  good: ['Đẹp quá! {n} hàng cùng lúc gửi đi nhiều dòng lỗi hơn.'],
+};
+const WHY = {
+  line: 'Đặt ở đây sẽ hoàn thành {n} hàng.',
+  safe: 'Chỗ này giữ phía trên trống và không tạo lỗ hổng.',
+  danger: 'Đặt ở đây để tránh vùng đỏ sắp bị đẩy lên.',
+  fit: 'Chỗ này để lại nhiều không gian nhất cho các khối sau.',
+  none: 'Không còn chỗ nào đặt vừa. Hãy giải hàng hoặc dùng vật phẩm.',
+};
+const fill = (t, v = {}) => t.replace(/\{(\w+)\}/g, (_, k) => v[k] ?? '');
+const mkRead = () => {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(MK_KEY)); } catch { /* ignore */ }
+  d = d && typeof d === 'object' ? d : { unlocked: 1, wins: {}, games: {} };
+  const q = Number(qs().get('mkunlock')) || 1;
+  return { unlocked: Math.min(4, Math.max(Number(d.unlocked) || 1, q)), wins: d.wins || {}, games: d.games || {} };
+};
+const mkWrite = (d) => {
+  try { localStorage.setItem(MK_KEY, JSON.stringify(d)); } catch { /* storage blocked */ }
+};
 const SNAP_KEY = 'syntaxstack.mock.pvp';
 const readRating = () => {
   try { return Number(localStorage.getItem(RATING_KEY)) || 1000; } catch { return 1000; }
@@ -75,12 +111,21 @@ export async function pvpJoinPrivate(code, body) {
   return { ticket };
 }
 
+/** body: { level, nickname, device_id, misaki, training }. 403 when that Misaki level is still locked. */
 export async function pvpBot(body) {
   await sleep(180);
   guard();
+  const misaki = Math.min(4, Math.max(1, Number(body.misaki) || 1));
+  if (misaki > mkRead().unlocked) throw fail(403, 'Cấp này của Misaki chưa mở.');
   const ticket = 'mock-b-' + seq++;
-  tickets.set(ticket, { kind: 'bot', level: body.level, nickname: body.nickname });
+  tickets.set(ticket, { kind: 'bot', level: body.level, nickname: body.nickname, misaki, training: !!body.training });
   return { ticket };
+}
+
+/** GET /api/pvp/misaki: the ladder for this device. */
+export async function pvpMisaki() {
+  await sleep(120);
+  return mkRead();
 }
 
 // ---- hooks called by mock-api.js for puzzle calls that carry match_id ----------------------------------------------
@@ -285,6 +330,75 @@ class Sim {
     this.lastOppEmit = 0;
     this.oppEmitTimer = null;
     this.aggr = qs().get('pvpaggr') === '1';
+    this.misaki = Number(rec.misaki) || 0;
+    this.training = !!rec.training && this.misaki > 0;
+    const eff = this.training ? Math.max(1, this.misaki - 1) : this.misaki; // training: she plays one level lower and slower
+    this.pace = this.misaki ? MK_PACE[eff] * (this.training ? 1.5 : 1) : 1;
+    this.acc = this.misaki ? MK_ACC[eff] : ACCURACY[this.level] || 0.7;
+    this.lastCoach = 0;
+    this.lastSuggest = 0;
+    this.coachSeen = new Set();
+    this.bugSince = 0;
+    this.nofitAt = 0;
+  }
+
+  // -- Misaki as coach (training only) --
+  coach(kind, vars = {}, cells = null, force = false) {
+    if (!this.training || this.over) return;
+    const now = Date.now();
+    if (!force && now - this.lastCoach < 4000) return;
+    this.lastCoach = now;
+    const list = COACH[kind];
+    const msg = { t: 'coach', kind, text: fill(list[Math.floor(Math.random() * list.length)], vars) };
+    if (cells && cells.length) msg.cells = cells;
+    this.emit(msg);
+  }
+
+  /** After the player's state changed: danger / streak / bug line / no-fit checks. */
+  coachWatch() {
+    if (!this.training || !this.me) return;
+    const me = this.me;
+    const n = me.pending.length;
+    let top = SIZE;
+    for (let r = 0; r < SIZE && top === SIZE; r++) if (me.grid[r].some(Boolean)) top = r;
+    if (n > 0 && top < SIZE && n > top) {
+      const cells = [];
+      for (let r = 0; r < Math.min(n, SIZE); r++) for (let c = 0; c < SIZE; c++) if (me.grid[r][c]) cells.push([r, c]);
+      this.coach('danger', { n }, cells);
+    }
+    if (me.streak === 3 && !this.coachSeen.has('streak' + this.matchId)) {
+      this.coachSeen.add('streak' + this.matchId);
+      this.coach('streak', { n: 3 });
+    }
+    if (me.bugLines.length) this.bugSince = this.bugSince || Date.now();
+    else this.bugSince = 0;
+    if (this.bugSince && Date.now() - this.bugSince > 30000) {
+      this.bugSince = Date.now();
+      this.coach('bugline', { topic: TOPIC_VI[me.bugLines[0].topic] || '' }, me.bugLines[0].cells);
+    }
+    if (!me.lock && Date.now() - this.nofitAt > 20000) {
+      const fits = me.tray.filter((p) => p && Game.fitsAnywhere(me.grid, p)).length;
+      if (me.tray.some(Boolean) && fits === 1) {
+        this.nofitAt = Date.now();
+        this.coach('nofit_risk');
+      }
+    }
+  }
+
+  /** {t:"suggest"} -> {t:"suggestion"}: the best move for the player's current state. */
+  suggest() {
+    if (!this.training) return this.emit({ t: 'error', code: 'not_training', message: 'Gợi ý chỉ có trong chế độ luyện tập.' });
+    const now = Date.now();
+    if (now - this.lastSuggest < 3000) return this.emit({ t: 'error', code: 'rate_limited', message: 'Bạn thao tác quá nhanh.' });
+    this.lastSuggest = now;
+    const me = this.me;
+    const mv = me && !me.lock ? botMove(me) : null;
+    if (!mv) return this.emit({ t: 'suggestion', none: true, why: me?.lock ? 'Hãy giải câu đố để mở khoá hàng trước, rồi tôi gợi ý tiếp.' : WHY.none }, 400);
+    const p = me.tray[mv.i];
+    const { rows, cols } = Game.completedLines(me.grid, p, mv.r, mv.c);
+    const lines = rows.length + cols.length;
+    const why = lines ? fill(WHY.line, { n: lines }) : me.pending.length ? WHY.danger : pick([WHY.safe, WHY.fit]);
+    this.emit({ t: 'suggestion', i: mv.i, r: mv.r, c: mv.c, cells: p.cells.map(([dr, dc]) => [mv.r + dr, mv.c + dc]), why }, 400);
   }
 
   after(ms, fn) {
@@ -354,6 +468,7 @@ class Sim {
       found({ nickname: humanName(), bot: false, connected: true, rating: 960 + Math.floor(Math.random() * 90) }, wait * 1000);
     } else if (k === 'private') found({ nickname: humanName(), bot: false, connected: true, rating: 1000 }, 7000);
     else if (k === 'join') found({ nickname: this.rec.hostNick, bot: false, connected: true, rating: 1000 }, 400);
+    else if (this.misaki) found({ nickname: 'Misaki', bot: true, misaki: this.misaki, title: `Misaki · ${MK_NAMES[this.misaki]}`, training: this.training, connected: true, rating: null }, 300);
     else found({ nickname: `Máy ${pick(ANIMALS)}`, bot: true, connected: true }, 300);
   }
 
@@ -370,6 +485,17 @@ class Sim {
     this.startLoops();
     if (qs().get('pvpdrop') === '1') this.after(15000, () => this.dropMine());
     if (qs().get('pvpoppdrop') === '1' && this.kind !== 'bot') this.after(20000, () => this.dropOpp());
+    const mkend = qs().get('mkend');
+    if (this.misaki && (mkend === 'win' || mkend === 'lose')) this.after(20000, () => this.finish(mkend === 'win' ? 'you' : 'opponent', mkend === 'win' ? 'nofit' : 'topped_out'));
+    if (this.training && qs().get('mkcoach') === '1') {
+      const kinds = Object.keys(COACH);
+      let k = 0;
+      this.every(5000, () => {
+        const kind = kinds[k++ % kinds.length];
+        const cells = kind === 'danger' || kind === 'bugline' ? [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1]] : null;
+        this.coach(kind, { n: 2, topic: 'Vòng lặp' }, cells, true);
+      });
+    }
   }
 
   startLoops() {
@@ -494,24 +620,29 @@ class Sim {
   botStep() {
     if (this.over) return;
     const s = this.opp;
-    const again = (ms) => this.after(ms, () => this.botStep());
+    const again = (ms) => this.after(ms * this.pace, () => this.botStep());
     if (this.oppAway) return;
     if (this.oppSolving) {
-      if (Date.now() < this.oppSolving.until) return again(500);
+      if (Date.now() < this.oppSolving.until) return this.after(500, () => this.botStep());
       const dbg = this.oppSolving.debug;
       this.oppSolving = null;
       if (dbg) {
-        if (Math.random() < (ACCURACY[this.level] || 0.7) && s.bugLines[0]) Game.fixBug(s, s.bugLines[0].id);
+        if (Math.random() < this.acc && s.bugLines[0]) Game.fixBug(s, s.bugLines[0].id);
         this.sendOpp(true);
         return again(rand(700, 1100));
       }
-      const ok = this.aggr || Math.random() < (ACCURACY[this.level] || 0.7);
+      const ok = this.aggr || Math.random() < this.acc;
       if (ok) {
         const r = correctFor(s, 0);
         if (r.send > 0) {
           receive(this.me, r.send, r.topic);
           this.emit({ t: 'incoming', lines: r.send, from_topic: r.topic });
           this.sendState();
+          if (!this.coachSeen.has('incoming' + this.matchId)) {
+            this.coachSeen.add('incoming' + this.matchId);
+            this.coach('incoming');
+          }
+          this.coachWatch();
         }
       } else wrongFor(s);
       this.sendOpp(true);
@@ -537,7 +668,7 @@ class Sim {
     }
     if (s.lock) {
       const base = this.level === 'advanced' ? 4000 : this.level === 'intermediate' ? 5200 : 6200;
-      this.oppSolving = { until: Date.now() + (this.aggr ? 3000 : rand(base, base + 3000)) };
+      this.oppSolving = { until: Date.now() + (this.aggr ? 3000 : rand(base, base + 3000) * (this.misaki ? this.pace : 1)) };
     }
     this.sendOpp();
     again(this.aggr ? rand(900, 1300) : rand(1100, 1900));
@@ -549,6 +680,7 @@ class Sim {
     switch (msg.t) {
       case 'ping': return this.emit({ t: 'pong', n: msg.n }, 5);
       case 'ready': return;
+      case 'suggest': return this.suggest();
       case 'rematch': return this.askRematch();
       case 'resign': return this.finish('opponent', 'resign');
       case 'place': return this.act(() => {
@@ -577,6 +709,7 @@ class Sim {
     if (!ok) this.emit({ t: 'error', code: 'illegal', message: 'Không thực hiện được.' });
     this.sendState();
     if (this.me.phase === 'over') this.finish('opponent', this.me.endReason || 'nofit');
+    else this.coachWatch();
   }
 
   /** An HTTP answer arrived for the player's current puzzle. */
@@ -600,6 +733,8 @@ class Sim {
     this.bossDone = 0;
     const dbg = this.lockDbg;
     this.lockDbg = false;
+    const lockCount = s.lock.count;
+    const lockTopic = s.lock.topic;
     this.after(60, () => {
       if (this.over || !s.lock) return;
       if (correct) {
@@ -608,9 +743,13 @@ class Sim {
         this.emit({ t: 'sent', lines: r.send, cancelled: r.cancelled });
         this.sendState();
         this.sendOpp(true);
+        if (r.cancelled > 0) this.coach('cancel', { n: r.cancelled });
+        else if (lockCount >= 2) this.coach('good', { n: lockCount });
+        this.coachWatch();
       } else {
         wrongFor(s);
         this.sendState();
+        this.coach('wrong', { topic: TOPIC_VI[lockTopic] || '' }, s.bugLines.length ? s.bugLines[s.bugLines.length - 1].cells : null);
       }
       if (s.phase === 'over') this.finish('opponent', s.endReason || 'nofit');
     });
@@ -621,6 +760,22 @@ class Sim {
     this.over = true;
     const stats = (p) => ({ score: p.score, sent: p.sent, received: p.received, locks: p.locksWon });
     const msg = { t: 'end', winner, reason, you: stats(this.me), opponent: stats(this.opp) };
+    if (this.misaki) {
+      const d = mkRead();
+      let unlocked = null;
+      if (!this.training) {
+        d.games[this.misaki] = (d.games[this.misaki] || 0) + 1;
+        if (winner === 'you') {
+          d.wins[this.misaki] = (d.wins[this.misaki] || 0) + 1;
+          if (this.misaki === d.unlocked && this.misaki < 4) {
+            d.unlocked = this.misaki + 1;
+            unlocked = d.unlocked;
+          }
+        }
+        mkWrite(d);
+      }
+      msg.misaki = { level: this.misaki, unlocked_now: unlocked };
+    }
     if (this.kind !== 'bot') {
       const before = readRating();
       const after = before + (winner === 'you' ? 16 : winner === 'opponent' ? -16 : 0);

@@ -15,6 +15,7 @@ import { sfx } from './sound.js';
 import { showStrip, setMode, setScore, setStatus, setStreak, setLedMode } from './strip.js';
 import { LEVEL_NAME } from './rank-ui.js';
 import { setRating, clearTicket } from './pvp.js';
+import { misakiAvatar, misakiTitle } from './misaki.js';
 
 const $ = (id) => document.getElementById(id);
 const SIZE = 8;
@@ -24,6 +25,10 @@ const OVERTIME_S = (() => {
   return api.isMock && n > 0 ? n : 240;
 })();
 const UNACKED_TTL_MS = 2000;
+const COACH_DIM_MS = 8000; // the coach bubble fades to a quieter state after this
+const COACH_CELLS_MS = 4500; // a coach hint outlines its cells for this long
+const SUGGEST_MS = 9000; // a suggestion stays outlined this long (or until you place a piece)
+const SUGGEST_COOLDOWN_MS = 3000;
 const SEND_TABLE = [0, 1, 2, 3, 4];
 
 const REASON = {
@@ -86,6 +91,8 @@ export class PvpMatch {
     this.countDeadline = 0;
     this.countShown = null;
     this.timers = [];
+    this.marks = []; // coach / suggestion outlines on the board: { el, kind }
+    this.hintWait = false;
     this.endSignal = new Promise((res) => (this.resolveEnd = res));
     this.view = this.emptyView();
 
@@ -100,6 +107,25 @@ export class PvpMatch {
     window.addEventListener('beforeunload', this.onUnload);
     if (new URLSearchParams(location.search).get('diag') === '1') window.__pvpMatch = this; // headless checks only
     this.enter();
+  }
+
+  /** Playing Misaki (the AI character) and whether this is the coached "Luyện tập" mode. */
+  get isMisaki() {
+    return !!this.opponent.misaki;
+  }
+
+  get training() {
+    return this.isMisaki && !!this.opponent.training;
+  }
+
+  oppLabel() {
+    return this.isMisaki ? this.opponent.title || misakiTitle(this.opponent.misaki) : this.opponent.nickname || 'Đối thủ';
+  }
+
+  modeLabel() {
+    const mock = api.isMock ? ' · MÔ PHỎNG' : '';
+    if (this.isMisaki) return `${this.training ? 'LUYỆN TẬP' : 'ĐỐI KHÁNG'} · ${this.oppLabel().toUpperCase()}${mock}`;
+    return `ĐỐI KHÁNG · ${LEVEL_NAME[this.level] || this.level}${mock}`;
   }
 
   // ---- screen setup -------------------------------------------------------------------------------------------
@@ -132,12 +158,13 @@ export class PvpMatch {
     for (const id of ['pvp-opp', 'pvp-meter']) $(id).hidden = false;
     showStrip(true, { back: () => this.requestExit(), backLabel: 'Bỏ cuộc và thoát' });
     setLedMode('rescue');
-    setMode(`ĐỐI KHÁNG · ${LEVEL_NAME[this.level] || this.level}${api.isMock ? ' · MÔ PHỎNG' : ''}`);
+    setMode(this.modeLabel());
     setScore(0, { roll: false });
     setStreak(0);
     setStatus('ok', { blink: false });
     this.paint();
     this.paintOpp();
+    this.buildCoach();
     this.timers.push(setInterval(() => this.tick(), 250));
     this.showOverlay('wait');
   }
@@ -176,6 +203,8 @@ export class PvpMatch {
     this.oppOvl = el('div', { class: 'po-ovl', hidden: true }, this.oppOvlN, this.oppOvlT);
     this.poBoard = el('div', { class: 'po-board' }, this.mini, this.oppOvl);
 
+    this.poAv = el('span', { class: 'po-av', hidden: true }, misakiAvatar());
+    this.poAi = el('span', { class: 'po-tag po-ai', text: 'AI', hidden: true, title: 'Misaki là AI' });
     this.poNick = el('span', { class: 'po-nick' });
     this.poBot = el('span', { class: 'po-tag po-bot', text: 'MÁY', hidden: true, title: 'Đối thủ là máy' });
     this.poMock = el('span', { class: 'po-tag po-mock', text: 'mô phỏng', hidden: !api.isMock });
@@ -190,7 +219,7 @@ export class PvpMatch {
     this.poOt.classList.add('is-off');
     const stat = (label, node) => el('span', { class: 'po-stat' }, el('i', { text: label }), node);
     const info = el('div', { class: 'po-info' },
-      el('div', { class: 'po-name' }, this.poNick, this.poBot, this.poMock, this.poRating),
+      el('div', { class: 'po-name' }, this.poAv, this.poNick, this.poAi, this.poBot, this.poMock, this.poRating),
       el('div', { class: 'po-stats' }, stat('Điểm', this.poScore), stat('Chờ', this.poPend), stat('Giờ', this.poClock)),
       el('p', { class: 'po-state' }, this.poLed, this.poStateT),
       this.poOt);
@@ -292,6 +321,8 @@ export class PvpMatch {
       case 'opponent_status': return this.onOppStatus(msg);
       case 'end': return this.onEnd(msg);
       case 'rematch_status': return this.onRematchStatus(msg);
+      case 'coach': return this.onCoach(msg);
+      case 'suggestion': return this.onSuggestion(msg);
       case 'error': return this.onError(msg);
       default:
     }
@@ -301,6 +332,8 @@ export class PvpMatch {
     if (msg.opponent) this.opponent = { ...this.opponent, ...msg.opponent };
     if (msg.you) this.you = { ...this.you, ...(typeof msg.you === 'string' ? { nickname: msg.you } : msg.you) };
     if (msg.level) this.level = msg.level;
+    setMode(this.modeLabel());
+    this.buildCoach();
     if (msg.starts_in != null && !this.started) {
       this.countDeadline = Date.now() + Number(msg.starts_in) * 1000;
       this.tick();
@@ -438,6 +471,7 @@ export class PvpMatch {
       illegal: 'Không đặt được ở vị trí này.',
       not_playing: 'Chưa thể thao tác lúc này.',
       rate_limited: 'Bạn thao tác quá nhanh.',
+      not_training: 'Gợi ý nước đi chỉ có trong chế độ luyện tập.',
     }[msg.code] || msg.message || 'Máy chủ từ chối thao tác này.';
     toast(text, 2200);
   }
@@ -490,6 +524,7 @@ export class PvpMatch {
 
   place(i, r, c) {
     if (!this.canAct()) return;
+    this.clearMarks('sug');
     const next = this.predictPlace(this.view, i, r, c);
     if (!next) return;
     if (!this.client.send({ t: 'place', i, r, c })) {
@@ -866,13 +901,16 @@ export class PvpMatch {
   paintOpp() {
     const o = this.opp;
     const op = this.opponent;
-    this.poNick.textContent = op.nickname || 'Đối thủ';
-    this.poBot.hidden = !op.bot;
-    if (op.rating != null) {
+    const mk = this.isMisaki;
+    this.poNick.textContent = mk ? this.oppLabel() : op.nickname || 'Đối thủ';
+    this.poAv.hidden = !mk;
+    this.poAi.hidden = !mk;
+    this.poBot.hidden = !op.bot || mk;
+    if (op.rating != null && !mk) {
       this.poRating.hidden = false;
       this.poRating.textContent = String(op.rating);
       this.poRating.title = 'Xếp hạng đối kháng';
-    }
+    } else this.poRating.hidden = true;
     $('pvp-opp').classList.toggle('is-bot', !!op.bot);
     const grid = o?.grid;
     for (let r = 0; r < SIZE; r++)
@@ -925,6 +963,102 @@ export class PvpMatch {
     if (this.oppOvlT.textContent !== t) this.oppOvlT.textContent = t;
   }
 
+  // ---- Misaki's coach (training mode only) ---------------------------------------------------------------------
+  buildCoach() {
+    const root = $('pvp-coach');
+    root.hidden = !this.training;
+    if (!this.training || this.coachBuilt) return;
+    this.coachBuilt = true;
+    this.coachText = el('p', { class: 'coach-text', role: 'status', 'aria-live': 'polite', text: 'Tôi sẽ nhắc bạn khi có điều cần để ý. Muốn biết nên đặt khối ở đâu, bấm “Gợi ý nước đi”.' });
+    this.coachBubble = el('div', { class: 'coach-bubble is-dim' }, misakiAvatar({ cls: 'coach-av' }), this.coachText);
+    this.hintBtn = keycap({
+      tag: 'button', topic: 'neutral', variant: 'btn', legendClass: 'kb-label', cls: 'key-sm coach-hint',
+      legend: el('span', { class: 'coach-hint-in' }, icon('bulb', { size: 16 }), 'Gợi ý nước đi'),
+    });
+    this.hintBtn.type = 'button';
+    this.hintBtn.addEventListener('click', () => this.requestHint());
+    root.replaceChildren(
+      el('div', { class: 'coach-top' },
+        el('span', { class: 'coach-name', text: 'MISAKI' }),
+        el('span', { class: 'po-tag po-train', text: 'LUYỆN TẬP' }),
+        this.hintBtn),
+      this.coachBubble);
+  }
+
+  /** Marks cells on your board with a soft outline: `kind` 'coach' (Misaki's note) or 'sug' (a suggested move). */
+  markCells(cells, { color, ms, kind }) {
+    this.clearMarks(kind);
+    const boardEl = $('board');
+    for (const [r, c] of cells || []) {
+      if (!(r >= 0 && r < SIZE && c >= 0 && c < SIZE)) continue;
+      const n = el('i', { class: 'coach-frame ' + kind, 'aria-hidden': 'true' });
+      n.style.gridRow = String(r + 1);
+      n.style.gridColumn = String(c + 1);
+      n.style.color = color;
+      boardEl.append(n);
+      this.marks.push({ el: n, kind });
+    }
+    clearTimeout(this['markT_' + kind]);
+    this['markT_' + kind] = setTimeout(() => this.clearMarks(kind), ms);
+  }
+
+  clearMarks(kind) {
+    clearTimeout(this['markT_' + kind]);
+    this.marks = this.marks.filter((m) => {
+      if (m.kind !== kind) return true;
+      m.el.remove();
+      return false;
+    });
+    if (kind === 'sug') for (const sl of $('tray').children) sl.classList.remove('is-suggested');
+  }
+
+  showCoach(text, cells) {
+    if (!this.training || !this.coachText) return;
+    this.coachText.textContent = text || '';
+    this.coachBubble.classList.remove('is-dim');
+    anim(this.coachBubble, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing: EASE.out });
+    clearTimeout(this.dimT);
+    this.dimT = setTimeout(() => this.coachBubble.classList.add('is-dim'), COACH_DIM_MS);
+    if (cells && cells.length) this.markCells(cells, { color: 'var(--text)', ms: COACH_CELLS_MS, kind: 'coach' });
+  }
+
+  onCoach(msg) {
+    if (!this.training || this.ended || !msg.text) return;
+    this.showCoach(String(msg.text), Array.isArray(msg.cells) ? msg.cells : null);
+  }
+
+  requestHint() {
+    if (!this.training || this.hintWait || this.ended || !this.started) return;
+    if (this.conn !== 'open' || !this.client.send({ t: 'suggest' })) {
+      toast('Mất kết nối, chưa gửi được yêu cầu gợi ý.', 2000);
+      return;
+    }
+    this.hintWait = true;
+    this.hintBtn.setAttribute('aria-disabled', 'true');
+    this.hintBtn.classList.add('is-off');
+    this.timers.push(setTimeout(() => {
+      this.hintWait = false;
+      this.hintBtn.removeAttribute('aria-disabled');
+      this.hintBtn.classList.remove('is-off');
+    }, SUGGEST_COOLDOWN_MS));
+  }
+
+  onSuggestion(msg) {
+    if (!this.training || this.ended) return;
+    if (msg.none) {
+      this.clearMarks('sug');
+      this.showCoach(msg.why || 'Không còn chỗ nào đặt vừa. Hãy giải hàng hoặc dùng vật phẩm.');
+      return;
+    }
+    const piece = this.view.tray[msg.i];
+    let cells = Array.isArray(msg.cells) ? msg.cells : null;
+    if (!cells && piece) cells = piece.cells.map(([dr, dc]) => [msg.r + dr, msg.c + dc]);
+    this.markCells(cells, { color: piece ? topicColor(piece.topic) : 'var(--mustard)', ms: SUGGEST_MS, kind: 'sug' });
+    const slot = $('tray').children[msg.i];
+    if (slot) slot.classList.add('is-suggested');
+    this.showCoach(msg.why || '');
+  }
+
   // ---- clock, overtime, countdown ----------------------------------------------------------------------------
   tick() {
     if (this.ended) return;
@@ -953,11 +1087,11 @@ export class PvpMatch {
     o.classList.remove('is-go');
     if (kind === 'count') {
       const k = keycap({ topic: TOPICS[n % 4], legend: String(n), legendClass: 'legend legend-c', cls: 'pvp-count-key' });
-      o.replaceChildren(el('p', { class: 'pvp-vs', text: `${this.you.nickname || 'Bạn'}  vs  ${this.opponent.nickname || 'Đối thủ'}` }), k,
+      o.replaceChildren(el('p', { class: 'pvp-vs', text: `${this.you.nickname || 'Bạn'}  vs  ${this.oppLabel()}` }), k,
         el('p', { class: 'pvp-count-hint', text: 'Cùng một bộ khối. Giải đố đúng để gửi dòng lỗi.' }));
       anim(k, [{ transform: 'scale(1.35)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }], { duration: 260, easing: EASE.out });
     } else if (kind === 'wait') {
-      o.replaceChildren(el('p', { class: 'pvp-vs', text: `${this.you.nickname || 'Bạn'}  vs  ${this.opponent.nickname || 'Đối thủ'}` }),
+      o.replaceChildren(el('p', { class: 'pvp-vs', text: `${this.you.nickname || 'Bạn'}  vs  ${this.oppLabel()}` }),
         el('p', { class: 'pvp-wait', role: 'status', text: 'Đang chuẩn bị trận…' }));
     } else if (kind === 'reconnect') {
       o.replaceChildren(el('i', { class: 'led on rk-pulse', style: { '--c': 'var(--warn)' } }),
@@ -1104,6 +1238,8 @@ export class PvpMatch {
     this.frozen = false;
     this.ui = { selected: null, bomb: false };
     this.ovl.hidden = true;
+    this.clearMarks('coach');
+    this.clearMarks('sug');
     for (const w of this.stateWaiters.splice(0)) w(this.rev ?? 0, true);
     for (const w of this.sentWaiters.splice(0)) w(null);
     api.setMatchContext(null);
@@ -1128,7 +1264,10 @@ export class PvpMatch {
     if (this.prevHandlers) this.board.h = this.prevHandlers;
     const screen = $('screen-game');
     screen.classList.remove('is-pvp', 'is-away', 'is-solving');
-    for (const id of ['pvp-opp', 'pvp-meter', 'pvp-ovl']) $(id).hidden = true;
+    for (const id of ['pvp-opp', 'pvp-meter', 'pvp-ovl', 'pvp-coach']) $(id).hidden = true;
+    this.clearMarks('coach');
+    this.clearMarks('sug');
+    clearTimeout(this.dimT);
     $('lock-banner').dataset.sig = '';
     this.resolveEnd(null);
     this.ended = true;
@@ -1140,6 +1279,7 @@ export class PvpMatch {
     const outcome = this.endOutcome;
     const home = el('button', { class: 'btn', type: 'button', text: 'Về trang chủ', onclick: () => this.o.onHome() });
     if (outcome === 'unknown') return act.replaceChildren(home);
+    if (this.isMisaki) return this.paintMisakiActions(act, outcome, home);
     const waiting = !!this.rematching;
     const again = keycap({ tag: 'button', topic: 'neutral', legend: waiting ? 'Đang chờ đối thủ…' : 'Đấu lại', legendClass: 'kb-label', variant: 'btn', enter: !waiting });
     again.type = 'button';
@@ -1147,6 +1287,34 @@ export class PvpMatch {
     again.addEventListener('click', () => this.requestRematch());
     const kids = [again];
     if (waiting) kids.push(el('button', { class: 'btn', type: 'button', text: 'Tạo mã trận mới', onclick: () => this.fallbackRematch() }));
+    kids.push(home);
+    act.replaceChildren(...kids);
+  }
+
+  /** End-screen buttons against Misaki: same level again, the next level once unlocked, real match out of training. */
+  paintMisakiActions(act, outcome, home) {
+    const mk = this.endMsg?.misaki || {};
+    const level = Number(mk.level) || Number(this.opponent.misaki) || 1;
+    const next = Number(mk.unlocked_now) || 0;
+    const training = this.training;
+    const go = (misaki, train) => () => this.o.onMisaki({ misaki, training: train });
+    const primary = (label, fn) => {
+      const k = keycap({ tag: 'button', topic: 'neutral', legend: label, legendClass: 'kb-label', variant: 'btn', enter: true });
+      k.type = 'button';
+      k.addEventListener('click', fn);
+      return k;
+    };
+    const plain = (label, fn) => el('button', { class: 'btn', type: 'button', text: label, onclick: fn });
+    const kids = [];
+    if (outcome === 'win' && next) {
+      kids.push(primary('Đấu ngay', go(next, false)), plain('Đấu lại', go(level, false)));
+    } else if (outcome === 'win') {
+      kids.push(training ? primary('Đấu thật', go(level, false)) : primary('Đấu lại', go(level, false)));
+      if (training) kids.push(plain('Luyện tập lại', go(level, true)));
+    } else {
+      kids.push(primary('Thử lại', go(level, training)));
+      if (training) kids.push(plain('Đấu thật', go(level, false)));
+    }
     kids.push(home);
     act.replaceChildren(...kids);
   }
@@ -1202,16 +1370,22 @@ export class PvpMatch {
     const title = $('pe-title');
     const sub = $('pe-sub');
     const badge = $('pe-badge');
-    const head = { win: 'Bạn thắng!', lose: 'Bạn thua', draw: 'Hòa', unknown: 'Mất kết nối' }[outcome];
+    this.endMsg = msg;
+    const mkLevel = Number(msg.misaki?.level) || Number(this.opponent.misaki) || 0;
+    let head = { win: 'Bạn thắng!', lose: 'Bạn thua', draw: 'Hòa', unknown: 'Mất kết nối' }[outcome];
+    if (this.isMisaki && outcome === 'win') head = `Bạn đã thắng ${misakiTitle(mkLevel)}!`;
     const cancelled = msg.reason === 'server_restart';
     title.textContent = cancelled ? 'Trận bị hủy' : head;
     let reason = (REASON[outcome] && REASON[outcome][msg.reason]) || '';
     if (outcome === 'unknown') reason = 'Không kết nối lại được máy chủ. Nếu bạn vắng mặt quá 20 giây, bạn bị tính là thua.';
     if (!reason && msg.reason) reason = 'Trận đã kết thúc.';
+    if (this.isMisaki) reason = reason.replace(/^Đối thủ/, 'Misaki');
     sub.textContent = reason;
     const color = cancelled ? 'var(--warn)' : outcome === 'win' ? 'var(--ok)' : outcome === 'lose' ? 'var(--crash)' : 'var(--warn)';
     // replaceChildren() would print a null argument as the text "null": only pass real nodes
-    badge.replaceChildren(...[el('i', { class: 'led on', style: { '--c': color } }), `ĐỐI KHÁNG · ${LEVEL_NAME[this.level] || this.level}`,
+    const badgeText = this.isMisaki ? `${this.training ? 'LUYỆN TẬP' : 'ĐỐI KHÁNG'} · ${misakiTitle(mkLevel).toUpperCase()}` : `ĐỐI KHÁNG · ${LEVEL_NAME[this.level] || this.level}`;
+    badge.replaceChildren(...[el('i', { class: 'led on', style: { '--c': color } }), badgeText,
+      this.isMisaki ? el('span', { class: 'po-tag po-ai', text: 'AI' }) : null,
       api.isMock ? el('span', { class: 'po-tag po-mock', text: 'mô phỏng' }) : null].filter((x) => x != null));
     $('pe-card').dataset.outcome = cancelled ? 'cancel' : outcome;
 
@@ -1226,6 +1400,15 @@ export class PvpMatch {
           el('span', { class: 'pe-rate-b', text: String(msg.rating.before) }), el('span', { class: 'pe-arrow', 'aria-hidden': 'true', text: '→' }),
           el('b', { class: 'pe-rate-a', text: String(msg.rating.after) }),
           el('span', { class: 'pe-delta ' + (d > 0 ? 'up' : d < 0 ? 'down' : ''), text: (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d) })));
+    } else if (this.isMisaki) {
+      rp.hidden = false;
+      const unlocked = Number(msg.misaki?.unlocked_now) || 0;
+      const note = this.training ? 'Luyện tập không tính điểm và không mở khoá cấp mới.' : 'Đấu với Misaki không tính xếp hạng.';
+      rp.replaceChildren(...[
+        unlocked ? el('p', { class: 'pe-unlock', role: 'status' }, misakiAvatar({ cls: 'pe-unlock-av' }), el('span', {}, el('b', { text: 'Đã mở khoá: ' + misakiTitle(unlocked) }), el('i', { text: 'Cấp mới đã sẵn sàng.' }))) : null,
+        el('p', { class: 'rk-note', text: note }),
+      ].filter((x) => x != null));
+      if (unlocked) anim(rp.firstElementChild, [{ opacity: 0, transform: 'scale(.94)' }, { opacity: 1, transform: 'scale(1.03)', offset: 0.6 }, { opacity: 1, transform: 'none' }], { duration: 420, delay: 200, easing: EASE.out, fill: 'backwards' });
     } else if (this.opponent.bot) {
       rp.hidden = false;
       rp.replaceChildren(el('p', { class: 'rk-note', text: 'Trận đấu với máy không tính xếp hạng.' }));
@@ -1249,7 +1432,7 @@ export class PvpMatch {
       el('thead', {}, el('tr', {},
         el('td', {}),
         el('th', { scope: 'col', class: win === 'you' ? 'is-win' : '' }, el('span', { class: 'pe-who', text: this.you.nickname || 'Bạn' }), el('span', { class: 'pe-you', text: 'bạn' })),
-        el('th', { scope: 'col', class: win === 'opp' ? 'is-win' : '' }, el('span', { class: 'pe-who', text: this.opponent.nickname || 'Đối thủ' }), this.opponent.bot ? el('span', { class: 'po-tag po-bot', text: 'MÁY' }) : null))),
+        el('th', { scope: 'col', class: win === 'opp' ? 'is-win' : '' }, el('span', { class: 'pe-who', text: this.oppLabel() }), this.isMisaki ? el('span', { class: 'po-tag po-ai', text: 'AI' }) : this.opponent.bot ? el('span', { class: 'po-tag po-bot', text: 'MÁY' }) : null))),
       el('tbody', {},
         row('Điểm', me.score, op.score),
         row('Dòng đã gửi', me.sent, op.sent),
@@ -1257,7 +1440,6 @@ export class PvpMatch {
         row('Hàng đã gỡ', me.locks, op.locks)));
     tbl.hidden = outcome === 'unknown';
 
-    const act = $('pe-actions');
     this.endOutcome = outcome;
     this.canRematch = !!this.o.rematch && outcome !== 'unknown' && !cancelled && this.client.open;
     this.paintEndActions();

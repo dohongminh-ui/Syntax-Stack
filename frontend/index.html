@@ -411,6 +411,21 @@
           </div>
         </div>
         <ol id="pv-options" class="practice-list pv-options"></ol>
+        <section id="pv-misaki" class="pv-misaki" aria-labelledby="pv-mk-h">
+          <div class="pv-mk-head">
+            <span id="pv-mk-av" class="pv-mk-av"></span>
+            <div class="pv-mk-t">
+              <h2 id="pv-mk-h" class="pv-mk-h">Đấu với Misaki <span class="po-tag po-ai" title="Misaki là AI">AI</span></h2>
+              <p class="setup-note">Chọn cấp của Misaki. Thắng một cấp để mở cấp tiếp theo.</p>
+            </div>
+          </div>
+          <div id="pv-mk-ladder" class="pv-ladder" role="radiogroup" aria-labelledby="pv-mk-h"></div>
+          <div class="pv-train">
+            <label class="key keyopt pv-train-key"><input id="pv-train" class="sr-only" type="checkbox" role="switch" aria-describedby="pv-train-d"><span class="cap-top"><span class="kb-label">Luyện tập cùng Misaki</span></span></label>
+            <p id="pv-train-d" class="setup-note">Misaki chơi chậm hơn và hướng dẫn bạn. Không tính điểm.</p>
+          </div>
+          <div class="end-actions"><button id="pv-mk-go" class="key key-btn enter-key t-neutral" type="button"><span class="cap-top"><span class="kb-label">Vào trận với Misaki</span><span class="ret" aria-hidden="true">↵</span></span></button></div>
+        </section>
         <form id="pv-join-form" class="pv-join" autocomplete="off">
           <label class="setup-l" for="pv-code-in">Đã có mã từ bạn bè?</label>
           <div class="pv-join-row">
@@ -472,6 +487,7 @@
         <p id="board-hint" class="board-hint">Kéo khối vào lưới, hoặc chọn khối rồi chạm vào ô. Phím mũi tên + Enter để đặt.</p>
       </div>
       <aside class="side">
+        <section id="pvp-coach" class="coach" aria-label="Misaki, người hướng dẫn" hidden></section>
         <div id="tray-zone" class="tray-zone">
           <div id="tray" class="tray" aria-label="Khay khối"></div>
           <div id="lock-banner" class="lock-banner" hidden></div>

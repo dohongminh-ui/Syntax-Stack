@@ -1,0 +1,45 @@
+# Misaki's coaching lines in training mode ("Luyện tập cùng Misaki"). Sent as {"t":"coach"} messages.
+# Voice: friendly, short (<= 120 characters), always "bạn", never scolding. Placeholders:
+#   {n}     a number (rows pending / rows cancelled / streak / lines)
+#   {topic} Vietnamese topic name (Biến, Điều kiện, Vòng lặp, Hàm)
+# Several variants per kind; the server picks one deterministically from the match seed.
+
+danger:
+  - "Cẩn thận! {n} dòng lỗi sắp đẩy bàn lên. Dọn các ô đỏ ở trên cùng trước nhé."
+  - "Vùng đỏ là chỗ sắp bị đẩy ra ngoài. Đừng đặt khối ở {n} hàng trên cùng lúc này."
+  - "Có {n} dòng đang chờ. Giải một hàng để chặn bớt, hoặc giữ phía trên thật trống."
+
+incoming:
+  - "Đối thủ vừa gửi dòng lỗi! Chúng xếp hàng ở thanh bên cạnh, bạn còn thời gian chặn."
+  - "Dòng lỗi đầu tiên đến rồi. Giải đúng một hàng là có thể xoá nó trước khi nó rơi xuống."
+
+cancel:
+  - "Tuyệt! Bạn vừa chặn được {n} dòng lỗi. Tấn công cũng là phòng thủ đấy."
+  - "Chặn được {n} dòng! Giải đúng luôn xoá dòng đang chờ của bạn trước."
+
+streak:
+  - "{n} câu đúng liên tiếp! Giữ chuỗi này để gửi thêm dòng lỗi sang đối thủ."
+  - "Chuỗi {n}! Không dùng gợi ý tốn điểm thì lần tới bạn gửi thêm một dòng."
+
+wrong:
+  - "Không sao, sai là để học. Chạm vào dòng lỗi mới để sửa, hoặc hỏi tôi “Vì sao mình sai?”."
+  - "Hàng đó thành dòng lỗi rồi. Sửa nó bằng một câu cùng chủ đề {topic} nhé, bạn làm được."
+
+bugline:
+  - "Bạn còn một dòng lỗi chưa sửa. Chạm vào nó: sửa xong là bàn rộng thêm một hàng."
+  - "Dòng lỗi {topic} vẫn còn đó. Sửa nó trước khi đối thủ gửi thêm nhé."
+
+nofit_risk:
+  - "Chỉ còn một khối đặt vừa thôi. Ưu tiên giải hàng để mở thêm chỗ."
+  - "Bàn đang chật. Đặt khối sao cho hoàn thành được một hàng nhé."
+
+good:
+  - "Đẹp quá! {n} hàng cùng lúc gửi đi nhiều dòng lỗi hơn."
+  - "{n} hàng một lượt! Đối thủ sẽ phải vất vả đây."
+
+suggestion:
+  line: "Đặt ở đây sẽ hoàn thành {n} hàng."
+  safe: "Chỗ này giữ phía trên trống và không tạo lỗ hổng."
+  danger: "Đặt ở đây để tránh vùng đỏ sắp bị đẩy lên."
+  fit: "Chỗ này để lại nhiều không gian nhất cho các khối sau."
+  none: "Không còn chỗ nào đặt vừa. Hãy giải hàng hoặc dùng vật phẩm."

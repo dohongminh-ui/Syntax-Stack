@@ -91,8 +91,10 @@ lockstep by the golden test (§7). Everything not listed works as in `mode: 'res
   `POST /api/pvp/private/{code}/join {nickname, device_id}` → `{ticket}`. 404 unknown, 409 full,
   410 expired (10 minutes without a second player; the code answers 410 for an hour after that).
   Codes are case-insensitive.
-- `POST /api/pvp/bot {level, nickname, device_id}` → `{ticket}`: an immediate match against the
-  built-in bot ("Máy" + a generated animal name, always labelled as a bot in the UI).
+- `POST /api/pvp/bot {level, nickname, device_id, misaki?, training?}` → `{ticket}`: an immediate match against the
+  built-in bot, always labelled as a bot in the UI. With `misaki` it is Misaki of that ladder level (section 5);
+  without it, the generic "Máy" + a generated animal name (the same search AI, at the ladder level that matches
+  `level`: beginner 1, intermediate 2, advanced 3).
 - Nicknames must be generated names (422 as for ranked). Rate limit: 60 requests per hour per client IP
   across queue / private / join / bot (429).
 - A queued ticket has to open its socket within 15 s and may be away at most 15 s, or it is dropped; it waits
@@ -128,6 +130,7 @@ Client → server:
 | `resign` | | give up (immediate loss) |
 | `ping` | `n` | keep-alive / latency (server answers `pong` with the same `n`) |
 | `rematch` | | private duels only, after `end`: play again (see below) |
+| `suggest` | | training mode only (section 5.4): ask Misaki for a placement; otherwise `error not_training` |
 
 Puzzles, hints and answers use the **existing HTTP endpoints** with `match_id` + `match_token` (same
 pattern as `run_id` / `run_token`; the pair comes from `start`, one token per player): `POST
@@ -169,6 +172,8 @@ Server → client:
 | `end` | `winner: "you"\|"opponent"\|"draw", reason, you: {score, sent, received, locks}, opponent: {score, sent, received, locks, nickname, bot}, rating?: {before, after}` | match over (the last `opponent` and `state` are sent just before it) |
 | `rematch_status` | `you, opponent, expired?` | private duels after `end`, see below |
 | `error` | `code, message` | rejected action (e.g. illegal place: the client re-renders from the `state` that follows) |
+| `coach` | `kind, text, cells?` | training mode only: Misaki's coaching (section 5.4) |
+| `suggestion` | `i, r, c, cells, why` \| `none: true, why` | training mode only: the answer to `suggest` (section 5.4) |
 | `pong` | `n` | |
 
 `state.you` shapes (same as `game.js`): `grid` is 8×8 of `null` or `{topic, bug, bugId}`; `tray` has
@@ -180,7 +185,8 @@ lock's puzzle is the player's to solve; the server has no separate `puzzle` phas
 `ok`/`warn`.
 
 `error` codes: `bad_message`, `not_playing`, `illegal` (followed by a `state`), `no_rematch`, `replaced`,
-`bad_ticket`, `queue_timeout`, `lobby_timeout`, `opponent_left`, `expired` (private code ran out),
+`bad_ticket`, `queue_timeout`, `lobby_timeout`, `opponent_left`, `expired` (private code ran out), `not_training`
+(`suggest` outside a training match),
 `server_restart` (lobby only). Illegal actions never change the game.
 
 **Rematch (private duels).** After `end` the sockets of a private duel stay open for 60 s and the server
@@ -213,12 +219,98 @@ rematch is a new search (the sockets are closed after `end`; `rematch` is `no_re
   practice the browser sees a closed socket and, on reconnect, `bad_ticket`: treat that as a restart. The
   deploy cron (`deploy/update.sh`) restarts the container when a new commit is pushed.
 
-## 5. Bot
+## 5. Misaki (the AI opponent)
 
-A server-side player using the same engine: picks placements with a simple heuristic (prefer
-completing rows, avoid holes), answers its puzzles after a "thinking" delay of 4–9 s (scaled by tier)
-with accuracy by level (beginner 70%, intermediate 80%, advanced 88%), never uses hints, uses items
-sensibly. Always shown with a bot badge. Bot matches do not change rating.
+Misaki is the game's AI character: the same name and avatar as the tutor ("Misaki · Gia sư AI"). As an
+opponent she is a **search-based game AI** running server-side on the rules engine. What we say about
+her must stay true: she plans moves with a search algorithm and an evaluation function; she is not
+trained and does not learn; her puzzle answers are simulated at an accuracy set by her level (she does
+not read the code). Always shown with an **AI** badge. Matches against Misaki never change the PvP rating.
+
+### 5.1 Search
+For each turn she considers the whole tray: every order of the (up to three) pieces and every legal
+position, pruned with a beam (best `beam` candidates kept after each piece), and scores the resulting
+board with:
+- `+` lines completed (a lock she expects to clear: the board is simulated with the lock cleared and the
+  reward, shaped like `SEND`, is weighted by her puzzle accuracy);
+- `−` holes (empty cells with filled cells above them in the column) and covered empty cells (empty cells
+  closed in on all four sides, where only a single block fits);
+- `−` aggregate height and bumpiness (differences between adjacent column heights); heights are counted
+  from the bottom because landing bug rows push blocks up;
+- `−` blocks inside the **danger zone** (top `pending` rows), strongly;
+- `−` boards where fewer of the next pieces fit (mobility: the share of the 13 shapes, weighted by how
+  often they are dealt and over every rotation, that still fit somewhere; applied to the final candidates);
+- `+` line progress (rows and columns without bug blocks that are nearly full), a small term added to the list
+  above because completing lines is the only way a board clears.
+The simulation uses the engine's rules, mirrored on 64-bit integers and checked against `rescue_engine`
+in `tests/test_misaki.py`: a full row or column of normal blocks is a lock; the first placement of the plan
+that makes no lock lands the pending rows (a non-empty cell pushed above row 0 is a top-out and the plan is
+dropped). She plays the first placement of the best plan, then re-plans after every placement (the
+opponent's lines may have landed). Measured: about 2-8 ms per decision at beam 32 on a typical mid-game
+board (max about 15 ms in the benchmark; target < 50 ms). The weights were tuned by hand against simulated
+matches; nothing is trained and nothing is remembered between matches.
+
+### 5.2 Ladder
+| Level | Name | Beam | Think delay per placement | Puzzle accuracy | Uses items |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Misaki · Tập sự | 1 (greedy, one piece) | 2.0–3.0 s | 60% | no |
+| 2 | Misaki · Khá | 4 | 1.4–2.2 s | 72% | bomb only |
+| 3 | Misaki · Giỏi | 12 | 0.9–1.5 s | 84% | yes |
+| 4 | Misaki · Bậc thầy | 32 | 0.5–1.0 s | 93% | yes |
+Puzzle answers take 3–8 s (tier 1 3–5 s, tier 2 4–6.5 s, boss locks 5.5–8 s per puzzle, times 1.0 / 0.95 /
+0.9 / 0.85 at levels 1–4, never outside 3–8 s), faster at higher levels; she never opens a hint. "Items" means
+Bomb (used when the board is crowded or the plan is bad and a 3x3 blast clearly improves it) and Shuffle (only
+when the best plan is very poor); a Debugger is spent automatically on her next lock as for any player; she
+never uses Undo. Level 1 is always unlocked; beating level n (in a normal, non-training match) unlocks n+1,
+stored per device in `ranked.sqlite` (table `misaki_progress`: games and wins per level; `unlocked` is derived:
+1 + the highest level beaten, at most 4). A normal match counts as a game when it ends with a winner
+(including a resignation or a disconnect, which are losses); draws (`both_disconnected`, `server_restart`)
+and training matches count for nothing. A device's progress is forgotten after a year without a match.
+
+Measured strength (`backend/tests/misaki_sim.py`, bot-vs-bot on the real match code with a virtual clock, seats
+alternate): see section 7.
+
+### 5.3 API
+- `POST /api/pvp/bot {level, nickname, device_id, misaki: 1..4, training: bool}` → `{ticket}`.
+  403 if `misaki` is not unlocked for that device (training too); 422 for `misaki` outside 1..4 or `training`
+  without `misaki`. `training` defaults to false. Without `misaki` the generic "Máy" bot plays (section 3).
+- `GET /api/pvp/misaki?device_id=` → `{unlocked: n, wins: {"1": k, ...}, games: {"1": k, ...}}` (all four levels
+  listed; 422 for a bad device id).
+- Lobby `opponent` for Misaki: `{nickname: "Misaki", bot: true, misaki: n, title: "Misaki · Giỏi", training: bool, plays_as: m, connected: true, rating: null}`.
+  `misaki` and `title` are always the level the **player chose**; `plays_as` is the level she really plays at
+  (equal to `misaki`, or one lower in training mode, never below 1). The nickname "Misaki" is only for the bot
+  and is not a generated name (players still need generated names).
+- `end` against Misaki adds `misaki: {level, unlocked_now: n | null}`: `level` is the level the player chose
+  (in training too); `unlocked_now` is the level this win newly unlocked, `null` otherwise (a loss, a repeat
+  win, level 4, any training match).
+
+### 5.4 Training mode ("Luyện tập cùng Misaki")
+Same match, but Misaki also coaches. Nothing in training mode is ranked or unlocks levels.
+- Misaki plays one level lower than chosen (min 1) and her think delay per placement is ×1.5 (puzzle answer
+  times are unchanged).
+- Server → client `{"t":"coach", "kind": "<kind>", "text": "<Vietnamese, ≤ 120 chars>", "cells"?: [[r,c]...]}`
+  pushed on events, at most one every 4 s (except `suggestion`). Kinds and when:
+  `danger` (pending lines would push your blocks off, i.e. a block of yours is in the top `pending` rows: `n` is
+  the number of pending rows and `cells` lists those blocks), `incoming` (first time the opponent sends lines;
+  not for overtime lines), `cancel` (your clear cancelled pending lines), `streak` (streak 3),
+  `wrong` (a wrong lock answer: nudges to tap the new bug line or use "Vì sao mình sai?"),
+  `bugline` (you have an unfixed bug line for 30 s; once per bug line), `nofit_risk` (only one of your
+  at-least-two tray pieces still fits), `good` (you completed 2+ lines at once). Texts come from
+  `backend/content/misaki_coach.yaml` (several variants per kind, the k-th message of a kind uses
+  `Random(f"{seed}:coach:{kind}:{k}")`, so a match tells the same story).
+  Throttling: an event that arrives during the 4 s pause waits for it (the most important one, at most 6 s);
+  `danger`, `nofit_risk` and `bugline` are never queued, they are looked at again about twice a second and
+  after every change; `danger` repeats at most every 15 s, `nofit_risk` every 20 s, `incoming` is said once.
+  Priority: wrong, danger, incoming, good, cancel, streak, nofit_risk, bugline.
+- Client → server `{"t":"suggest"}` (at most once every 3 s of real time; a faster one is silently dropped):
+  Misaki runs her level-4 search on **your** current state and answers
+  `{"t":"suggestion", "i": tray index, "r", "c", "cells": [[r,c]...], "why": "<Vietnamese reason>"}`
+  or `{"t":"suggestion", "none": true, "why": "..."}` (no piece fits, or a lock is open: nothing can be placed
+  then). The placement is always legal on your current board. `why` comes from the `suggestion` copy by the
+  dominant reason, in this order: `line` (it completes lines: `{n}` = how many), `danger` (lines are pending
+  and the piece stays out of the rows they push up), `safe` (no new holes and the top two rows stay empty),
+  otherwise `fit`. The UI outlines those cells on your board. Only in training mode; otherwise
+  `error not_training`.
 
 ## 6. Rating
 
@@ -241,5 +333,12 @@ count as 0.5.
   socket that does not read is capped (it is cut off and may reconnect).
 - Overtime (rule 8) is on the server's match clock: events at 4:00, 4:20, ... (topic from
   `Random(f"{seed}:overtime:{k}")`, same for both players, template `<topic>_bug`).
+- Misaki: `backend/tests/test_misaki.py` (bitboard mirrors of the engine rules, search legality, a decision-time
+  benchmark with a generous CI bound, the ladder / unlock / 403 / `not_training` API, coach throttling and triggers,
+  suggestion legality) and the strength check `backend/tests/misaki_sim.py`: full bot-vs-bot matches on the real
+  match code (virtual clock, no sleeping), each level against the one below, seats alternating; the test requires
+  at least 65% over 40 games per pair. `python -m tests.misaki_sim 200` prints the numbers (200 games per pair,
+  seeds 1000..1199): Misaki 2 beats 1 in 70% (141/200), 3 beats 2 in 90% (179/200),
+  4 beats 3 in 92% (183/200), no draws; matches last about 1 to 1.5 minutes of match time.
 - Match tests: `backend/tests/test_pvp_match.py` (HTTP + WebSocket, accelerated clock via `pvp.SPEED`);
   rules: `backend/tests/test_pvp_rules.py` (golden against `game.js`, 400 pvp games).

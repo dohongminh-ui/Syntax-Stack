@@ -347,4 +347,4 @@ export async function getCustomSet(id, level) {
 export { rowsLevels, rowsLevel, rowsRun, rowsHint } from './mock-rows.js';
 export { createRoom, getRoom, joinRoom, roomSummary, closeRoom, deleteRoom, kickPlayer } from './mock-rooms.js';
 export { createRun, finishRun, leaderboard, createRace, getRace, fetchNickname } from './mock-ranked.js';
-export { pvpQueue, pvpLeaveQueue, pvpPrivate, pvpJoinPrivate, pvpBot, MockPvpSocket } from './mock-pvp.js';
+export { pvpQueue, pvpLeaveQueue, pvpPrivate, pvpJoinPrivate, pvpBot, pvpMisaki, MockPvpSocket } from './mock-pvp.js';

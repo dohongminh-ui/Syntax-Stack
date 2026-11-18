@@ -12,6 +12,7 @@ import { copyLink } from './race.js';
 import { setUrl } from './rooms.js';
 import { TOPICS } from './pieces.js';
 import { LEVEL_NAME, fmtTime } from './rank-ui.js';
+import { LADDER, misakiTitle, misakiAvatar } from './misaki.js';
 
 const $ = (id) => document.getElementById(id);
 const BOT_OFFER_S = 20;
@@ -21,9 +22,11 @@ let nav = { show: () => {}, home: () => {}, level: () => 'beginner', getBoard: (
 let S = null; // the live session, see newSession()
 let flow = 0; // bumps on every start / leave so a late HTTP answer cannot revive a cancelled flow
 let creating = false;
+let ladder = { unlocked: 1, wins: {}, games: {} }; // GET /api/pvp/misaki for this device
+let pickedMisaki = 1;
 
 function newSession(kind, level) {
-  return { kind, level, ticket: null, code: null, client: null, match: null, nickname: '', timer: null, t0: 0, phase: 'menu' };
+  return { kind, level, misaki: null, training: false, ticket: null, code: null, client: null, match: null, nickname: '', timer: null, t0: 0, phase: 'menu' };
 }
 
 export function initPvp(n) {
@@ -56,6 +59,10 @@ export function initPvp(n) {
   $('pv-copy').addEventListener('click', () => copyLink($('pv-link').value, $('pv-link')));
   $('pv-link').addEventListener('focus', (e) => e.target.select());
   buildOptions();
+  $('pv-mk-av').replaceChildren(misakiAvatar());
+  $('pv-train').addEventListener('change', paintMisakiGo);
+  $('pv-mk-go').addEventListener('click', () => begin('bot', { misaki: pickedMisaki, training: $('pv-train').checked }));
+  paintLadder();
 }
 
 // ---- entry screen ------------------------------------------------------------------------------------------------
@@ -63,7 +70,6 @@ function buildOptions() {
   const items = [
     ['Tìm trận', 'Ghép nhanh với một người chơi cùng cấp độ', 'search', () => begin('quick')],
     ['Đấu với bạn', 'Tạo mã trận, gửi cho bạn bè', 'layers', () => begin('private')],
-    ['Đấu với máy', 'Đấu ngay với đối thủ máy, không tính xếp hạng', 'terminal', () => begin('bot')],
   ];
   $('pv-options').replaceChildren(...items.map(([label, desc, ic, go]) => {
     const b = keycap({
@@ -76,6 +82,45 @@ function buildOptions() {
     b.addEventListener('click', go);
     return el('li', { class: 'practice-item' }, b);
   }));
+}
+
+/** The four Misaki keycaps. Locked levels are dimmed, carry a lock icon and say how to open them. */
+function paintLadder() {
+  const unlocked = Math.min(4, Math.max(1, Number(ladder.unlocked) || 1));
+  if (pickedMisaki > unlocked || pickedMisaki < 1) pickedMisaki = unlocked;
+  $('pv-mk-ladder').replaceChildren(...LADDER.map(({ level, name }) => {
+    const locked = level > unlocked;
+    const input = el('input', { class: 'sr-only', type: 'radio', name: 'pv-mk', value: String(level) });
+    input.checked = level === pickedMisaki;
+    input.disabled = locked;
+    input.addEventListener('change', () => {
+      pickedMisaki = level;
+      paintMisakiGo();
+    });
+    const label = el('span', { class: 'kb-label pv-lk-in' },
+      locked ? icon('lock', { size: 16, cls: 'pv-lk-ico' }) : null,
+      el('span', { class: 'pv-lk-name', text: name }),
+      locked ? el('span', { class: 'pv-lk-note', text: 'Thắng cấp trước để mở' }) : null);
+    return el('label', { class: 'key keyopt pv-lk' + (locked ? ' is-off' : ''), title: locked ? 'Thắng cấp trước để mở' : `Misaki · ${name}` },
+      input, el('span', { class: 'cap-top' }, label));
+  }));
+  paintMisakiGo();
+}
+
+function paintMisakiGo() {
+  const train = $('pv-train').checked;
+  const l = $('pv-mk-go').querySelector('.kb-label');
+  l.textContent = train ? `Luyện tập với ${misakiTitle(pickedMisaki)}` : `Đấu với ${misakiTitle(pickedMisaki)}`;
+}
+
+async function loadLadder() {
+  try {
+    const r = await api.pvpMisaki(getDeviceId());
+    if (r && typeof r === 'object') ladder = { unlocked: Number(r.unlocked) || 1, wins: r.wins || {}, games: r.games || {} };
+  } catch {
+    /* offline or an old server: only level 1 is offered */
+  }
+  if (S && S.phase === 'menu') paintLadder();
 }
 
 function paintIdentity() {
@@ -121,6 +166,8 @@ export function openPvp() {
   $('pv-title').textContent = 'Đối kháng 1v1';
   showErr('');
   paintIdentity();
+  paintLadder();
+  loadLadder();
   pane('menu');
   $('pv-title').focus({ preventScroll: true });
 }
@@ -158,6 +205,7 @@ function stopSession() {
 
 // ---- starting a flow ---------------------------------------------------------------------------------------------
 const START_ERR = {
+  403: 'Cấp này của Misaki chưa mở. Hãy thắng cấp trước.',
   429: 'Bạn thao tác hơi nhanh. Đợi một lát rồi thử lại.',
 };
 const JOIN_ERR = {
@@ -181,7 +229,7 @@ async function withName(call) {
   }
 }
 
-async function begin(kind, { code = null } = {}) {
+async function begin(kind, { code = null, misaki = null, training = false } = {}) {
   if (creating) return;
   creating = true;
   showErr('');
@@ -192,7 +240,7 @@ async function begin(kind, { code = null } = {}) {
     const got = await withName((nickname) => {
       if (kind === 'quick') return api.pvpQueue({ level, nickname, device_id });
       if (kind === 'private') return api.pvpPrivate({ level, nickname, device_id });
-      if (kind === 'bot') return api.pvpBot({ level, nickname, device_id });
+      if (kind === 'bot') return api.pvpBot({ level, nickname, device_id, misaki: misaki || 1, training: !!training });
       return api.pvpJoinPrivate(code, { nickname, device_id });
     });
     if (!got || mine !== flow) return;
@@ -200,6 +248,10 @@ async function begin(kind, { code = null } = {}) {
     if (!res?.ticket) throw new Error('Máy chủ không trả về vé vào trận.');
     stopSession();
     S = newSession(kind, level);
+    if (kind === 'bot') {
+      S.misaki = misaki || 1;
+      S.training = !!training;
+    }
     S.nickname = nickname;
     S.ticket = res.ticket;
     S.code = res.code || code;
@@ -213,6 +265,7 @@ async function begin(kind, { code = null } = {}) {
     const map = kind === 'join' ? JOIN_ERR : START_ERR;
     showErr((kind === 'join' ? 'Không vào được trận: ' : 'Không bắt đầu được: ') + (map[e.status] || e.message));
     pane('menu');
+    if (e.status === 403) loadLadder();
   } finally {
     creating = false;
   }
@@ -221,7 +274,7 @@ async function begin(kind, { code = null } = {}) {
 function paintWaiting() {
   const s = S;
   $('pv-level').hidden = false;
-  $('pv-level').textContent = s.kind === 'join' ? 'Đang vào trận' : LEVEL_NAME[s.level] || s.level;
+  $('pv-level').textContent = s.kind === 'join' ? 'Đang vào trận' : s.kind === 'bot' && s.misaki ? misakiTitle(s.misaki) + (s.training ? ' · luyện tập' : '') : LEVEL_NAME[s.level] || s.level;
   if (s.resuming) {
     pane('search');
     $('pv-level').hidden = true;
@@ -265,8 +318,8 @@ function paintWaiting() {
     // join / bot: nothing to wait for but the socket
     pane('search');
     $('pv-level').hidden = false;
-    $('pv-title').textContent = s.kind === 'bot' ? 'Đang vào trận với máy' : 'Đang vào trận';
-    $('pv-search-t').textContent = s.kind === 'bot' ? 'Đang chuẩn bị đối thủ máy…' : 'Đang vào trận…';
+    $('pv-title').textContent = s.kind === 'bot' ? 'Đang vào trận với Misaki' : 'Đang vào trận';
+    $('pv-search-t').textContent = s.kind === 'bot' ? 'Misaki đang vào bàn…' : 'Đang vào trận…';
     $('pv-search-note').textContent = '';
     $('pv-time').textContent = '';
     $('pv-search-act').replaceChildren(el('button', { class: 'btn', type: 'button', text: 'Hủy', onclick: () => cancel() }));
@@ -279,8 +332,8 @@ function offerBot() {
   const s = S;
   s.botOffered = true;
   $('pv-search-t').textContent = 'Chưa thấy ai cùng cấp độ.';
-  $('pv-search-note').textContent = 'Bạn có thể đấu với máy ngay, hoặc chờ thêm một chút.';
-  const bot = keycap({ tag: 'button', topic: 'neutral', legend: 'Đấu với máy', legendClass: 'kb-label', variant: 'btn', enter: true });
+  $('pv-search-note').textContent = 'Bạn có thể đấu với Misaki ngay (không tính xếp hạng), hoặc chờ thêm một chút.';
+  const bot = keycap({ tag: 'button', topic: 'neutral', legend: 'Đấu với Misaki', legendClass: 'kb-label', variant: 'btn', enter: true });
   bot.type = 'button';
   bot.addEventListener('click', () => switchToBot());
   $('pv-search-act').prepend(bot);
@@ -291,7 +344,7 @@ async function switchToBot() {
   cancel(true);
   const r = document.querySelector(`input[name=pv-level][value=${level}]`);
   if (r) r.checked = true;
-  begin('bot');
+  begin('bot', { misaki: pickedMisaki, training: false });
 }
 
 function cancel(quiet = false) {
@@ -363,7 +416,7 @@ function startMatch(lobby, { again = null } = {}) {
   s.matched = true;
   const you = again ? again.you : typeof lobby.you === 'string' ? { nickname: lobby.you } : lobby.you || {};
   const board = nav.getBoard();
-  storeTicket({ ticket: s.ticket, kind: s.kind, level: lobby.level || s.level || 'beginner', nickname: s.nickname });
+  storeTicket({ ticket: s.ticket, kind: s.kind, level: lobby.level || s.level || 'beginner', nickname: s.nickname, misaki: s.misaki, training: s.training });
   const resumed = !!s.resuming;
   s.resuming = false;
   s.match = new PvpMatch({
@@ -373,14 +426,33 @@ function startMatch(lobby, { again = null } = {}) {
     client: s.client,
     show: nav.show,
     you: { nickname: s.nickname, ...you },
-    opponent: lobby.opponent || {},
+    opponent: withMisaki(lobby.opponent || {}, s),
     level: lobby.level || s.level || 'beginner',
     onRematch: () => rematch(),
+    onMisaki: (opts) => playMisaki(opts),
     onHome: () => nav.home(),
     rematchNote: () => (s.kind === 'private' ? 'Đấu lại với bạn bè: một mã trận mới sẽ được tạo. Hãy gửi mã mới cho họ.' : ''),
   });
   if (!again) s.client.send({ t: 'ready' });
   s.match.handle(lobby);
+}
+
+/** A reload / re-sent lobby may lack the Misaki fields: fill them from what this session asked for. */
+function withMisaki(opp, s) {
+  if (s.kind !== 'bot' || !s.misaki || opp.misaki) return opp;
+  return { ...opp, nickname: opp.nickname || 'Misaki', bot: true, misaki: s.misaki, title: misakiTitle(s.misaki), training: s.training };
+}
+
+/** From the end screen: another match against Misaki ({ misaki, training }). */
+function playMisaki({ misaki, training }) {
+  stopSession();
+  flow++;
+  creating = false;
+  openPvp();
+  pickedMisaki = misaki;
+  $('pv-train').checked = !!training;
+  paintLadder();
+  begin('bot', { misaki, training: !!training });
 }
 
 /** A fresh `start` on the same socket after both players pressed "Đấu lại": a new match against the same opponent. */
@@ -403,6 +475,8 @@ export function resumeIfAny() {
   S = newSession(t.kind || 'quick', t.level || 'beginner');
   S.ticket = t.ticket;
   S.nickname = t.nickname || getNickname();
+  S.misaki = t.misaki || null;
+  S.training = !!t.training;
   S.resuming = true;
   showStrip(true, { back: backFromPvp, backLabel: 'Quay lại' });
   setMode('ĐỐI KHÁNG');
@@ -423,5 +497,6 @@ function rematch() {
   openPvp();
   const r = document.querySelector(`input[name=pv-level][value=${level}]`);
   if (r) r.checked = true;
+  if (kind === 'bot') return begin('bot', { misaki: s?.misaki || pickedMisaki, training: !!s?.training });
   begin(kind);
 }

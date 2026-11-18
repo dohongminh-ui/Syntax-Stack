@@ -1,7 +1,7 @@
 // Editor-window building blocks shared by the Code Rescue puzzle panel and the Syntax Rows editor.
 import { el } from './ui.js';
 import { icon } from './icons.js';
-import { keycap } from './keycap.js';
+import { misakiAvatar } from './misaki.js';
 import { highlightPy } from './highlight.js';
 
 export const FILE_NAMES = { variables: 'bien.py', conditions: 'dieu_kien.py', loops: 'vong_lap.py', functions: 'ham.py' };
@@ -118,13 +118,13 @@ export function tutorNote({ text = '', source = 'canned', context = '', loading 
     return comment(label + text, cls);
   }
   const body = loading
-    ? el('p', { class: 'tutor-body tutor-loading' }, 'Gia sư đang đọc',
+    ? el('p', { class: 'tutor-body tutor-loading' }, 'Misaki đang đọc',
         el('span', { class: 'tutor-dots', 'aria-hidden': 'true' }, el('i'), el('i'), el('i')))
     : el('p', { class: 'tutor-body' }, richText(text));
-  return el('div', { class: 'tutor ' + cls, role: 'group', 'aria-label': 'Gia sư AI' },
+  return el('div', { class: 'tutor ' + cls, role: 'group', 'aria-label': 'Misaki, gia sư AI' },
     el('div', { class: 'tutor-head' },
-      keycap({ topic: 'functions', legend: 'AI', legendClass: 'legend legend-c', cls: 'tutor-badge' }),
-      el('span', { class: 'tutor-label', text: 'GIA SƯ AI' }),
+      misakiAvatar({ cls: 'tutor-badge' }),
+      el('span', { class: 'tutor-label', text: 'MISAKI · GIA SƯ AI' }),
       context ? el('span', { class: 'tutor-ctx', text: context }) : null),
     body,
     loading ? null : el('p', { class: 'tutor-foot', text: 'Do AI tạo, có thể chưa chính xác. Hãy tự kiểm tra bằng Chạy kiểm tra.' }));

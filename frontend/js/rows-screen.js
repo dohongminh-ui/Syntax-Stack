@@ -524,7 +524,7 @@ function teachBackPanel(game) {
   const input = terminalInput({ maxlength: 400, required: true,
     'aria-label': 'Lời giải thích của bạn', placeholder: 'Giải thích bằng tiếng Việt hoặc tiếng Anh' });
   const reply = el('div', { class: 'rg-teach-reply', role: 'status' });
-  const submit = keycap({ tag: 'button', topic: 'neutral', legend: 'Hỏi gia sư', legendClass: 'kb-label', variant: 'btn', enter: true, cls: 'key-sm' });
+  const submit = keycap({ tag: 'button', topic: 'neutral', legend: 'Hỏi Misaki', legendClass: 'kb-label', variant: 'btn', enter: true, cls: 'key-sm' });
   submit.type = 'submit';
   const form = el('form', { class: 'rg-trace-body', onsubmit: async (event) => {
     event.preventDefault();
@@ -544,7 +544,7 @@ function teachBackPanel(game) {
     }
   } }, el('div', { class: 'rg-field' }, input),
     // Responsible-AI rule from the proposal: the learner's own words leave the device, so say so.
-    el('p', { class: 'rg-privacy', id: 'rg-privacy-note', text: 'Lời giải thích của bạn được gửi tới gia sư AI. Đừng ghi tên, số điện thoại hay thông tin cá nhân.' }),
+    el('p', { class: 'rg-privacy', id: 'rg-privacy-note', text: 'Lời giải thích của bạn được gửi tới Misaki, gia sư AI. Đừng ghi tên, số điện thoại hay thông tin cá nhân.' }),
     el('div', { class: 'rg-submit' }, submit), reply);
   input.setAttribute('aria-describedby', 'rg-privacy-note');
   const d = disclosure('Giải thích lại', form);

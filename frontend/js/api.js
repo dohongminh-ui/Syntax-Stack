@@ -313,10 +313,16 @@ export async function pvpJoinPrivate(code, body) {
   return request('POST', duel(code) + '/join', body);
 }
 
-/** body: { level, nickname, device_id } -> { ticket }. An immediate match against the built-in bot. */
+/** body: { level, nickname, device_id, misaki: 1..4, training: bool } -> { ticket }. An immediate match against Misaki. 403: that level is still locked. */
 export async function pvpBot(body) {
   if (isMock) return (await mock()).pvpBot(body);
   return request('POST', '/api/pvp/bot', body);
+}
+
+/** The Misaki ladder for this device -> { unlocked: n, wins: { "1": k }, games: { "1": k } }. */
+export async function pvpMisaki(deviceId) {
+  if (isMock) return (await mock()).pvpMisaki(deviceId);
+  return request('GET', '/api/pvp/misaki?device_id=' + encodeURIComponent(deviceId), null, { timeout: 8000 });
 }
 
 /** A WebSocket-shaped object for GET /api/pvp/ws?ticket=... (the mock returns a same-shaped fake server). */

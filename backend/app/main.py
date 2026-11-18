@@ -285,6 +285,11 @@ class PvpStartRequest(BaseModel):
     device_id: str = Field(max_length=64)
 
 
+class PvpBotRequest(PvpStartRequest):
+    misaki: Optional[int] = Field(default=None, ge=1, le=4)   # Misaki's ladder level (docs/pvp.md section 5)
+    training: bool = False
+
+
 class PvpJoinRequest(BaseModel):
     nickname: str = Field(max_length=200)
     device_id: str = Field(max_length=64)
@@ -587,8 +592,13 @@ def pvp_private_join(code: str, req: PvpJoinRequest, request: Request):
 
 
 @app.post("/api/pvp/bot")
-def pvp_bot_match(req: PvpStartRequest, request: Request):
-    return pvp.bot_start(req.level, req.nickname, req.device_id, _client_ip(request))
+def pvp_bot_match(req: PvpBotRequest, request: Request):
+    return pvp.bot_start(req.level, req.nickname, req.device_id, _client_ip(request), req.misaki, req.training)
+
+
+@app.get("/api/pvp/misaki")
+def pvp_misaki(device_id: str = Query(default="", max_length=64)):
+    return pvp.misaki_status(device_id)
 
 
 @app.websocket("/api/pvp/ws")

@@ -42,6 +42,8 @@ KEEP_FINISHED_S = 90 * 24 * 3600
 PVP_RATING_KEEP_S = 365 * 24 * 3600   # a device's PvP rating is forgotten after a year without a match
 PVP_START_RATING = 1000
 PVP_ELO_K = 32
+MISAKI_LEVELS = 4                     # the Misaki ladder (docs/pvp.md section 5.2)
+MISAKI_KEEP_S = 365 * 24 * 3600       # a device's ladder progress is forgotten after a year without a match
 RACE_TTL_S = 7 * 24 * 3600
 MAX_RACE_RUNS = 30
 LEADERBOARD_SIZE = 50
@@ -167,6 +169,9 @@ CREATE INDEX IF NOT EXISTS idx_served_puzzle ON served (run_id, puzzle_id);
 CREATE TABLE IF NOT EXISTS pvp_ratings (
     device_hash TEXT PRIMARY KEY, rating INTEGER NOT NULL, games INTEGER NOT NULL DEFAULT 0,
     wins INTEGER NOT NULL DEFAULT 0, losses INTEGER NOT NULL DEFAULT 0, updated_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS misaki_progress (
+    device_hash TEXT NOT NULL, level INTEGER NOT NULL, games INTEGER NOT NULL DEFAULT 0,
+    wins INTEGER NOT NULL DEFAULT 0, updated_at REAL NOT NULL, PRIMARY KEY (device_hash, level));
 """
 
 
@@ -192,6 +197,7 @@ def _purge(con: sqlite3.Connection) -> None:
     con.execute("DELETE FROM races WHERE expires_at < ?", (now,))
     con.execute("DELETE FROM served WHERE run_id NOT IN (SELECT id FROM runs)")
     con.execute("DELETE FROM pvp_ratings WHERE updated_at < ?", (now - PVP_RATING_KEEP_S,))
+    con.execute("DELETE FROM misaki_progress WHERE updated_at < ?", (now - MISAKI_KEEP_S,))
 
 
 def _device_hash(device_id: str) -> str:
@@ -560,3 +566,53 @@ def pvp_apply_result(hash_a: str, hash_b: str, score_a: float) -> Optional[tuple
 def _rating_row(con: sqlite3.Connection, device_hash: str) -> int:
     row = con.execute("SELECT rating FROM pvp_ratings WHERE device_hash = ?", (device_hash,)).fetchone()
     return row["rating"] if row else PVP_START_RATING
+
+
+# --------------------------------------------------------------------------- Misaki ladder (docs/pvp.md section 5.2)
+
+
+def _unlocked(wins: dict[int, int]) -> int:
+    """Level 1 is always open; beating level n opens n + 1 (up to the last one)."""
+    beaten = [lv for lv, n in wins.items() if n > 0]
+    return min(MISAKI_LEVELS, max(beaten, default=0) + 1)
+
+
+def misaki_progress(device_hash: Optional[str]) -> dict:
+    """``{"unlocked": n, "wins": {"1": k, ...}, "games": {"1": k, ...}}`` for a device (all four levels listed).
+    Never raises: an unusable database reads as a fresh device (level 1 only)."""
+    wins = {lv: 0 for lv in range(1, MISAKI_LEVELS + 1)}
+    games = dict(wins)
+    if device_hash:
+        try:
+            with closing(_connect()) as con:
+                for row in con.execute("SELECT level, games, wins FROM misaki_progress WHERE device_hash = ?",
+                                       (device_hash,)):
+                    if row["level"] in wins:
+                        wins[row["level"]], games[row["level"]] = row["wins"], row["games"]
+        except Exception:  # noqa: BLE001 - progress must never break a lobby
+            pass
+    return {"unlocked": _unlocked(wins), "wins": {str(k): v for k, v in wins.items()},
+            "games": {str(k): v for k, v in games.items()}}
+
+
+def misaki_unlocked(device_hash: Optional[str]) -> int:
+    return misaki_progress(device_hash)["unlocked"]
+
+
+def misaki_record(device_hash: Optional[str], level: int, won: bool) -> Optional[int]:
+    """Count a finished normal (non-training) match against Misaki ``level``. Returns the level this win newly
+    unlocked (``level + 1``), or None. Never raises."""
+    if not device_hash or not 1 <= level <= MISAKI_LEVELS:
+        return None
+    try:
+        with closing(_connect()) as con, _db_lock:
+            before = misaki_progress(device_hash)["unlocked"]
+            con.execute(
+                "INSERT INTO misaki_progress (device_hash, level, games, wins, updated_at) VALUES (?,?,1,?,?) "
+                "ON CONFLICT(device_hash, level) DO UPDATE SET games = games + 1, wins = wins + excluded.wins, "
+                "updated_at = excluded.updated_at", (device_hash, level, int(won), _now()))
+            con.commit()
+        after = misaki_progress(device_hash)["unlocked"]
+        return after if after > before else None
+    except Exception:  # noqa: BLE001
+        return None
