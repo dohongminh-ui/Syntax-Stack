@@ -457,8 +457,9 @@ function renderSummary(s) {
             el('b', { class: 'mist-count', text: '×' + top.count }),
             chip(top.topic),
             el('span', { class: 'mist-who', text: `${top.players} người` }))),
-        rest.length ? el('ol', { class: 'mist-list' }, ...rest.slice(0, 4).map((m) =>
-          el('li', {}, el('span', { class: 'mist-l', text: m.label }), chip(m.topic), el('b', { class: 'mist-c', text: '×' + m.count })))) : null);
+        // replaceChildren() turns a null argument into the text "null", so only pass the list when there is one
+        ...(rest.length ? [el('ol', { class: 'mist-list' }, ...rest.slice(0, 4).map((m) =>
+          el('li', {}, el('span', { class: 'mist-l', text: m.label }), chip(m.topic), el('b', { class: 'mist-c', text: '×' + m.count }))))] : []));
     }
   }
 
