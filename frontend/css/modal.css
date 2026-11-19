@@ -102,6 +102,8 @@
 .pz-panel { position: absolute; z-index: 2; pointer-events: auto; max-height: 88vh; max-height: 88dvh; background: #1d1f24; background-clip: padding-box; }
 .pz-grab { display: none; }
 .pz-body { overflow-y: auto; overscroll-behavior: contain; padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+/* Scroll, never squash: without this a short phone shrinks the code block (overflow-x: auto lets it go to ~0) and the next block covers it. */
+.pz-body > * { flex-shrink: 0; }
 .pz-title { font-weight: 500; }
 .prompt { font-size: 15px; line-height: 1.55; color: var(--text); }
 .pz-edge { position: absolute; inset: 0; border: 2px solid var(--matcha); border-radius: inherit; pointer-events: none; opacity: 0; }
