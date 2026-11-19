@@ -293,7 +293,8 @@ alternate): see section 7.
 Same match, but Misaki also coaches. Nothing in training mode is ranked or unlocks levels.
 - Misaki plays one level lower than chosen (min 1) and her think delay per placement is ×1.5 (puzzle answer
   times are unchanged).
-- Server → client `{"t":"coach", "kind": "<kind>", "text": "<Vietnamese, ≤ 120 chars>", "cells"?: [[r,c]...]}`
+- Server → client `{"t":"coach", "kind": "<kind>", "text": "<Vietnamese or English, ≤ 120 chars>", "cells"?: [[r,c]...]}`
+  (the language is the connection's `lang=en|vi` query parameter on the WebSocket URL; the variant is the same in both)
   pushed on events, at most one every 4 s (except `suggestion`). Kinds and when:
   `danger` (pending lines would push your blocks off, i.e. a block of yours is in the top `pending` rows: `n` is
   the number of pending rows and `cells` lists those blocks), `incoming` (first time the opponent sends lines;

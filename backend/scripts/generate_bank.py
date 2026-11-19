@@ -125,14 +125,25 @@ class Ctx:
         return render(s, self.ctx)
 
     def common(self, mistakes: dict) -> dict:
+        """The text fields of a variant, Vietnamese and English. The English text is rendered from the ``_en``
+        siblings with the very same parameters; nothing here touches a random generator."""
         tpl, block = self.tpl, self.block
         hints = [self.text(h) for h in tpl["hints"]]
         explanation = self.text(block.get("explanation") or tpl["explanation"])
-        return {"prompt": self.text(block["prompt"]), "hints": hints, "explanation": explanation}
+        hints_en = [self.text(h) for h in tpl["hints_en"]]
+        explanation_en = self.text(block.get("explanation_en") or tpl["explanation_en"])
+        return {"prompt": self.text(block["prompt"]), "hints": hints, "explanation": explanation,
+                "prompt_en": self.text(block["prompt_en"]), "hints_en": hints_en,
+                "explanation_en": explanation_en}
 
 
 def note_for(name: str, mistakes: dict) -> str | None:
     return mistakes.get(name)
+
+
+def note_en_for(name: str, mistakes: dict) -> str | None:
+    """English note of a named mistake: the ``<name>_en`` sibling in content/mistakes.yaml."""
+    return mistakes.get(name + "_en")
 
 
 def make_fill(tpl, tier, block, ctx, rng, mistakes):
@@ -156,8 +167,8 @@ def make_fill(tpl, tier, block, ctx, rng, mistakes):
             raise Drop("ambiguous_distractor")
         ds.append({
             "name": d["name"], "text": frag, "group": diag.error_group or "output_mismatch",
-            "actual_output": diag.actual_output, "message": diag.message,
-            "note": note_for(d["name"], mistakes),
+            "actual_output": diag.actual_output, "message": diag.message, "message_en": diag.message_en,
+            "note": note_for(d["name"], mistakes), "note_en": note_en_for(d["name"], mistakes),
         })
         if len(ds) == MAX_DISTRACTORS:
             break
@@ -188,7 +199,7 @@ def make_fill(tpl, tier, block, ctx, rng, mistakes):
         buggy_items = [(ind, t.replace("___", ds[0]["text"])) for ind, t in sk_lines]
         fixed_line = sk_lines[bug_idx][1].replace("___", answer)
         wrong_fixes = [{"name": o["name"], "text": sk_lines[bug_idx][1].replace("___", o["text"]),
-                        "note": o["note"]} for o in others]
+                        "note": o["note"], "note_en": o["note_en"]} for o in others]
         try:
             form = build_bug_form(buggy_items, bug_idx, fixed_line, wrong_fixes, expected, rng)
         except Drop:
@@ -196,7 +207,10 @@ def make_fill(tpl, tier, block, ctx, rng, mistakes):
         if form is not None:
             bug_prompt = (f"Chương trình dưới đây chạy chưa đúng. Chọn cách sửa đúng "
                           f"để in ra {cx.ctx['expected_inline']}.")
-            debug = dict(base, type="find_bug", prompt=bug_prompt, code=None, expected_output=expected,
+            bug_prompt_en = (f"The program below does not work right yet. Choose the right fix "
+                             f"to print {cx.ctx['expected_inline']}.")
+            debug = dict(base, type="find_bug", prompt=bug_prompt, prompt_en=bug_prompt_en, code=None,
+                         expected_output=expected,
                          solution_code=correct_code, data=form, key=("debug",) + key)
     return primary, debug
 
@@ -212,7 +226,8 @@ def make_predict(tpl, tier, block, ctx, rng, mistakes):
         if out in seen or not output_ok(out):
             continue
         seen.add(out)
-        ds.append({"name": d["name"], "text": out, "note": note_for(d["name"], mistakes)})
+        ds.append({"name": d["name"], "text": out, "note": note_for(d["name"], mistakes),
+                   "note_en": note_en_for(d["name"], mistakes)})
         if len(ds) == MAX_DISTRACTORS:
             break
     if len(ds) < 3:
@@ -224,7 +239,7 @@ def make_predict(tpl, tier, block, ctx, rng, mistakes):
     opts[slots[0]] = {"text": expected, "correct": True, "name": None, "group": None, "note": None}
     for k in range(3):
         opts[slots[k + 1]] = {"text": ds[k]["text"], "correct": False, "name": ds[k]["name"],
-                              "group": "wrong_choice", "note": ds[k]["note"]}
+                              "group": "wrong_choice", "note": ds[k]["note"], "note_en": ds[k]["note_en"]}
     for i, o in enumerate(opts):
         o["id"] = letter(i)
     return dict(base, type="predict_output", code=code, expected_output=expected,
@@ -246,7 +261,8 @@ def make_parsons(tpl, tier, block, ctx, rng, mistakes):
         if diag.passed:
             raise Drop("ambiguous_distractor")
         ds.append({"name": d["name"], "code": join_lines(split_lines(dcode)),
-                   "group": diag.error_group, "note": note_for(d["name"], mistakes)})
+                   "group": diag.error_group, "note": note_for(d["name"], mistakes),
+                   "note_en": note_en_for(d["name"], mistakes)})
     if not ds:
         raise Drop("no_distractors")
 
@@ -293,7 +309,8 @@ def make_bug(tpl, tier, block, ctx, rng, mistakes):
         if rep in seen:
             continue
         seen.add(rep)
-        ds.append({"name": d["name"], "text": rep, "note": note_for(d["name"], mistakes)})
+        ds.append({"name": d["name"], "text": rep, "note": note_for(d["name"], mistakes),
+                   "note_en": note_en_for(d["name"], mistakes)})
         if len(ds) == 3:
             break
     data = build_bug_form(items, bug_idx, fix, ds, expected, rng)  # also rejects ambiguous distractors
@@ -383,7 +400,10 @@ CREATE TABLE puzzles (
     solution_code TEXT NOT NULL,
     explanation TEXT NOT NULL,
     hints TEXT NOT NULL,
-    data TEXT NOT NULL
+    data TEXT NOT NULL,
+    prompt_en TEXT NOT NULL,
+    explanation_en TEXT NOT NULL,
+    hints_en TEXT NOT NULL
 );
 CREATE INDEX idx_puzzles_select ON puzzles (topic, tier, debug_only);
 CREATE INDEX idx_puzzles_template ON puzzles (template_id);
@@ -399,10 +419,11 @@ def write_db(path: Path, puzzles: list[dict], seed: int) -> None:
     try:
         con.executescript(SCHEMA)
         con.executemany(
-            "INSERT INTO puzzles VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO puzzles VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [(p["id"], p["template_id"], p["topic"], p["type"], p["tier"], p["debug_only"], p["prompt"],
               p["code"], p["expected_output"], p["solution_code"], p["explanation"],
-              json.dumps(p["hints"], ensure_ascii=False), json.dumps(p["data"], ensure_ascii=False))
+              json.dumps(p["hints"], ensure_ascii=False), json.dumps(p["data"], ensure_ascii=False),
+              p["prompt_en"], p["explanation_en"], json.dumps(p["hints_en"], ensure_ascii=False))
              for p in puzzles])
         con.execute("INSERT INTO meta VALUES ('seed', ?)", (str(seed),))
         con.commit()
@@ -421,9 +442,14 @@ def load_templates() -> list[dict]:
             raise SystemExit(f"{f.name}: id {tpl['id']!r} does not match file name")
         if len(tpl["hints"]) != 3:
             raise SystemExit(f"{f.name}: needs exactly 3 hints")
+        if len(tpl.get("hints_en") or []) != 3 or not tpl.get("explanation_en"):
+            raise SystemExit(f"{f.name}: needs hints_en (3) and explanation_en (English siblings, see app/i18n.py)")
         for tier, blocks in tpl["tiers"].items():
             if not isinstance(blocks, list):
                 raise SystemExit(f"{f.name}: tier {tier} must be a list of blocks")
+            for block in blocks:
+                if not block.get("prompt_en"):
+                    raise SystemExit(f"{f.name}: tier {tier} block without prompt_en")
         tpls.append(tpl)
     return tpls
 

@@ -95,6 +95,11 @@
   <!-- START -->
   <section id="screen-start" class="screen start">
     <div class="start-wrap">
+      <!-- Language toggle (js/i18n.js wires it; the current language is the pressed key) -->
+      <div class="switch lang-switch" role="radiogroup" aria-label="Language / Ngôn ngữ">
+        <label class="key keyopt"><input class="sr-only" type="radio" name="lang" value="vi" aria-label="Tiếng Việt"><span class="cap-top"><span class="kb-label" lang="vi">VI</span></span></label>
+        <label class="key keyopt"><input class="sr-only" type="radio" name="lang" value="en" aria-label="English"><span class="cap-top"><span class="kb-label" lang="en">EN</span></span></label>
+      </div>
       <h1 class="title-keys" aria-label="Syntax Stack">
         <span id="tk-1" class="tk-row" aria-hidden="true"></span>
         <span id="tk-2" class="tk-row" aria-hidden="true"></span>

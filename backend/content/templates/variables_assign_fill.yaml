@@ -5,11 +5,17 @@ hints:
   - "Biến lưu một giá trị, còn print() in ra đúng giá trị mà biến đang giữ."
   - "Đọc chương trình từ trên xuống dưới và theo dõi giá trị hiện tại của biến sau mỗi dòng."
   - "Đầu ra cần là {expected_inline}. Hãy đi ngược từ dòng print() để tìm xem ô trống phải mang giá trị nào."
+hints_en:
+  - "A variable stores a value, and print() prints exactly the value the variable holds."
+  - "Read the program from top to bottom and keep track of the variable's current value after each line."
+  - "The output we need is {expected_inline}. Work backwards from the print() line to find which value the blank must hold."
 explanation: "Chỗ trống cần giá trị để sau khi chạy hết các dòng, biến in ra đúng {expected_inline}. Hãy đi từng dòng từ trên xuống và theo dõi giá trị của biến."
+explanation_en: "The blank needs a value so that, after all the lines have run, the variable prints exactly {expected_inline}. Go line by line from the top and track the variable's value."
 tiers:
   1:
     - count: 8
       prompt: "Điền giá trị còn thiếu để chương trình in ra {expected_inline}."
+      prompt_en: "Fill in the missing value so the program prints {expected_inline}."
       code: |
         {v} = ___
         print({v})
@@ -23,8 +29,10 @@ tiers:
         - {name: doubled_value, frag: "{n*2}"}
         - {name: ten_more, frag: "{n+10}"}
       explanation: "print({v}) in ra giá trị đang lưu trong {v}. Muốn in {expected_inline} thì phải gán {v} = {n}."
+      explanation_en: "print({v}) prints the value stored in {v}. To print {expected_inline}, you have to assign {v} = {n}."
     - count: 6
       prompt: "Điền giá trị còn thiếu để chương trình in ra {expected_inline}. Nhớ rằng chuỗi cần dấu nháy."
+      prompt_en: "Fill in the missing value so the program prints {expected_inline}. Remember that text needs quotes."
       code: |
         {v} = ___
         print({v})
@@ -42,9 +50,11 @@ tiers:
         - {name: wrong_case, frag: '"{up}"'}
         - {name: repeated_text, frag: '"{s}{s}"'}
       explanation: "Chữ (chuỗi) phải nằm trong dấu nháy, ví dụ \"{s}\". Không có dấu nháy, Python hiểu {s} là tên một biến chưa tồn tại."
+      explanation_en: "Text (a string) must be inside quotes, for example \"{s}\". Without quotes, Python thinks {s} is the name of a variable that does not exist."
   2:
     - count: 12
       prompt: "Biến được cập nhật hai lần. Điền số để chương trình in ra {expected_inline}."
+      prompt_en: "The variable is updated twice. Fill in the number so the program prints {expected_inline}."
       code: |
         {v} = {a}
         {v} = {v} + ___
@@ -63,9 +73,11 @@ tiers:
         - {name: off_by_one_high, frag: "{b+1}"}
         - {name: off_by_one_low, frag: "{b-1}"}
       explanation: "{v} = {v} + ... lấy giá trị cũ của {v} ({a}), cộng thêm số ở ô trống rồi ghi đè lại. Cần {a} + ? = {target} nên ô trống là {b}."
+      explanation_en: "{v} = {v} + ... takes the old value of {v} ({a}), adds the number in the blank and stores the result over the old value. We need {a} + ? = {target}, so the blank is {b}."
   3:
     - count: 12
       prompt: "Vòng lặp cộng thêm một giá trị ở mỗi lần chạy. Điền số để in ra {expected_inline}."
+      prompt_en: "The loop adds one more value on every round. Fill in the number to print {expected_inline}."
       code: |
         {v} = {a}
         for i in range({r}):
@@ -84,3 +96,4 @@ tiers:
         - {name: used_loop_count, frag: "{r}"}
         - {name: used_loop_variable, frag: "i"}
       explanation: "Thân vòng lặp chạy {r} lần, mỗi lần cộng thêm cùng một số vào {v}. Từ {a} đến {expected_inline} cần cộng {r} lần số {b}."
+      explanation_en: "The loop body runs {r} times, adding the same number to {v} each time. To go from {a} to {expected_inline}, you add {b} {r} times."

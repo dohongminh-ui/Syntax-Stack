@@ -10,7 +10,9 @@ from typing import Optional
 
 import yaml
 
+from . import i18n
 from . import validator as V
+from .i18n import tr
 
 LEVELS_DIR = Path(os.environ.get("SYNTAX_STACK_LEVELS", Path(__file__).resolve().parents[1] / "content" / "levels"))
 
@@ -22,6 +24,10 @@ ERROR_GROUPS = (
 CONSTRUCT_NAMES_VI = {
     "Assign": "phép gán biến", "If": "câu lệnh if", "For": "vòng lặp for", "While": "vòng lặp while",
     "FunctionDef": "định nghĩa hàm (def)", "Return": "lệnh return",
+}
+CONSTRUCT_NAMES_EN = {
+    "Assign": "variable assignment", "If": "an if statement", "For": "a for loop", "While": "a while loop",
+    "FunctionDef": "a function definition (def)", "Return": "a return statement",
 }
 
 
@@ -83,23 +89,23 @@ def load_levels(force: bool = False) -> dict[str, dict]:
 def get_level(level_id: str) -> dict:
     lv = load_levels().get(level_id)
     if lv is None:
-        raise LevelNotFound(f"Không tìm thấy màn '{level_id}'.")
+        raise LevelNotFound(tr(f"Không tìm thấy màn '{level_id}'.", f"Level '{level_id}' was not found."))
     return lv
 
 
-def list_levels() -> list[dict]:
+def list_levels(lang: Optional[str] = None) -> list[dict]:
     return [
-        {"id": lv["id"], "order": lv["order"], "title": lv["title"], "concept": lv["concept"],
+        {"id": lv["id"], "order": lv["order"], "title": i18n.pick(lv, "title", lang), "concept": lv["concept"],
          "rows": lv["rows"], "cols": lv["cols"]}
         for lv in sorted(load_levels().values(), key=lambda l: l["order"])
     ]
 
 
-def public_level(lv: dict) -> dict:
+def public_level(lv: dict, lang: Optional[str] = None) -> dict:
     """Player-facing level: no solution, no ``is_distractor``."""
     return {
-        "id": lv["id"], "order": lv["order"], "title": lv["title"], "concept": lv["concept"],
-        "goal": lv["goal"], "expected_output": lv["expected_output"],
+        "id": lv["id"], "order": lv["order"], "title": i18n.pick(lv, "title", lang), "concept": lv["concept"],
+        "goal": i18n.pick(lv, "goal", lang), "expected_output": lv["expected_output"],
         "twist_output": lv.get("twist_output"), "predictions": lv.get("predictions", []),
         "rows": lv["rows"], "cols": lv["cols"], "indent_cols": lv.get("indent_cols", 2),
         "tokens": [{"id": t["id"], "text": t["text"], "w": t["w"], "topic": t["topic"]} for t in lv["tokens"]],
@@ -119,9 +125,10 @@ def assemble(lv: dict, rows: list[dict]) -> list[AsmLine]:
     for r in sorted(rows, key=lambda r: r["row"]):
         ridx = r["row"]
         if not 0 <= ridx < lv["rows"]:
-            raise RowsError(f"Hàng {ridx} nằm ngoài bàn chơi (0 đến {lv['rows'] - 1}).")
+            raise RowsError(tr(f"Hàng {ridx} nằm ngoài bàn chơi (0 đến {lv['rows'] - 1}).",
+                               f"Row {ridx} is outside the board (0 to {lv['rows'] - 1})."))
         if ridx in seen_rows:
-            raise RowsError(f"Hàng {ridx} xuất hiện nhiều lần.")
+            raise RowsError(tr(f"Hàng {ridx} xuất hiện nhiều lần.", f"Row {ridx} appears more than once."))
         seen_rows.add(ridx)
         placed = r["tokens"]
         if not placed:
@@ -131,19 +138,22 @@ def assemble(lv: dict, rows: list[dict]) -> list[AsmLine]:
         for p in placed:
             tid = p["id"]
             if tid not in tokens:
-                raise RowsError(f"Mảnh '{tid}' không thuộc màn này.")
+                raise RowsError(tr(f"Mảnh '{tid}' không thuộc màn này.", f"Tile '{tid}' does not belong to this level."))
             if tid in used:
-                raise RowsError(f"Mảnh '{tid}' được dùng nhiều hơn một lần.")
+                raise RowsError(tr(f"Mảnh '{tid}' được dùng nhiều hơn một lần.", f"Tile '{tid}' is used more than once."))
             used.add(tid)
             col, w = p["col"], tokens[tid]["w"]
             if col < 0 or col + w > cols:
-                raise RowsError(f"Mảnh '{tid}' vượt ra ngoài bàn chơi (cột {col}, rộng {w}, tối đa {cols} cột).")
+                raise RowsError(tr(f"Mảnh '{tid}' vượt ra ngoài bàn chơi (cột {col}, rộng {w}, tối đa {cols} cột).",
+                                   f"Tile '{tid}' goes outside the board (column {col}, width {w}, at most {cols} columns)."))
             if col < prev_end:
-                raise RowsError(f"Mảnh '{tid}' chồng lên mảnh khác ở hàng {ridx}.")
+                raise RowsError(tr(f"Mảnh '{tid}' chồng lên mảnh khác ở hàng {ridx}.",
+                                   f"Tile '{tid}' overlaps another tile in row {ridx}."))
             prev_end = col + w
         first = placed[0]["col"]
         if first > indent_cols:
-            raise RowsError(f"Mảnh đầu tiên của hàng {ridx} phải nằm ở cột 0 đến {indent_cols}.")
+            raise RowsError(tr(f"Mảnh đầu tiên của hàng {ridx} phải nằm ở cột 0 đến {indent_cols}.",
+                               f"The first tile of row {ridx} must be in column 0 to {indent_cols}."))
         lines.append(AsmLine(ridx, first, [p["id"] for p in placed], [tokens[p["id"]]["text"] for p in placed]))
     return lines
 
@@ -180,7 +190,10 @@ def _unused_distractors(lv: dict, lines: list[AsmLine]) -> int:
 
 
 def run_level(lv: dict, rows: list[dict], *, include_trace: bool = False,
-              prediction: Optional[str] = None, target_output: Optional[str] = None) -> dict:
+              prediction: Optional[str] = None, target_output: Optional[str] = None,
+              lang: Optional[str] = None) -> dict:
+    """``lang`` (default: the request's) only chooses the language of ``message``; the verdict never depends on it."""
+    lang = i18n.resolve(lang)
     lines = assemble(lv, rows)
     expected = lv["expected_output"] if target_output is None else target_output
     base = {"passed": False, "error_group": None, "row": None, "message": "", "actual_output": None,
@@ -191,7 +204,9 @@ def run_level(lv: dict, rows: list[dict], *, include_trace: bool = False,
     if prediction is not None:
         base["prediction"] = {"correct": None}
     if not lines:
-        base.update(error_group="empty", message="Bàn chơi đang trống. Hãy kéo các mảnh mã lên các hàng.")
+        base.update(error_group="empty",
+                    message=tr("Bàn chơi đang trống. Hãy kéo các mảnh mã lên các hàng.",
+                               "The board is empty. Drag the code tiles onto the rows.", lang))
         return base
 
     code = "\n".join(l.source for l in lines)
@@ -210,12 +225,14 @@ def run_level(lv: dict, rows: list[dict], *, include_trace: bool = False,
 
     if not res.ok:
         base.update(
-            error_group=res.error_group, message=res.message or "Chương trình bị lỗi.",
+            error_group=res.error_group,
+            message=res.msg(lang) or tr("Chương trình bị lỗi.", "The program has an error.", lang),
             row=_row_of_lineno(lines, res.lineno),
             actual_output=V.normalize_output(res.output) if res.output else None,
         )
         if res.error_group == "missing_colon" and res.message:
-            base["message"] = f"{res.message} (dòng {res.lineno})" if res.lineno else res.message
+            base["message"] = (f"{res.msg(lang)} " + tr(f"(dòng {res.lineno})", f"(line {res.lineno})", lang)
+                               if res.lineno else res.msg(lang))
         return base
 
     actual = V.normalize_output(res.output)
@@ -226,8 +243,10 @@ def run_level(lv: dict, rows: list[dict], *, include_trace: bool = False,
     names = {type(n).__name__ for n in ast.walk(res.tree)}
     missing = [c for c in lv.get("required_constructs", []) if c not in names]
     if missing:
-        what = ", ".join(CONSTRUCT_NAMES_VI.get(c, c) for c in missing)
-        base.update(error_group="missing_construct", message=f"Thiếu cấu trúc bắt buộc: {what}.")
+        names = CONSTRUCT_NAMES_EN if lang == "en" else CONSTRUCT_NAMES_VI
+        what = ", ".join(names.get(c, c) for c in missing)
+        base.update(error_group="missing_construct",
+                    message=tr(f"Thiếu cấu trúc bắt buộc: {what}.", f"A required construct is missing: {what}.", lang))
         return base
 
     if actual != V.normalize_output(expected):
@@ -235,11 +254,12 @@ def run_level(lv: dict, rows: list[dict], *, include_trace: bool = False,
         # same lines, same indents, only reordered -> an ordering problem
         if sorted((l.indent, l.text) for l in lines) == sorted(lv["_canonical"]):
             group = "wrong_order"
-        base.update(error_group=group, message=V.mismatch_message(actual, expected),
+        base.update(error_group=group, message=V.mismatch_message(actual, expected, lang),
                     row=_first_diff_row(lv, lines))
         return base
 
-    base.update(passed=True, message="Chính xác! Chương trình in đúng đầu ra.",
+    base.update(passed=True,
+                message=tr("Chính xác! Chương trình in đúng đầu ra.", "Correct! The program prints the right output.", lang),
                 unused_distractors=_unused_distractors(lv, lines))
     return base
 
@@ -261,7 +281,7 @@ def practice_rows(lv: dict) -> list[dict]:
     rows = canonical_rows(lv)
     change = lv.get("practice")
     if not change:
-        raise RowsError("Màn này chưa có bài luyện.")
+        raise RowsError(tr("Màn này chưa có bài luyện.", "This level has no practice exercise yet."))
     if "row" in change:
         row = rows[change["row"]]
         offset = change["indent"] - row["tokens"][0]["col"]
@@ -276,10 +296,11 @@ def practice_rows(lv: dict) -> list[dict]:
 def run_twist(lv: dict, original: list[dict], changed: list[dict], *, include_trace: bool) -> dict:
     target = lv.get("twist_output")
     if target is None or not run_level(lv, original)["passed"]:
-        raise RowsError("Hãy hoàn thành màn trước khi bắt đầu thử thách.")
+        raise RowsError(tr("Hãy hoàn thành màn trước khi bắt đầu thử thách.",
+                           "Finish the level before you start the twist."))
     result = run_level(lv, changed, include_trace=include_trace, target_output=target)
     before = {(r["row"], t["col"]): t["id"] for r in original for t in r["tokens"]}
     after = {(r["row"], t["col"]): t["id"] for r in changed for t in r["tokens"]}
     if before.keys() != after.keys() or sum(before[pos] != after[pos] for pos in before) != 1:
-        raise RowsError("Thay đúng một mảnh mã ở cùng vị trí.")
+        raise RowsError(tr("Thay đúng một mảnh mã ở cùng vị trí.", "Swap exactly one code tile, in the same spot."))
     return result

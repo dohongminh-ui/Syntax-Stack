@@ -16,7 +16,12 @@ MAX_OUTPUT_LINE_CHARS = 40
 
 
 class Drop(Exception):
-    """Variant rejected by a verification rule."""
+    """Variant rejected by a verification rule. ``str(exc)`` is the reason (Vietnamese for the custom generator's
+    learner-facing reasons); ``exc.en`` is the English reason (the same text for internal rule codes)."""
+
+    def __init__(self, reason: str = "", en: str | None = None):
+        super().__init__(reason)
+        self.en = en if en is not None else reason
 
 
 # ----------------------------------------------------------------------------- text helpers
@@ -138,7 +143,8 @@ def build_bug_form(items, bug_idx, fix, wrong_fixes, expected, rng):
         if diag.passed:
             raise Drop("ambiguous_distractor")
         wf.append({"line_id": bug_id, "text": w["text"], "name": w["name"], "group": "wrong_fix",
-                   "actual_output": diag.actual_output, "message": diag.message, "note": w["note"]})
+                   "actual_output": diag.actual_output, "message": diag.message, "message_en": diag.message_en,
+                   "note": w["note"], "note_en": w.get("note_en")})
     if not wf:
         raise Drop("no_wrong_fix")
 
@@ -159,7 +165,8 @@ def build_bug_form(items, bug_idx, fix, wrong_fixes, expected, rng):
     def other(c):
         i, m, diag = c
         return {"line_id": f"l{i + 1}", "text": m, "name": "edited_wrong_line", "group": "wrong_line",
-                "actual_output": diag.actual_output, "message": diag.message, "note": None}
+                "actual_output": diag.actual_output, "message": diag.message, "message_en": diag.message_en,
+                "note": None, "note_en": None}
 
     o1 = cands[0]
     o2 = next((c for c in cands[1:] if c[0] == o1[0]), None) or (cands[1] if len(cands) > 1 else None)
@@ -184,4 +191,4 @@ def build_bug_form(items, bug_idx, fix, wrong_fixes, expected, rng):
     bdiag = V.diagnose(join_lines(items), expected)
     return {"lines": [{"id": f"l{i + 1}", "text": t, "indent": ind} for i, (ind, t) in enumerate(items)],
             "bug_line": bug_id, "options": opts, "buggy_output": bdiag.actual_output,
-            "buggy_message": bdiag.message}
+            "buggy_message": bdiag.message, "buggy_message_en": bdiag.message_en}

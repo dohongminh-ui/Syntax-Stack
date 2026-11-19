@@ -1,5 +1,7 @@
 // API client. Relative paths only. Never assumes answers.
 // When the URL has ?mock=1 every call is routed to mock-api.js instead.
+import { lang } from './i18n.js';
+
 export const isMock = new URLSearchParams(location.search).get('mock') === '1';
 
 let mockMod = null;
@@ -20,7 +22,8 @@ async function request(method, url, body, { timeout = TIMEOUT_MS, headers = null
   try {
     res = await fetch(url, {
       method,
-      headers: body || headers ? { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(headers || {}) } : undefined,
+      // X-Lang tells the server which language to answer in (puzzle text, hints, errors, Misaki lines): 'vi' or 'en'.
+      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), 'X-Lang': lang(), ...(headers || {}) },
       body: body ? JSON.stringify(body) : undefined,
       signal: ctrl.signal,
     });
@@ -329,5 +332,5 @@ export async function pvpMisaki(deviceId) {
 export async function openPvpSocket(ticket) {
   if (isMock) return new (await mock()).MockPvpSocket(ticket);
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return new WebSocket(`${proto}//${location.host}/api/pvp/ws?ticket=${encodeURIComponent(ticket)}`);
+  return new WebSocket(`${proto}//${location.host}/api/pvp/ws?ticket=${encodeURIComponent(ticket)}&lang=${lang()}`);
 }

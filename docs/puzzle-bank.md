@@ -46,6 +46,7 @@ A block is a family of variants that share one code skeleton. Fields common to a
 | --- | --- | --- |
 | `count` | yes | Maximum number of variants to keep from this block. The generator stops when it has accepted `count`. |
 | `prompt` | yes | The question text shown to the player (Vietnamese). May use `{...}` expressions. |
+| `prompt_en` | yes | The English text of `prompt`, with exactly the same `{...}` placeholders. The same goes for `hints_en` / `explanation_en` (template level) and `explanation_en` (block level). Python code, `params` and expected outputs are never translated. |
 | `code` | yes | Code skeleton, a YAML block scalar. Indentation must be a multiple of 4 spaces. Meaning depends on the type (below). |
 | `params` | no | Map from parameter name to a list of values. The generator takes the cartesian product, shuffles it, and tries combinations in that order. |
 | `derived` | no | Map from name to a Python expression computed from the parameters, in order (later ones can use earlier ones). |

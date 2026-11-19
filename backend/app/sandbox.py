@@ -17,6 +17,7 @@ from typing import Optional
 
 from . import bank
 from . import validator as V
+from .i18n import tr
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 GENERATION_TIMEOUT_S = 5.0   # one whole generation job (all candidate runs happen inside one child)
@@ -65,7 +66,8 @@ def run_job(job: dict, timeout: float) -> dict:
     """Run one job in a child process and return its ``result`` dict. Raises ``SandboxError`` / ``SandboxBusy``."""
     payload = json.dumps(job).encode("ascii")
     if not _slots.acquire(timeout=BUSY_WAIT_S):
-        raise SandboxBusy("Máy chủ đang bận chạy mã của người khác. Hãy thử lại sau ít giây.")
+        raise SandboxBusy(tr("Máy chủ đang bận chạy mã của người khác. Hãy thử lại sau ít giây.",
+                             "The server is busy running other people's code. Please try again in a few seconds."))
     try:
         kwargs = {}
         if os.name == "nt":
@@ -104,9 +106,13 @@ def diagnose(code: str, expected: str) -> V.Diagnosis:
     try:
         r = run_job({"op": "diagnose", "code": code, "expected": expected}, CHECK_TIMEOUT_S)
         run = V.RunResult(r["run_ok"], output=r["actual_output"] or "", error_kind=r["error_kind"],
-                          error_group=r["error_group"], message=r["message"], lineno=r["lineno"])
-        return V.Diagnosis(r["passed"], r["error_group"], r["message"], r["actual_output"], r["lineno"], run)
+                          error_group=r["error_group"], message=r["message"], lineno=r["lineno"],
+                          message_en=r.get("message_en"))
+        return V.Diagnosis(r["passed"], r["error_group"], r["message"], r["actual_output"], r["lineno"], run,
+                           r.get("message_en"))
     except (SandboxError, KeyError, TypeError):
         msg = "Chương trình chạy quá lâu hoặc không kiểm tra được, có thể có vòng lặp vô hạn."
-        run = V.RunResult(False, error_kind="limit", error_group="output_mismatch", message=msg, exc_name="sandbox")
-        return V.Diagnosis(False, "output_mismatch", msg, None, None, run)
+        msg_en = "The program runs for too long or cannot be checked, maybe there is an endless loop."
+        run = V.RunResult(False, error_kind="limit", error_group="output_mismatch", message=msg, exc_name="sandbox",
+                          message_en=msg_en)
+        return V.Diagnosis(False, "output_mismatch", msg, None, None, run, msg_en)

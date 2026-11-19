@@ -5,11 +5,17 @@ hints:
   - "Vòng lặp lặp lại các dòng thụt vào bên trong nó; mỗi lần lặp biến đếm nhận một giá trị mới."
   - "Lập bảng: ghi giá trị của biến đếm và của biến tổng sau mỗi lần lặp. Nhớ range() không gồm số kết thúc."
   - "Biến tổng giữ lại giá trị cũ giữa các lần lặp, và dòng print() thụt lề ở đâu thì in ở đó (trong hay sau vòng lặp)."
+hints_en:
+  - "A loop repeats the lines indented inside it; on every round the counter gets a new value."
+  - "Make a table: write down the counter and the total after every round. Remember that range() does not include its end value."
+  - "The total keeps its old value between rounds, and a print() prints wherever it is indented (inside the loop or after it)."
 explanation: "Lập bảng theo từng lần lặp: biến tổng cộng dồn giá trị của biến đếm sau mỗi vòng. Kết quả đúng là {expected_inline}."
+explanation_en: "Make a table round by round: the total adds the counter's value on every round. The correct result is {expected_inline}."
 tiers:
   1:
     - count: 8
       prompt: "Chương trình này in ra gì?"
+      prompt_en: "What does this program print?"
       code: |
         {t} = 0
         for {i} in range({n}):
@@ -27,6 +33,7 @@ tiers:
   2:
     - count: 12
       prompt: "Chương trình này in ra những gì? (Mỗi lần print là một dòng.)"
+      prompt_en: "What does this program print? (Each print is one line.)"
       code: |
         {t} = 0
         for {i} in range({a}, {b}):
@@ -50,6 +57,7 @@ tiers:
   3:
     - count: 6
       prompt: "Chương trình này in ra gì?"
+      prompt_en: "What does this program print?"
       code: |
         {t} = 0
         for {i} in range({a}, {b}):
@@ -73,6 +81,7 @@ tiers:
         - {name: counted_instead_of_summed, out: "{cnt}"}
     - count: 8
       prompt: "Chương trình này in ra gì?"
+      prompt_en: "What does this program print?"
       code: |
         {t} = 0
         for {i} in range({a}, {b}):

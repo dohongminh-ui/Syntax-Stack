@@ -1,8 +1,10 @@
 id: r4
 order: 4
 title: "Cộng dồn"
+title_en: "Adding up"
 concept: loops
 goal: "Cộng 1 + 2 + 3 bằng vòng lặp rồi in tổng ra, kết quả là 6."
+goal_en: "Add 1 + 2 + 3 with a loop, then print the total. The result is 6."
 expected_output: "6"
 twist_output: "3"
 practice: {row: 3, indent: 1}
@@ -37,6 +39,10 @@ hints:
   - "Biến tong giữ kết quả cộng dồn: mỗi lần lặp cộng thêm một số vào nó. print kết quả cuối đứng sau vòng lặp."
   - "Khởi tạo tong bằng 0, dùng for để cộng từng số vào tong, rồi in tong. Chú ý dòng nào cần thụt vào."
   - "Chỉ dòng cộng dồn nằm trong vòng lặp; dòng print(tong) thẳng hàng với for để chỉ in một lần ở cuối. range() bắt đầu từ 1 và dừng trước giá trị kết thúc."
+hints_en:
+  - "The variable tong holds the running total: every round adds one more number to it. The print of the final result comes after the loop."
+  - "Start tong at 0, use for to add each number to tong, then print tong. Pay attention to which line needs to be indented."
+  - "Only the adding line is inside the loop; the print(tong) line lines up with for so it prints just once at the end. range() starts at 1 and stops before its end value."
 group_hints:
   output_mismatch:
     - "Kết quả sai thường do vị trí (thụt lề) của print hoặc do giá trị kết thúc của range()."
@@ -58,3 +64,24 @@ group_hints:
     - "Màn này yêu cầu dùng biến và vòng lặp for."
     - "Cần một biến tổng và một vòng for cộng dồn vào nó."
     - "Dùng tong = 0, rồi vòng for với range, rồi dòng cộng dồn thụt vào."
+group_hints_en:
+  output_mismatch:
+    - "A wrong result is usually caused by where the print is indented, or by the end value of range()."
+    - "If many numbers are printed instead of one, the print is inside the loop. If the total is wrong, check the end value of range()."
+    - "To add 1 + 2 + 3, range has to stop before 4, and print(tong) has to line up with for (not indented)."
+  wrong_order:
+    - "A variable must be created before it is used, and the result is printed only after it has been calculated."
+    - "From top to bottom: assign tong = 0, the for loop, the indented adding line, then print."
+    - "tong = 0 goes in the row above the for line; print(tong) goes in the bottom row."
+  bad_indent:
+    - "The loop body line must be indented one level; the other lines are not."
+    - "Only the line tong = tong + i is indented, at column 1. The lines tong = 0, for and print stay at column 0."
+    - "Put the line tong = tong + i at column 1 right below the for line, and print(tong) at column 0."
+  missing_colon:
+    - "The for line must end with a colon."
+    - "The ':' tile goes at the end of the for line, after the range tile."
+    - "Add the ':' tile to the end of the row that holds for i in range(1, 4)."
+  missing_construct:
+    - "This level asks you to use a variable and a for loop."
+    - "You need a total variable and a for loop that adds to it."
+    - "Use tong = 0, then the for loop with range, then the indented adding line."

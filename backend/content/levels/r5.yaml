@@ -1,8 +1,10 @@
 id: r5
 order: 5
 title: "Hàm nhân đôi"
+title_en: "The doubling function"
 concept: functions
 goal: "Viết hàm gap_doi nhân đôi một số rồi gọi nó với số 4 để in ra 8."
+goal_en: "Write a function gap_doi that doubles a number, then call it with 4 to print 8."
 expected_output: "8"
 twist_output: "6"
 practice: {replace: t5, with: t7}
@@ -29,6 +31,10 @@ hints:
   - "Hàm đóng gói một đoạn mã để dùng lại. return gửi kết quả ra cho nơi gọi hàm."
   - "Định nghĩa hàm gap_doi bằng def, thụt vào một dòng return trả về x nhân 2, rồi gọi hàm với số 4 trong print."
   - "Thân hàm cần return x * 2 (không dùng print bên trong hàm). Dòng print(gap_doi(4)) thẳng hàng với def."
+hints_en:
+  - "A function packs a piece of code so you can reuse it. return sends the result back to wherever the function was called."
+  - "Define the function gap_doi with def, put an indented return line that gives back x times 2, then call the function with 4 inside print."
+  - "The function body needs return x * 2 (no print inside the function). The line print(gap_doi(4)) lines up with def."
 group_hints:
   output_mismatch:
     - "Chương trình chạy nhưng in ra khác 8."
@@ -50,3 +56,24 @@ group_hints:
     - "Màn này yêu cầu định nghĩa hàm bằng def và trả kết quả bằng return."
     - "print bên trong hàm chỉ in ra màn hình, chưa gửi kết quả về cho nơi gọi."
     - "Dùng def gap_doi(x) :, rồi dòng return x * 2 thụt vào, rồi gọi hàm trong print."
+group_hints_en:
+  output_mismatch:
+    - "The program runs but prints something other than 8."
+    - "The function has to double x, not add 2. Check the operator you picked."
+    - "Use the * tile to get x * 2, because with x = 4, 4 * 2 = 8 while 4 + 2 = 6."
+  wrong_order:
+    - "A function must be defined before it is called."
+    - "The def line and the function body go on top, and the call print(gap_doi(4)) goes at the bottom."
+    - "From top to bottom: def gap_doi(x) :, the indented return, then print(gap_doi(4))."
+  bad_indent:
+    - "The function body must be indented one level under the def line."
+    - "The return line is indented at column 1; the def line and the print(gap_doi(4)) line stay at column 0."
+    - "Put the return row at column 1 right below the def line, and print(gap_doi(4)) at column 0."
+  missing_colon:
+    - "The def line must end with a colon."
+    - "The ':' tile goes at the end of the def line, after gap_doi(x)."
+    - "Add the ':' tile to the end of the row that holds def gap_doi(x)."
+  missing_construct:
+    - "This level asks you to define a function with def and send the result back with return."
+    - "A print inside the function only shows text on screen; it does not send the result back to the caller."
+    - "Use def gap_doi(x) :, then the indented line return x * 2, then call the function inside print."

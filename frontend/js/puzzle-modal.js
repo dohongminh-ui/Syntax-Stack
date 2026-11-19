@@ -128,7 +128,7 @@ export function openPuzzle(opts) {
         if (puzzle.type === 'fill_blank') cand = puzzle.code.replace('___', o.text);
         else if (puzzle.type === 'predict_output') cand = o.text;
         else cand = puzzle.lines.map((l) => '    '.repeat(l.indent) + (l.id === optLine(o) ? o.text : l.text)).join('\n');
-        const target = puzzle.type === 'predict_output' ? S.replace(/^Đầu ra:\s*/i, '') : S;
+        const target = puzzle.type === 'predict_output' ? S.replace(/^(?:Đầu ra|Output):\s*/i, '') : S;
         if (norm(cand) === target) return o.id;
       }
       return null;
@@ -468,7 +468,7 @@ export function openPuzzle(opts) {
           enterKey('Tiếp tục', finish, { id: 'pz-continue' }));
       }
       const sol = r.solution_code
-        ? puzzle.type === 'predict_output' ? r.solution_code.replace(/^Đầu ra:\s*/i, '') : r.solution_code
+        ? puzzle.type === 'predict_output' ? r.solution_code.replace(/^(?:Đầu ra|Output):\s*/i, '') : r.solution_code
         : null;
       return el('div', { class: 'res bad', role: 'status' },
         el('div', { class: 'res-title' }, icon('x', { size: 20 }), 'Chưa đúng'),

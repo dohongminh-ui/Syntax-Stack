@@ -37,6 +37,41 @@ animals:
   - Kỳ Lân
   - Chuột Túi
 
+# English: the same animals in the same order (animals_en[i] is the English of animals[i]). With X-Lang: en the server
+# generates English names "<adjective> <animal> <NN>" ("Blue Cat 42") instead; a name already chosen is never
+# translated, and both forms count as generated names.
+animals_en:
+  - Cat
+  - Fox
+  - Bear
+  - Rabbit
+  - Owl
+  - Tiger
+  - Squirrel
+  - Turtle
+  - Elephant
+  - Horse
+  - Deer
+  - Gazelle
+  - Stork
+  - Parrot
+  - Bee
+  - Butterfly
+  - Crab
+  - Shrimp
+  - Duck
+  - Bird
+  - Starling
+  - Swallow
+  - Leopard
+  - Dragon
+  - Lion
+  - Penguin
+  - Dolphin
+  - Whale
+  - Unicorn
+  - Kangaroo
+
 adjectives:
   - Xanh
   - Đỏ
@@ -60,6 +95,31 @@ adjectives:
   - Nhanh Nhẹn
   - Tinh Nghịch
   - Kiên Nhẫn
+
+# English: the same adjectives in the same order.
+adjectives_en:
+  - Blue
+  - Red
+  - Golden
+  - Purple
+  - Orange
+  - Pink
+  - Silver
+  - Quick
+  - Happy
+  - Gentle
+  - Bright
+  - Strong
+  - Handy
+  - Sharp
+  - Curious
+  - Brave
+  - Clever
+  - Diligent
+  - Calm
+  - Swift
+  - Playful
+  - Patient
 
 numbers:
   min: 10

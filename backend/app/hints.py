@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
+from . import i18n
+
 
 @dataclass(frozen=True)
 class Hint:
@@ -20,11 +22,12 @@ class Hint:
 
 
 class HintProvider(Protocol):
-    def puzzle_hint(self, puzzle: dict, level: int) -> Hint:
-        """``puzzle`` is the stored puzzle row (with ``hints`` as a list of 3 strings)."""
+    def puzzle_hint(self, puzzle: dict, level: int, lang: Optional[str] = None) -> Hint:
+        """``puzzle`` is the stored puzzle row (with ``hints`` as a list of 3 strings, ``hints_en`` in English)."""
 
-    def rows_hint(self, level_cfg: dict, level: int, error_group: Optional[str]) -> Hint:
-        """``level_cfg`` is the loaded Syntax Rows level (hints / group_hints keys)."""
+    def rows_hint(self, level_cfg: dict, level: int, error_group: Optional[str],
+                  lang: Optional[str] = None) -> Hint:
+        """``level_cfg`` is the loaded Syntax Rows level (hints / group_hints keys, plus the ``_en`` siblings)."""
 
 
 # Generic Syntax Rows fallbacks, used when a level file has no hints for an error group.
@@ -67,29 +70,71 @@ GENERIC_ROWS_HINTS: dict[str, list[str]] = {
 }
 
 
+# The same fallbacks in English (same groups, same three levels).
+GENERIC_ROWS_HINTS_EN: dict[str, list[str]] = {
+    "syntax": [
+        "Every line of code has to follow Python's syntax.",
+        "Look at the line highlighted in red: is a tile extra, missing or in the wrong place?",
+        "Try removing the distracting tile and build that line again, tile by tile, in the right order.",
+    ],
+    "bad_indent": [
+        "Indentation tells Python which block a line belongs to.",
+        "The line right after a statement that ends with a colon must be indented one level; the other lines are not.",
+        "Put the first tile of the block's body line at indent column 1, and start every other line at column 0.",
+    ],
+    "missing_colon": [
+        "Statements like if, for and def end with a colon.",
+        "Look at the line highlighted in red: the statement that opens a block needs a ':' tile at the end.",
+        "Put the ':' tile at the end of the if / for / def line, after the last tile of that line.",
+    ],
+    "wrong_order": [
+        "A program runs from top to bottom, so whatever is used must be created first.",
+        "A variable or function must be created on a line before the line that uses it.",
+        "Check the order of the rows: put the line that creates the variable (or the def) above the line that uses it.",
+    ],
+    "output_mismatch": [
+        "The program runs but prints something different from what is needed.",
+        "Compare the real output with the expected output to see which value is missing, extra or wrong.",
+        "Check each number tile and each distracting tile: is there one that gives a nearly right value but not the right one?",
+    ],
+    "missing_construct": [
+        "This level asks you to use a specific Python construct.",
+        "The right output is not enough; the program also has to use the construct this level wants to practise.",
+        "Look at the tiles in the tray: which keyword tile (for, if, def, return) have you not used yet?",
+    ],
+    "empty": [
+        "Drag the code tiles from the tray onto the board.",
+        "Each row of the board is one line of code; put the tiles of one line in the same row.",
+        "Start with the first line of the program, then press Run check.",
+    ],
+}
+
+
 class CannedHintProvider:
     source = "canned"
 
-    def puzzle_hint(self, puzzle: dict, level: int) -> Hint:
-        hints = puzzle["hints"]
+    def puzzle_hint(self, puzzle: dict, level: int, lang: Optional[str] = None) -> Hint:
+        hints = i18n.pick(puzzle, "hints", lang)
         return Hint(level, hints[level - 1], self.source)
 
-    def rows_hint(self, level_cfg: dict, level: int, error_group: Optional[str]) -> Hint:
+    def rows_hint(self, level_cfg: dict, level: int, error_group: Optional[str],
+                  lang: Optional[str] = None) -> Hint:
+        en = i18n.resolve(lang) == "en"
         if error_group:
-            group_hints = (level_cfg.get("group_hints") or {}).get(error_group)
+            group_hints = (level_cfg.get("group_hints_en" if en else "group_hints") or {}).get(error_group)
             if not group_hints:
-                group_hints = GENERIC_ROWS_HINTS.get(error_group)
+                group_hints = (GENERIC_ROWS_HINTS_EN if en else GENERIC_ROWS_HINTS).get(error_group)
             if group_hints:
                 return Hint(level, group_hints[level - 1], self.source)
-        return Hint(level, level_cfg["hints"][level - 1], self.source)
+        return Hint(level, i18n.pick(level_cfg, "hints", lang)[level - 1], self.source)
 
 
 _provider: HintProvider = CannedHintProvider()
 
 
-def puzzle_hint(puzzle: dict, level: int) -> dict:
-    return _provider.puzzle_hint(puzzle, level).as_dict()
+def puzzle_hint(puzzle: dict, level: int, lang: Optional[str] = None) -> dict:
+    return _provider.puzzle_hint(puzzle, level, lang).as_dict()
 
 
-def rows_hint(level_cfg: dict, level: int, error_group: Optional[str]) -> dict:
-    return _provider.rows_hint(level_cfg, level, error_group).as_dict()
+def rows_hint(level_cfg: dict, level: int, error_group: Optional[str], lang: Optional[str] = None) -> dict:
+    return _provider.rows_hint(level_cfg, level, error_group, lang).as_dict()

@@ -1,8 +1,10 @@
 id: r3
 order: 3
 title: "Đếm đến ba"
+title_en: "Count to three"
 concept: loops
 goal: "Viết chương trình in ra 0, 1, 2, mỗi số một dòng."
+goal_en: "Write a program that prints 0, 1, 2, one number per line."
 expected_output: "0\n1\n2"
 twist_output: "0\n1"
 practice: {replace: t4, with: t1}
@@ -27,6 +29,10 @@ hints:
   - "Vòng lặp for lặp lại các dòng thụt vào dưới nó. range(n) cho các số bắt đầu từ 0."
   - "Viết một vòng for dùng biến i, bên dưới thụt vào một dòng in i. Cần in ba số: 0, 1, 2."
   - "range() dừng trước giá trị kết thúc, nên để in ra ba số 0, 1, 2 thì giá trị kết thúc phải lớn hơn số cuối đúng một đơn vị."
+hints_en:
+  - "A for loop repeats the lines indented under it. range(n) gives numbers starting from 0."
+  - "Write a for loop with the variable i, and below it an indented line that prints i. You need to print three numbers: 0, 1, 2."
+  - "range() stops before its end value, so to print the three numbers 0, 1, 2 the end value has to be exactly one more than the last number."
 group_hints:
   output_mismatch:
     - "range() dừng trước giá trị kết thúc."
@@ -48,3 +54,24 @@ group_hints:
     - "Màn này yêu cầu dùng vòng lặp for."
     - "Chỉ dùng while hay in rời rạc chưa đủ; bài này luyện vòng lặp for với range()."
     - "Dùng mảnh for, i, in, một mảnh range và dấu hai chấm cho dòng đầu."
+group_hints_en:
+  output_mismatch:
+    - "range() stops before its end value."
+    - "Count how many numbers your program prints compared with the goal: range(n) prints exactly n numbers, starting from 0."
+    - "You need three numbers, so pick the range tile that gives exactly three. Try each range tile in the tray."
+  wrong_order:
+    - "The whole for line has to be written before the loop body."
+    - "The print(i) line goes below the for line, not above it."
+    - "Top row: for i in range(...) ending with a colon. Bottom row: print(i) indented one level."
+  bad_indent:
+    - "The loop body line must be indented one level."
+    - "The print(i) tile belongs at indent column 1, while the for line stays at column 0."
+    - "Put print(i) at column 1 in the row right below the for line."
+  missing_colon:
+    - "The for line must end with a colon."
+    - "The ':' tile goes at the end of the for line, after the range tile."
+    - "Add the ':' tile to the end of the row that holds for i in range(...)."
+  missing_construct:
+    - "This level asks you to use a for loop."
+    - "A while loop or separate prints are not enough; this level practises the for loop with range()."
+    - "Use the tiles for, i, in, one range tile and the colon for the first line."

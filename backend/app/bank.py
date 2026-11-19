@@ -13,7 +13,9 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
+from . import i18n
 from . import validator as V
+from .i18n import tr
 
 DB_PATH = Path(os.environ.get("SYNTAX_STACK_DB", Path(__file__).resolve().parents[1] / "data" / "puzzles.sqlite"))
 
@@ -49,7 +51,8 @@ class Malformed(BankError):
 
 def _connect() -> sqlite3.Connection:
     if not DB_PATH.exists():
-        raise NotFound(f"Chưa có ngân hàng câu đố ({DB_PATH.name}). Chạy scripts/generate_bank.py trước.")
+        raise NotFound(tr(f"Chưa có ngân hàng câu đố ({DB_PATH.name}). Chạy scripts/generate_bank.py trước.",
+                          f"The puzzle bank ({DB_PATH.name}) is missing. Run scripts/generate_bank.py first."))
     con = sqlite3.connect(f"{DB_PATH.as_uri()}?mode=ro", uri=True)
     con.row_factory = sqlite3.Row
     return con
@@ -59,6 +62,8 @@ def _row_to_dict(r: sqlite3.Row) -> dict:
     d = dict(r)
     d["hints"] = json.loads(d["hints"])
     d["data"] = json.loads(d["data"])
+    if d.get("hints_en"):
+        d["hints_en"] = json.loads(d["hints_en"])
     return d
 
 
@@ -79,7 +84,7 @@ def get_puzzle(puzzle_id: str) -> dict:
     finally:
         con.close()
     if r is None:
-        raise NotFound(f"Không tìm thấy câu đố '{puzzle_id}'.")
+        raise NotFound(tr(f"Không tìm thấy câu đố '{puzzle_id}'.", f"Puzzle '{puzzle_id}' was not found."))
     return _row_to_dict(r)
 
 
@@ -104,12 +109,13 @@ def _public_options(options: list[dict], puzzle_id: str, level: str) -> list[dic
     return [{"id": o["id"], "text": o["text"]} for o in _view_options(options, puzzle_id, level)]
 
 
-def public_puzzle(row: dict, level: str = "intermediate") -> dict:
-    """The player-facing puzzle. Never contains the answer."""
+def public_puzzle(row: dict, level: str = "intermediate", lang: Optional[str] = None) -> dict:
+    """The player-facing puzzle. Never contains the answer. ``lang`` (default: the request's) only picks the
+    language of the prompt; the code, the options and their order are the same in both languages."""
     typ, data = row["type"], row["data"]
     out = {
         "id": row["id"], "template_id": row["template_id"], "topic": row["topic"], "type": typ,
-        "tier": row["tier"], "prompt": row["prompt"], "code": row["code"],
+        "tier": row["tier"], "prompt": i18n.pick(row, "prompt", lang), "code": row["code"],
         "expected_output": None if typ == "predict_output" else row["expected_output"],
         "lines": None, "options": None,
     }
@@ -139,18 +145,20 @@ def select_puzzle(*, kind: str, topic: Optional[str], tier: Optional[int], level
     try:
         if kind == "debug":
             if not template_id:
-                raise Malformed("kind 'debug' cần có template_id.")
+                raise Malformed(tr("kind 'debug' cần có template_id.", "kind 'debug' needs a template_id."))
             rows = con.execute("SELECT id, type, debug_only FROM puzzles WHERE template_id = ?",
                                (template_id,)).fetchall()
             if not rows:
-                raise NotFound(f"Không tìm thấy mẫu câu đố '{template_id}'.")
+                raise NotFound(tr(f"Không tìm thấy mẫu câu đố '{template_id}'.",
+                                  f"Puzzle template '{template_id}' was not found."))
             rows = [r for r in rows if r["id"] not in excl_ids]
             if rng is not None:
                 rows.sort(key=lambda r: r["id"])
             bug_rows = [r for r in rows if r["type"] == "find_bug"]
             pool = bug_rows or [r for r in rows if not r["debug_only"]]
             if not pool:
-                raise NotFound("Không còn biến thể nào của mẫu này để dùng cho câu đố Debug.")
+                raise NotFound(tr("Không còn biến thể nào của mẫu này để dùng cho câu đố Debug.",
+                                  "There are no variants of this template left for a Debug puzzle."))
         else:
             if topic is None:
                 topic = rand.choice(TOPICS)
@@ -165,7 +173,7 @@ def select_puzzle(*, kind: str, topic: Optional[str], tier: Optional[int], level
             if template_id:
                 rows = [r for r in rows if r["template_id"] == template_id]
             if not rows:
-                raise NotFound("Không có câu đố nào khớp với bộ lọc.")
+                raise NotFound(tr("Không có câu đố nào khớp với bộ lọc.", "No puzzle matches the filter."))
             preferred = [r for r in rows if r["template_id"] not in excl_tpl]
             pool = preferred or rows  # exclude_templates is only a soft preference
         if kind == "debug":
@@ -183,11 +191,12 @@ def select_puzzle(*, kind: str, topic: Optional[str], tier: Optional[int], level
 
 
 def _result(row: dict, correct: bool, reveal: bool, group: Optional[str], message: str,
-            actual: Optional[str], note: Optional[str] = None) -> dict:
+            actual: Optional[str], note: Optional[str] = None, lang: Optional[str] = None) -> dict:
     show = correct or reveal
     explanation = None
     if show:
-        explanation = row["explanation"] if correct or not note else f"{note} {row['explanation']}"
+        text = i18n.pick(row, "explanation", lang)
+        explanation = text if correct or not note else f"{note} {text}"
     return {
         "correct": correct,
         "error_group": None if correct else group,
@@ -200,65 +209,85 @@ def _result(row: dict, correct: bool, reveal: bool, group: Optional[str], messag
 
 def _find_option(data: dict, option_id: Optional[str]) -> dict:
     if not option_id:
-        raise Malformed("Thiếu option_id.")
+        raise Malformed(tr("Thiếu option_id.", "option_id is missing."))
     for o in data["options"]:
         if o["id"] == option_id:
             return o
-    raise Malformed(f"option_id '{option_id}' không thuộc câu đố này.")
+    raise Malformed(tr(f"option_id '{option_id}' không thuộc câu đố này.",
+                       f"option_id '{option_id}' does not belong to this puzzle."))
 
 
 def check_answer(row: dict, *, option_id: Optional[str] = None, order: Optional[list[dict]] = None,
-                 line_id: Optional[str] = None, reveal: bool = False, diagnose=None) -> dict:
-    """``diagnose`` replaces ``validator.diagnose`` for parsons (custom puzzles pass the sandboxed one)."""
+                 line_id: Optional[str] = None, reveal: bool = False, diagnose=None,
+                 lang: Optional[str] = None) -> dict:
+    """``diagnose`` replaces ``validator.diagnose`` for parsons (custom puzzles pass the sandboxed one).
+    ``lang`` (default: the request's) only chooses the language of the messages; the verdict never depends on it."""
     typ, data = row["type"], row["data"]
-    ok_msg = "Chính xác! Chương trình in đúng đầu ra."
+    lang = i18n.resolve(lang)
+    ok_msg = tr("Chính xác! Chương trình in đúng đầu ra.", "Correct! The program prints the right output.", lang)
+
+    def opt_text(opt: dict, field: str) -> Optional[str]:
+        return i18n.pick_get(opt, field, lang)
 
     if typ == "fill_blank":
         opt = _find_option(data, option_id)
         if opt["correct"]:
-            return _result(row, True, reveal, None, ok_msg, opt["actual_output"])
-        return _result(row, False, reveal, opt["group"], opt["message"], opt["actual_output"], opt["note"])
+            return _result(row, True, reveal, None, ok_msg, opt["actual_output"], lang=lang)
+        return _result(row, False, reveal, opt["group"], opt_text(opt, "message"), opt["actual_output"],
+                       opt_text(opt, "note"), lang)
 
     if typ == "predict_output":
         opt = _find_option(data, option_id)
         if opt["correct"]:
-            return _result(row, True, reveal, None, "Chính xác!", row["expected_output"])
-        msg = ("Chưa đúng. Chương trình thật sự in ra: " + V.describe_output(row["expected_output"]) + "."
-               if reveal else "Chưa đúng, hãy theo dõi lại chương trình từng dòng.")
+            return _result(row, True, reveal, None, tr("Chính xác!", "Correct!", lang), row["expected_output"],
+                           lang=lang)
+        msg = (tr("Chưa đúng. Chương trình thật sự in ra: " + V.describe_output(row["expected_output"], "vi") + ".",
+                  "Not quite. The program really prints: " + V.describe_output(row["expected_output"], "en") + ".",
+                  lang)
+               if reveal else tr("Chưa đúng, hãy theo dõi lại chương trình từng dòng.",
+                                 "Not quite, trace the program again line by line.", lang))
         return _result(row, False, reveal, "wrong_choice", msg,
-                       row["expected_output"] if reveal else None, opt["note"])
+                       row["expected_output"] if reveal else None, opt_text(opt, "note"), lang)
 
     if typ == "find_bug":  # v2: the player picks one whole-line edit; any line_id sent is ignored
         opt = _find_option(data, option_id)
         if opt["correct"]:
-            return _result(row, True, reveal, None, "Chính xác! Sau khi sửa, chương trình in đúng đầu ra.",
-                           opt["actual_output"])
+            return _result(row, True, reveal, None,
+                           tr("Chính xác! Sau khi sửa, chương trình in đúng đầu ra.",
+                              "Correct! After the fix, the program prints the right output.", lang),
+                           opt["actual_output"], lang=lang)
         if opt["line_id"] != data["bug_line"]:
-            msg = "Dòng này không phải dòng bị lỗi nên chương trình vẫn chạy sai. " + (opt["message"] or "")
-            return _result(row, False, reveal, "wrong_line", msg.strip(), opt["actual_output"], opt["note"])
-        return _result(row, False, reveal, "wrong_fix", opt["message"], opt["actual_output"], opt["note"])
+            msg = (tr("Dòng này không phải dòng bị lỗi nên chương trình vẫn chạy sai. ",
+                      "This is not the bug line, so the program still runs wrong. ", lang)
+                   + (opt_text(opt, "message") or ""))
+            return _result(row, False, reveal, "wrong_line", msg.strip(), opt["actual_output"],
+                           opt_text(opt, "note"), lang)
+        return _result(row, False, reveal, "wrong_fix", opt_text(opt, "message"), opt["actual_output"],
+                       opt_text(opt, "note"), lang)
 
     if typ == "parsons":
-        return _check_parsons(row, order, reveal, diagnose or V.diagnose)
+        return _check_parsons(row, order, reveal, diagnose or V.diagnose, lang)
 
-    raise Malformed("Loại câu đố không được hỗ trợ.")  # pragma: no cover
+    raise Malformed(tr("Loại câu đố không được hỗ trợ.", "This puzzle type is not supported."))  # pragma: no cover
 
 
-def _check_parsons(row: dict, order: Optional[list[dict]], reveal: bool, diagnose) -> dict:
+def _check_parsons(row: dict, order: Optional[list[dict]], reveal: bool, diagnose, lang: str) -> dict:
     data = row["data"]
     if not order:
-        raise Malformed("Thiếu 'order'.")
+        raise Malformed(tr("Thiếu 'order'.", "'order' is missing."))
     texts = {l["id"]: l["text"] for l in data["lines"]}
     ids = [o["line_id"] for o in order]
     if sorted(ids) != sorted(texts):
-        raise Malformed("'order' phải chứa mỗi dòng đúng một lần.")
+        raise Malformed(tr("'order' phải chứa mỗi dòng đúng một lần.", "'order' must contain every line exactly once."))
     for o in order:
         if not (0 <= o["indent"] <= MAX_INDENT):
-            raise Malformed(f"indent phải từ 0 đến {MAX_INDENT}.")
+            raise Malformed(tr(f"indent phải từ 0 đến {MAX_INDENT}.", f"indent must be from 0 to {MAX_INDENT}."))
     code = "\n".join("    " * o["indent"] + texts[o["line_id"]] for o in order)
     diag = diagnose(code, row["expected_output"])
     if diag.passed:
-        return _result(row, True, reveal, None, "Chính xác! Chương trình in đúng đầu ra.", diag.actual_output)
+        return _result(row, True, reveal, None,
+                       tr("Chính xác! Chương trình in đúng đầu ra.", "Correct! The program prints the right output.", lang),
+                       diag.actual_output, lang=lang)
 
     group = diag.error_group
     if diag.run is not None and diag.run.ok:  # ran, but printed something else: say why structurally
@@ -270,6 +299,6 @@ def _check_parsons(row: dict, order: Optional[list[dict]], reveal: bool, diagnos
     note = None
     for d in data.get("distractors", []):
         if d["code"] == code:
-            note = d.get("note")
+            note = i18n.pick_get(d, "note", lang)
             break
-    return _result(row, False, reveal, group, diag.message, diag.actual_output, note)
+    return _result(row, False, reveal, group, diag.msg(lang), diag.actual_output, note, lang)

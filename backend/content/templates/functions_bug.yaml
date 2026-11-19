@@ -5,11 +5,17 @@ hints:
   - "Hàm không có return sẽ trả về None; và đối số khi gọi hàm phải đúng thứ tự, đúng số lượng."
   - "Nhìn kết quả thực tế: nếu in None thì thiếu return; nếu số sai thì xem thứ tự hoặc giá trị đối số truyền vào."
   - "Kiểm tra từng dòng: thân hàm có trả kết quả bằng return không, và lời gọi hàm có truyền đúng giá trị theo đúng thứ tự không?"
+hints_en:
+  - "A function without return gives back None, and the arguments in a call must be in the right order and the right number."
+  - "Look at the real output: if it prints None, a return is missing; if a number is wrong, check the order or the values of the arguments."
+  - "Check each line: does the function body send a result back with return, and does the call pass the right values in the right order?"
 explanation: "Hàm chỉ gửi kết quả ra ngoài khi dùng return; nếu không, nơi gọi nhận None. Ngoài ra đối số khi gọi hàm phải đúng giá trị và đúng thứ tự."
+explanation_en: "A function only sends a result out with return; otherwise the caller gets None. Also, the arguments in a call must have the right values in the right order."
 tiers:
   1:
     - count: 12
       prompt: "Chương trình in ra None thay vì kết quả. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program prints None instead of the result. Choose the right fix to print {expected_inline}."
       code: |
         def {f}({x}):
             {x} * {k}
@@ -28,9 +34,11 @@ tiers:
         - {name: returned_argument, rep: "return {x}"}
         - {name: returned_factor, rep: "return {k}"}
       explanation: "Dòng {x} * {k} chỉ tính rồi bỏ đi. Hàm cần return để gửi kết quả ra cho print(); thiếu return thì in None."
+      explanation_en: "The line {x} * {k} only calculates and throws the result away. The function needs return to send the result to print(); without return it prints None."
   2:
     - count: 12
       prompt: "Chương trình in ra kết quả sai. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program prints a wrong result. Choose the right fix to print {expected_inline}."
       code: |
         def {f}({p}, {q}):
             return {p} - {q}
@@ -51,9 +59,11 @@ tiers:
         - {name: wrong_arguments, rep: "print({f}({b}, {b}))"}
         - {name: argument_expression, rep: "print({f}({a} - {b}))"}
       explanation: "Đối số được gán theo thứ tự: đối số đầu cho {p}, đối số thứ hai cho {q}. {a} - {b} cần truyền {a} trước rồi mới tới {b}."
+      explanation_en: "Arguments are assigned in order: the first argument goes to {p}, the second to {q}. {a} - {b} needs {a} passed first, then {b}."
   3:
     - count: 8
       prompt: "Chương trình in ra kết quả sai. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program prints a wrong result. Choose the right fix to print {expected_inline}."
       code: |
         def {f}({x}):
             return {x} * {k}
@@ -75,8 +85,10 @@ tiers:
         - {name: shifted_argument, rep: "print({f}({i} + 1))"}
         - {name: missing_argument, rep: "print({f}())"}
       explanation: "Lời gọi {f}({k}) luôn truyền cùng một số nên mọi dòng giống nhau. Phải truyền biến vòng lặp {i} để mỗi lần một giá trị khác."
+      explanation_en: "The call {f}({k}) always passes the same number, so every line is the same. You have to pass the loop variable {i} so each round uses a different value."
     - count: 6
       prompt: "Chương trình in ra kết quả sai. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program prints a wrong result. Choose the right fix to print {expected_inline}."
       code: |
         def {f}({x}):
             return {x} * {k}
@@ -100,3 +112,4 @@ tiers:
         - {name: no_assignment, rep: "{t} + {f}({i})"}
         - {name: added_argument_not_result, rep: "{t} = {t} + {i}"}
       explanation: "{t} = {f}({i}) ghi đè {t} mỗi lần lặp, chỉ giữ kết quả cuối. Muốn cộng dồn phải viết {t} = {t} + {f}({i})."
+      explanation_en: "{t} = {f}({i}) overwrites {t} on every round and keeps only the last result. To add up the results, write {t} = {t} + {f}({i})."

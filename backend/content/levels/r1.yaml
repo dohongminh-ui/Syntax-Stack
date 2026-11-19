@@ -1,8 +1,10 @@
 id: r1
 order: 1
 title: "Biến đầu tiên"
+title_en: "Your first variable"
 concept: variables
 goal: "Tạo biến diem rồi in giá trị của nó để chương trình in ra 7."
+goal_en: "Create the variable diem, then print its value so the program prints 7."
 expected_output: "7"
 twist_output: "8"
 practice: {replace: t5, with: t3}
@@ -24,6 +26,10 @@ hints:
   - "Biến là một cái tên giữ một giá trị. Dòng đầu tạo biến, dòng sau in giá trị của nó ra."
   - "Cần hai dòng: một dòng gán giá trị cho biến diem và một dòng in ra giá trị đó. Đầu ra phải là số 7."
   - "Dòng 1 gồm tên biến, dấu = rồi con số. Dòng 2 chỉ có một mảnh print mà không đặt tên biến trong dấu nháy."
+hints_en:
+  - "A variable is a name that holds a value. The first line creates the variable and the second line prints its value."
+  - "You need two lines: one that gives the variable diem a value and one that prints that value. The output has to be the number 7."
+  - "Line 1 is the variable name, an = sign and a number. Line 2 is just one print tile, without the variable name in quotes."
 group_hints:
   output_mismatch:
     - "Chương trình chạy được nhưng in ra khác yêu cầu."
@@ -41,3 +47,20 @@ group_hints:
     - "Màn này yêu cầu tạo biến bằng phép gán."
     - "Cần một dòng có dạng tên biến, dấu =, giá trị."
     - "Ghép các mảnh diem, = và 7 vào cùng một hàng."
+group_hints_en:
+  output_mismatch:
+    - "The program runs but prints something different from what is needed."
+    - "The output has to be the number 7. Check the number you gave the variable and the print tile you picked."
+    - "print(\"diem\") prints the word diem, not the variable's value. Pick the right print tile and assign the right number."
+  wrong_order:
+    - "A variable must be created before it is used."
+    - "The line that assigns the value must be in a row above the print line."
+    - "Put the line that creates the variable in the top row and the print line in the row right below it."
+  bad_indent:
+    - "This program does not need any indentation."
+    - "Only lines inside an if, for or def are indented."
+    - "Put the first tile of every row at column 0."
+  missing_construct:
+    - "This level asks you to create a variable with an assignment."
+    - "You need one line shaped like variable name, = sign, value."
+    - "Put the tiles diem, = and 7 together in one row."

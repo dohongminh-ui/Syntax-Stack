@@ -5,11 +5,17 @@ hints:
   - "Hãy so sánh đầu ra thực tế của chương trình với đầu ra mong muốn: thiếu hay thừa số nào, và công thức cập nhật có đúng không?"
   - "range() không gồm giá trị kết thúc; và biến tổng phải được cộng dồn chứ không phải gán lại mỗi lần lặp."
   - "Tìm dòng quyết định số lần lặp hoặc cách biến được cập nhật, rồi đối chiếu từng chi tiết với kết quả cần có."
+hints_en:
+  - "Compare the program's real output with the output you want: which numbers are missing or extra, and is the update formula right?"
+  - "range() does not include its end value, and a total must be added up, not reassigned on every round."
+  - "Find the line that decides how many rounds run or how the variable is updated, then check every detail against the result you need."
 explanation: "Lỗi thường gặp trong vòng lặp: giá trị kết thúc của range() bị thiếu một đơn vị, hoặc biến tổng bị gán lại thay vì cộng dồn (t = t + i)."
+explanation_en: "Common loop mistakes: the end value of range() is one too small, or the total is reassigned instead of added up (t = t + i)."
 tiers:
   1:
     - count: 10
       prompt: "Chương trình in thiếu số. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program prints too few numbers. Choose the right fix to print {expected_inline}."
       code: |
         for {v} in range({a}, {e}):
             print({v})
@@ -28,9 +34,11 @@ tiers:
         - {name: too_long, rep: "for {v} in range({a}, {e+2}):"}
         - {name: missing_colon, rep: "for {v} in range({a}, {e1})"}
       explanation: "range({a}, {e}) dừng trước {e} nên không in {e}. Để in cả {e}, giá trị kết thúc phải là {e1}."
+      explanation_en: "range({a}, {e}) stops before {e}, so {e} is not printed. To print {e} too, the end value has to be {e1}."
   2:
     - count: 10
       prompt: "Chương trình in sai kết quả. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program prints a wrong result. Choose the right fix to print {expected_inline}."
       code: |
         {t} = 0
         for {i} in range({n}):
@@ -48,9 +56,11 @@ tiers:
         - {name: multiplied_instead_of_added, rep: "{t} = {t} * {i}"}
         - {name: replaced_with_next, rep: "{t} = {i} + 1"}
       explanation: "{t} = {i} gán đè giá trị mỗi lần lặp nên chỉ giữ số cuối cùng. Muốn cộng dồn phải viết {t} = {t} + {i}."
+      explanation_en: "{t} = {i} overwrites the value on every round, so only the last number is kept. To add them up, write {t} = {t} + {i}."
   3:
     - count: 12
       prompt: "Chương trình in sai kết quả. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program prints a wrong result. Choose the right fix to print {expected_inline}."
       code: |
         {t} = 0
         for {i} in range({a}, {b}):
@@ -72,3 +82,4 @@ tiers:
         - {name: strict_comparison, rep: "if {i} > {k} + 1:"}
         - {name: missing_colon, rep: "if {i} >= {k}"}
       explanation: "Điều kiện {i} > {k} bỏ sót chính số {k}. Muốn cộng cả {k} thì phải dùng {i} >= {k} (lớn hơn hoặc bằng)."
+      explanation_en: "The condition {i} > {k} skips {k} itself. To add {k} too, use {i} >= {k} (greater than or equal)."

@@ -24,6 +24,8 @@ from typing import Optional
 
 import httpx
 
+from . import i18n
+
 logger = logging.getLogger(__name__)
 _slots = BoundedSemaphore(2)
 
@@ -33,7 +35,7 @@ DEFAULT_CLIENT_LIMIT = 40
 MAX_TRACKED_CLIENTS = 20_000  # memory bound; beyond it new clients are treated as over quota
 
 _lock = Lock()
-_cache: "OrderedDict[tuple[str, str], str]" = OrderedDict()
+_cache: "OrderedDict[tuple[str, str, str], str]" = OrderedDict()
 _day: date = date.today()
 _calls = _ai = _fallback = 0
 _per_client: dict[str, int] = {}
@@ -129,9 +131,14 @@ def _finish(task: str, started: float, outcome: str, text: str, fallback: str) -
     return {"text": text, "source": source}
 
 
-def feedback(task: str, context: dict, fallback: str, client: Optional[str] = None) -> dict:
-    """Ask the tutor; ``client`` is the requester's IP (used only for the per-client quota)."""
+def feedback(task: str, context: dict, fallback: str, client: Optional[str] = None,
+             lang: Optional[str] = None) -> dict:
+    """Ask the tutor; ``client`` is the requester's IP (used only for the per-client quota).
+
+    ``lang`` (``"vi"`` / ``"en"``, default: the request's) is sent to n8n in the body of every task so the reply is
+    written in that language, and is part of the cache key so a reply is never served to the other language."""
     global _calls, _ai
+    lang = i18n.resolve(lang)
     who = client_key(client)
     started = time.monotonic()
     url = os.getenv("SYNTAX_STACK_TUTOR_URL")
@@ -141,10 +148,10 @@ def feedback(task: str, context: dict, fallback: str, client: Optional[str] = No
     if limit == 0:
         return _finish(task, started, "canned:limit", "", fallback)
     try:
-        payload = json.dumps({"task": task, "context": context}, ensure_ascii=False)
+        payload = json.dumps({"task": task, "lang": lang, "context": context}, ensure_ascii=False)
     except (TypeError, ValueError):
         return _finish(task, started, "canned:error", "", fallback)
-    key = (url, payload)
+    key = (url, lang, payload)
     with _lock:
         hit: Optional[str] = _cache.get(key)
         if hit is not None:

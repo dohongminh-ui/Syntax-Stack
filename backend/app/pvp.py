@@ -26,7 +26,8 @@ import time
 from collections import deque
 from typing import Any, Optional
 
-from . import bank, nicknames, pvp_bot, pvp_coach, ranked, rooms
+from . import bank, i18n, nicknames, pvp_bot, pvp_coach, ranked, rooms
+from .i18n import tr
 from . import rescue_engine as E
 
 log = logging.getLogger("syntax_stack.pvp")
@@ -60,12 +61,16 @@ SUGGEST_EVERY_S = 3.0            # training: a `suggest` more often than this (r
 COACH_LOOK_S = 0.5               # training: how often the coach looks at the player's board (besides after every change)
 
 LEVELS = E.LEVELS
+# Error texts sent over the socket: ``(Vietnamese, English)``, chosen by the receiving player's ``lang``.
 _ERR = {
-    "bad_message": "Tin nhắn không hợp lệ.",
-    "not_playing": "Ván đấu chưa bắt đầu hoặc đã kết thúc.",
-    "illegal": "Nước đi không hợp lệ.",
-    "stale_state": "Có dòng lỗi mới vừa tới. Hãy xem lại bàn rồi đặt khối.",
-    "not_training": "Gợi ý chỉ có trong chế độ luyện tập cùng Misaki.",
+    "bad_message": ("Tin nhắn không hợp lệ.", "That message is not valid."),
+    "not_playing": ("Ván đấu chưa bắt đầu hoặc đã kết thúc.", "The match has not started or is already over."),
+    "illegal": ("Nước đi không hợp lệ.", "That move is not valid."),
+    "stale_state": ("Có dòng lỗi mới vừa tới. Hãy xem lại bàn rồi đặt khối.",
+                    "A new bug line just arrived. Look at the board again, then place the block."),
+    "not_training": ("Gợi ý chỉ có trong chế độ luyện tập cùng Misaki.",
+                     "Hints are only available in practice mode with Misaki."),
+    "no_rematch": ("Không thể đấu lại ván này.", "This match can't be played again."),
 }
 
 
@@ -79,7 +84,7 @@ def _real() -> float:
 
 
 class PvpError(ranked.RankedError):
-    """An error with an explicit HTTP status; the message is Vietnamese."""
+    """An error with an explicit HTTP status; the message is in the language of the request (``tr``)."""
 
 
 # --------------------------------------------------------------------------- registry
@@ -218,6 +223,9 @@ class Player:
         self.coach: Optional[pvp_coach.Coach] = None
         self.last_suggest = -1e9
         self.last_look = -1e9
+        # Display language of this player's connection (docs: ``lang=en|vi`` on the WebSocket URL). It only chooses the
+        # text of messages sent to this player; the match itself (seed, puzzles, rules) never reads it.
+        self.lang = i18n.cur()
 
     def send(self, msg: dict) -> None:
         if self.conn is not None:
@@ -335,15 +343,15 @@ class Match:
         o = p.opponent
         starts = None if self.countdown_at is None else max(0, math.ceil(self.countdown_at - now()))
         return {"t": "lobby", "you": {"nickname": p.nickname, "rating": p.rating}, "level": self.level,
-                "opponent": None if o is None else self.opponent_lobby(o), "starts_in": starts}
+                "opponent": None if o is None else self.opponent_lobby(o, p.lang), "starts_in": starts}
 
     @staticmethod
-    def opponent_lobby(o: Player) -> dict:
+    def opponent_lobby(o: Player, lang: Optional[str] = None) -> dict:
         out = {"nickname": o.nickname, "bot": o.bot, "connected": o.connected, "rating": o.rating}
         if o.bot and o.misaki:
             # `misaki` / `title` are the level the player CHOSE; `plays_as` is the level she really plays at (one lower
             # in training mode)
-            out.update({"misaki": o.misaki, "title": pvp_bot.title(o.misaki), "training": o.training,
+            out.update({"misaki": o.misaki, "title": pvp_bot.title(o.misaki, lang), "training": o.training,
                         "plays_as": pvp_bot.effective_level(o.misaki, o.training)})
         return out
 
@@ -353,9 +361,10 @@ class Match:
         for p in self.players():
             p.send(self.lobby_msg(p))
 
-    def cancel(self, code: str, message: str) -> None:
+    def cancel(self, code: str, message: str, message_en: Optional[str] = None) -> None:
+        """End the match before it starts. Every player gets the text in their own language."""
         for p in self.players():
-            p.send({"t": "error", "code": code, "message": message})
+            p.send({"t": "error", "code": code, "message": tr(message, message_en or message, p.lang)})
             if p.conn is not None:
                 p.conn.close(4000)
         self.phase = "over"
@@ -377,7 +386,8 @@ class Match:
         old = p.conn
         p.conn, p.connected, p.last_seen = conn, True, now()
         if old is not None and old is not conn:
-            old.send({"t": "error", "code": "replaced", "message": "Bạn đã mở ván đấu ở nơi khác."})
+            old.send({"t": "error", "code": "replaced",
+                      "message": tr("Bạn đã mở ván đấu ở nơi khác.", "You opened this match somewhere else.", p.lang)})
             old.close(4001)
         if self.phase == "lobby":
             self.push_lobby()
@@ -405,7 +415,7 @@ class Match:
 
     def ask_rematch(self, p: Player) -> None:
         if self.phase != "over" or self.rematch_until is None or now() > self.rematch_until:
-            return _error(p, "no_rematch", "Không thể đấu lại ván này.")
+            return _error(p, "no_rematch")
         self.rematch[p.index] = True
         a, b = self.sides
         if a is not None and b is not None and all(s.connected and self.rematch[s.index] for s in (a, b)):
@@ -501,7 +511,7 @@ class Match:
 
     def coach_event(self, p: Player, kind: str, **kw: Any) -> None:
         if p.coach is not None and self.phase == "playing":
-            self.coach_say(p, p.coach.event(kind, now(), **kw))
+            self.coach_say(p, p.coach.event(kind, now(), lang=p.lang, **kw))
 
     def coach_look(self, p: Player) -> None:
         """The coach looks at the player's board (after every change and about twice a second)."""
@@ -510,8 +520,8 @@ class Match:
             return
         t = now()
         p.last_look = t
-        self.coach_say(p, c.due(t))
-        self.coach_say(p, c.observe(p.game, t))
+        self.coach_say(p, c.due(t, p.lang))
+        self.coach_say(p, c.observe(p.game, t, p.lang))
 
     def push_opponents(self) -> None:
         t = now()
@@ -589,18 +599,22 @@ class Match:
         player has nothing to solve."""
         g = p.game
         if self.phase != "playing" or g is None or g.phase == "over":
-            raise PvpError("Ván đấu đã kết thúc.", 409)
+            raise PvpError(tr("Ván đấu đã kết thúc.",
+                      "The match is over."), 409)
         if len(p.served) >= MAX_SERVED_PER_PLAYER:
-            raise PvpError("Đã dùng quá nhiều câu đố trong ván này.", 409)
+            raise PvpError(tr("Đã dùng quá nhiều câu đố trong ván này.",
+                      "Too many puzzles were used in this match."), 409)
         if kind == "rescue":
             lk = g.lock
             if g.phase != "locked" or lk is None:
-                raise PvpError("Bạn chưa có khóa nào cần giải.", 409)
+                raise PvpError(tr("Bạn chưa có khóa nào cần giải.",
+                      "You have no lock to solve right now."), 409)
             need = 2 if lk["boss"] else 1
             if p.lock_parts and not p.lock_parts[-1].answered:  # asked again: the same puzzle (no re-roll)
                 return bank.get_puzzle(p.lock_parts[-1].id)
             if len(p.lock_parts) >= need:
-                raise PvpError("Khóa này đã có đủ câu đố.", 409)
+                raise PvpError(tr("Khóa này đã có đủ câu đố.",
+                      "This lock already has all its puzzles."), 409)
             tier = 3 if lk["boss"] else lk["tier"]
             row = self.pick_puzzle(p, "rescue", lk["topic"], tier, None, None)
             p.lock_parts.append(p.served[row["id"]])
@@ -611,18 +625,22 @@ class Match:
             return row
         if kind == "debug":
             if g.phase != "play":
-                raise PvpError("Hãy giải khóa đang mở trước khi sửa dòng lỗi.", 409)
+                raise PvpError(tr("Hãy giải khóa đang mở trước khi sửa dòng lỗi.",
+                      "Solve the open lock before you fix a bug line."), 409)
             if bug is None:
-                raise PvpError("kind 'debug' cần có bug (id dòng lỗi).", 422)
+                raise PvpError(tr("kind 'debug' cần có bug (id dòng lỗi).",
+                      "kind 'debug' needs a bug (the id of the bug line)."), 422)
             bl = next((b for b in g.bug_lines if b["id"] == bug), None)
             if bl is None:
-                raise PvpError("Không có dòng lỗi này.", 409)
+                raise PvpError(tr("Không có dòng lỗi này.",
+                      "There is no such bug line."), 409)
             if p.open_debug is not None and not p.open_debug.answered and p.open_debug.bug_id == bug:
                 return bank.get_puzzle(p.open_debug.id)
             row = self.pick_puzzle(p, "debug", bl["topic"], 1, _template_of(bl["topic"], bl["template_id"]), bug)
             p.open_debug = p.served[row["id"]]
             return row
-        raise PvpError("Đối kháng không có Last Commit.", 422)
+        raise PvpError(tr("Đối kháng không có Last Commit.",
+                      "Duels have no Last Commit."), 422)
 
     def answered(self, p: Player, sv: Served, correct: bool) -> None:
         """The server checked the answer to ``sv``: apply it to the game when it is the player's current puzzle."""
@@ -644,7 +662,7 @@ class Match:
             p.reset_lock()
             if p.coach is not None:
                 if res["result"] == "bug":
-                    self.coach_event(p, "wrong", topic=pvp_coach.TOPIC_VI.get(res["topic"], ""))
+                    self.coach_event(p, "wrong", topic=res["topic"])
                 else:
                     if lines >= 2:
                         self.coach_event(p, "good", n=lines)
@@ -699,10 +717,10 @@ class Match:
         p.last_suggest = t
         sg = pvp_bot.suggest(g)
         if sg is None:
-            p.send({"t": "suggestion", "none": True, "why": pvp_coach.suggestion_text("none")})
+            p.send({"t": "suggestion", "none": True, "why": pvp_coach.suggestion_text("none", lang=p.lang)})
         else:
             p.send({"t": "suggestion", "i": sg.i, "r": sg.r, "c": sg.c, "cells": sg.cells,
-                    "why": pvp_coach.suggestion_text(sg.reason, sg.n)})
+                    "why": pvp_coach.suggestion_text(sg.reason, sg.n, p.lang)})
 
     # ---- the end ----
     def finish(self, winner: Optional[int], reason: str) -> None:
@@ -792,9 +810,10 @@ class Match:
             self.countdown_at = None
             self.push_lobby()
         if b is not None and self.paired_at is not None and t - self.paired_at > LOBBY_TIMEOUT_S:
-            self.cancel("lobby_timeout", "Hai người chơi chưa sẵn sàng, trận đấu bị hủy.")
+            self.cancel("lobby_timeout", "Hai người chơi chưa sẵn sàng, trận đấu bị hủy.",
+                        "The two players were not ready in time, so the match was cancelled.")
         elif b is None and t - self.created > PRIVATE_TTL_S:
-            self.cancel("expired", "Mã phòng đã hết hạn (10 phút).")
+            self.cancel("expired", "Mã phòng đã hết hạn (10 phút).", "The room code has expired (10 minutes).")
         elif not any(s.connected for s in self.humans()) and all(
                 t - s.last_seen > STALE_UNSEEN_S for s in self.humans()):
             self.drop()                                         # everybody left the lobby long ago
@@ -868,7 +887,8 @@ def _is_int(x: Any) -> bool:
 
 
 def _error(p: Player, code: str, message: Optional[str] = None) -> None:
-    p.send({"t": "error", "code": code, "message": message or _ERR.get(code, code)})
+    pair = _ERR.get(code)
+    p.send({"t": "error", "code": code, "message": message or (tr(*pair, p.lang) if pair else code)})
 
 
 def handle_message(p: Player, conn: Conn, raw: str) -> None:
@@ -990,7 +1010,8 @@ def _sweep(t: float) -> None:
             if not _alive(p, t):
                 q.remove(p)
                 if p.conn is not None:
-                    p.send({"t": "error", "code": "queue_timeout", "message": "Chưa tìm thấy đối thủ."})
+                    p.send({"t": "error", "code": "queue_timeout",
+                            "message": tr("Chưa tìm thấy đối thủ.", "No opponent was found yet.", p.lang)})
                     p.conn.close(4000)
                 _tickets.pop(p.ticket, None)
     for code, at in list(_expired_codes.items()):
@@ -1025,7 +1046,8 @@ def _new_player(level: str, nickname: str, device_id: str, client: Optional[str]
 
 def _check_room() -> None:
     if len(_tickets) >= MAX_TICKETS or live_matches() >= MAX_LIVE_MATCHES:
-        raise PvpError("Máy chủ đang có quá nhiều trận đối kháng. Hãy thử lại sau ít phút.", 503)
+        raise PvpError(tr("Máy chủ đang có quá nhiều trận đối kháng. Hãy thử lại sau ít phút.",
+                      "The server has too many duels running. Please try again in a few minutes."), 503)
 
 
 def _pair(level: str, kind: str, first: Player, second: Optional[Player]) -> Match:
@@ -1067,17 +1089,20 @@ def queue_leave(ticket: str) -> None:
     with _lock:
         p = _tickets.get(ticket)
         if p is None or p.kind != "queue":
-            raise PvpError("Không tìm thấy vé này.", 404)
+            raise PvpError(tr("Không tìm thấy vé này.",
+                      "This ticket was not found."), 404)
         if p.match is None:
             _queues[p.level] = [x for x in _queues[p.level] if x is not p]
             _tickets.pop(ticket, None)
             return
         m = p.match
         if m.phase != "lobby":
-            raise PvpError("Trận đấu đã bắt đầu.", 409)
+            raise PvpError(tr("Trận đấu đã bắt đầu.",
+                      "The match has already started."), 409)
         o = p.opponent
         if o is not None:                                       # the other player is told and may queue again
-            o.send({"t": "error", "code": "opponent_left", "message": "Đối thủ đã rời hàng chờ."})
+            o.send({"t": "error", "code": "opponent_left",
+                    "message": tr("Đối thủ đã rời hàng chờ.", "Your opponent left the queue.", o.lang)})
             if o.conn is not None:
                 o.conn.close(4000)
         m.phase = "over"
@@ -1095,7 +1120,8 @@ def private_create(level: str, nickname: str, device_id: str, client: Optional[s
             if code not in _private:
                 break
         else:  # pragma: no cover
-            raise PvpError("Không tạo được mã phòng, hãy thử lại.", 503)
+            raise PvpError(tr("Không tạo được mã phòng, hãy thử lại.",
+                      "Could not create a room code, please try again."), 503)
         _tickets[p.ticket] = p
         m = _pair(level, "private", p, None)
         m.code = code
@@ -1106,22 +1132,27 @@ def private_create(level: str, nickname: str, device_id: str, client: Optional[s
 def private_join(code: str, nickname: str, device_id: str, client: Optional[str]) -> dict:
     code = rooms._normalize_code(code)
     if not rooms._CODE_RE.match(code):
-        raise PvpError("Không tìm thấy phòng này.", 404)
+        raise PvpError(tr("Không tìm thấy phòng này.",
+                      "This room was not found."), 404)
     nickname, device_hash = ranked._clean_identity(nickname, device_id)
     ranked.take_pvp_slot(client)
     with _lock:
         m = _private.get(code)
         if m is None:
             if code in _expired_codes:
-                raise PvpError("Phòng này đã hết hạn (10 phút).", 410)
-            raise PvpError("Không tìm thấy phòng này.", 404)
+                raise PvpError(tr("Phòng này đã hết hạn (10 phút).",
+                      "This room has expired (10 minutes)."), 410)
+            raise PvpError(tr("Không tìm thấy phòng này.",
+                      "This room was not found."), 404)
         if m.sides[1] is not None:
-            raise PvpError("Phòng này đã đủ hai người.", 409)
+            raise PvpError(tr("Phòng này đã đủ hai người.",
+                      "This room already has two players."), 409)
         if now() - m.created > PRIVATE_TTL_S:
-            m.cancel("expired", "Mã phòng đã hết hạn (10 phút).")
-            raise PvpError("Phòng này đã hết hạn (10 phút).", 410)
+            m.cancel("expired", "Mã phòng đã hết hạn (10 phút).", "The room code has expired (10 minutes).")
+            raise PvpError(tr("Phòng này đã hết hạn (10 phút).", "This room has expired (10 minutes)."), 410)
         if len(_tickets) >= MAX_TICKETS:
-            raise PvpError("Máy chủ đang có quá nhiều trận đối kháng. Hãy thử lại sau ít phút.", 503)
+            raise PvpError(tr("Máy chủ đang có quá nhiều trận đối kháng. Hãy thử lại sau ít phút.",
+                      "The server has too many duels running. Please try again in a few minutes."), 503)
         p = Player(m.level, nickname, device_hash, "private")
         p.rating = ranked.pvp_rating(device_hash)
         _tickets[p.ticket] = p
@@ -1140,17 +1171,20 @@ def bot_start(level: str, nickname: str, device_id: str, client: Optional[str], 
     device); without it the generic "Máy <animal>" bot plays (ladder level from the game level). ``training``: section
     5.4 (needs ``misaki``; nothing ranked or unlocked)."""
     if training and not misaki:
-        raise PvpError("Chế độ luyện tập cần chọn một cấp của Misaki.", 422)
+        raise PvpError(tr("Chế độ luyện tập cần chọn một cấp của Misaki.",
+                      "Practice mode needs a Misaki level to be chosen."), 422)
     if misaki is not None and not 1 <= misaki <= pvp_bot.MAX_LEVEL:
-        raise PvpError("Cấp của Misaki phải từ 1 đến 4.", 422)
+        raise PvpError(tr("Cấp của Misaki phải từ 1 đến 4.",
+                      "Misaki's level must be from 1 to 4."), 422)
     _, device_hash = ranked._clean_identity(nickname, device_id)
     if misaki and misaki > ranked.misaki_unlocked(device_hash):
-        raise PvpError("Bạn chưa mở khóa cấp này của Misaki. Hãy thắng cấp trước đó.", 403)
+        raise PvpError(tr("Bạn chưa mở khóa cấp này của Misaki. Hãy thắng cấp trước đó.",
+                      "You have not unlocked this Misaki level yet. Win against the level before it."), 403)
     p = _new_player(level, nickname, device_id, client, "bot")
     with _lock:
         _sweep(now())
         _check_room()
-        name = pvp_bot.NAME if misaki else f"Máy {random.SystemRandom().choice(nicknames.ANIMALS)}"
+        name = pvp_bot.NAME if misaki else f"{tr('Máy', 'Bot')} {random.SystemRandom().choice(nicknames.animals())}"
         bot = Player(level, name, None, "bot", bot=True)
         bot.misaki, bot.training = misaki, bool(training)
         _tickets[p.ticket] = p
@@ -1163,7 +1197,8 @@ def bot_start(level: str, nickname: str, device_id: str, client: Optional[str], 
 def misaki_status(device_id: Any) -> dict:
     """``GET /api/pvp/misaki``: the ladder progress of a device."""
     if not isinstance(device_id, str) or not ranked._DEVICE_RE.match(device_id):
-        raise PvpError("Mã thiết bị không hợp lệ.", 422)
+        raise PvpError(tr("Mã thiết bị không hợp lệ.",
+                      "That device id is not valid."), 422)
     return ranked.misaki_progress(ranked._device_hash(device_id))
 
 
@@ -1238,16 +1273,22 @@ def record_answer(match_id: Any, token: Any, puzzle_id: str, correct: bool) -> N
 # --------------------------------------------------------------------------- WebSocket
 
 
-async def serve_socket(ws: Any, ticket: str) -> None:
-    """``GET /api/pvp/ws?ticket=...``: one player's live connection (a Starlette ``WebSocket``)."""
+async def serve_socket(ws: Any, ticket: str, lang: Optional[str] = None) -> None:
+    """``GET /api/pvp/ws?ticket=...&lang=en|vi``: one player's live connection (a Starlette ``WebSocket``).
+
+    ``lang`` is this connection's display language: every message sent to this player afterwards (coach lines, errors,
+    suggestions, the opponent's Misaki title) is in it. Two players of one match may differ. Missing or unknown: ``vi``."""
     await ws.accept()
+    lang_given = lang is not None
+    lang = i18n.norm(lang)
     loop = asyncio.get_running_loop()
     conn = Conn(ws, loop)
     with _lock:
         p = _tickets.get(ticket) if isinstance(ticket, str) else None
     if p is None:
         await ws.send_text(json.dumps({"t": "error", "code": "bad_ticket",
-                                       "message": "Vé không hợp lệ hoặc trận đấu đã kết thúc."}))
+                                       "message": tr("Vé không hợp lệ hoặc trận đấu đã kết thúc.",
+                                                     "The ticket is not valid or the match is already over.", lang)}))
         await ws.close(4404)
         return
     ensure_runner(loop)
@@ -1255,12 +1296,15 @@ async def serve_socket(ws: Any, ticket: str) -> None:
     cut = False
     try:
         with _lock:
+            if lang_given:
+                p.lang = lang                                   # no ``lang`` on the URL: keep the ticket's (X-Lang)
             m = p.match
             if m is None:                                       # waiting in the quick-match queue
                 old = p.conn
                 p.conn, p.connected, p.last_seen = conn, True, now()
                 if old is not None and old is not conn:
-                    old.send({"t": "error", "code": "replaced", "message": "Bạn đã mở ván đấu ở nơi khác."})
+                    old.send({"t": "error", "code": "replaced",
+                              "message": tr("Bạn đã mở ván đấu ở nơi khác.", "You opened this match somewhere else.", p.lang)})
                     old.close(4001)
                 conn.send({"t": "lobby", "you": {"nickname": p.nickname, "rating": p.rating}, "level": p.level,
                            "opponent": None, "starts_in": None})
@@ -1303,4 +1347,4 @@ def shutdown() -> None:
             if m.phase == "playing":
                 m.finish(None, "server_restart")
             elif m.phase == "lobby":
-                m.cancel("server_restart", "Máy chủ đang khởi động lại.")
+                m.cancel("server_restart", "Máy chủ đang khởi động lại.", "The server is restarting.")

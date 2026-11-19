@@ -5,11 +5,17 @@ hints:
   - "Python không tự ghép chuỗi với số bằng dấu +."
   - "Tìm dòng có dấu + nối một chuỗi với một biến chứa số."
   - "Số phải được đổi thành chuỗi trước khi nối. Hàm str() làm việc đó."
+hints_en:
+  - "Python does not join text and a number with + on its own."
+  - "Find the line where + joins a string to a variable that holds a number."
+  - "The number has to be turned into a string before it is joined. The str() function does that."
 explanation: "Toán tử + chỉ nối được chuỗi với chuỗi. Muốn ghép chữ với một số, phải đổi số thành chuỗi bằng str() trước."
+explanation_en: "The + operator can only join a string to a string. To put text next to a number, you first turn the number into a string with str()."
 tiers:
   1:
     - count: 10
       prompt: "Chương trình báo lỗi khi chạy. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program shows an error when it runs. Choose the right fix to print {expected_inline}."
       code: |
         {v} = {n}
         print("{label}: " + {v})
@@ -29,6 +35,7 @@ tiers:
   2:
     - count: 12
       prompt: "Chương trình báo lỗi khi chạy. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program shows an error when it runs. Choose the right fix to print {expected_inline}."
       code: |
         {n1} = {p}
         {n2} = {q}
@@ -52,6 +59,7 @@ tiers:
   3:
     - count: 12
       prompt: "Chương trình báo lỗi khi chạy. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program shows an error when it runs. Choose the right fix to print {expected_inline}."
       code: |
         {v} = 0
         for i in range({r}):

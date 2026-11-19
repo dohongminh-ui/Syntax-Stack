@@ -5,11 +5,17 @@ hints:
   - "Mỗi lệnh if cần đúng cú pháp: một phép so sánh bằng == (không phải =) và kết thúc bằng dấu hai chấm."
   - "Nhìn kỹ dòng if: dấu = dùng để gán giá trị, còn so sánh bằng phải là ==; và đừng quên dấu : ở cuối."
   - "Đọc từng ký tự của dòng if / elif: có thiếu dấu hai chấm, hoặc dùng = thay cho == không?"
+hints_en:
+  - "Every if needs correct syntax: a comparison written with == (not =) and a colon at the end."
+  - "Look closely at the if line: = is for assigning a value, a comparison needs ==, and don't forget the : at the end."
+  - "Read the if / elif line character by character: is a colon missing, or is = used instead of ==?"
 explanation: "Trong điều kiện, = là phép gán còn == mới là so sánh bằng. Ngoài ra dòng if / elif / else phải kết thúc bằng dấu hai chấm."
+explanation_en: "In a condition, = assigns a value and == compares. Also, every if / elif / else line must end with a colon."
 tiers:
   1:
     - count: 10
       prompt: "Chương trình báo lỗi cú pháp. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program shows a syntax error. Choose the right fix to print {expected_inline}."
       code: |
         {var} = {t}
         if {var} = {t}:
@@ -31,9 +37,11 @@ tiers:
         - {name: compared_with_text, rep: 'if {var} == "{t}":'}
         - {name: missing_colon, rep: "if {var} == {t}"}
       explanation: "if {var} = {t}: dùng dấu = (gán) nên Python báo lỗi. So sánh bằng phải viết là if {var} == {t}:."
+      explanation_en: "if {var} = {t}: uses = (assignment), so Python reports an error. The comparison must be written as if {var} == {t}:."
   2:
     - count: 12
       prompt: "Chương trình báo lỗi cú pháp. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program shows a syntax error. Choose the right fix to print {expected_inline}."
       code: |
         {var} = {t}
         if {var} >= {t}
@@ -55,9 +63,11 @@ tiers:
         - {name: elif_instead_of_if, rep: "elif {var} >= {t}:"}
         - {name: parentheses_only, rep: "if ({var} >= {t})"}
       explanation: "Dòng if phải kết thúc bằng dấu hai chấm ':' để mở khối lệnh. Thiếu dấu này Python báo lỗi cú pháp."
+      explanation_en: "An if line must end with a colon ':' to open its block. Without it, Python reports a syntax error."
   3:
     - count: 6
       prompt: "Chương trình báo lỗi cú pháp. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program shows a syntax error. Choose the right fix to print {expected_inline}."
       code: |
         for {i} in range({a}, {b}):
             if {i} % 2 = 0:
@@ -75,8 +85,10 @@ tiers:
         - {name: wrong_operator, rep: "if {i} / 2 == 0:"}
         - {name: missing_colon, rep: "if {i} % 2 == 0"}
       explanation: "Kiểm tra số chẵn là {i} % 2 == 0. Dùng một dấu = là phép gán nên không hợp lệ trong điều kiện."
+      explanation_en: "The test for an even number is {i} % 2 == 0. A single = is an assignment, which is not allowed in a condition."
     - count: 6
       prompt: "Chương trình báo lỗi cú pháp. Chọn cách sửa đúng để in ra {expected_inline}."
+      prompt_en: "The program shows a syntax error. Choose the right fix to print {expected_inline}."
       code: |
         for {i} in range({a}, {b}):
             if {i} >= {t}
@@ -95,3 +107,4 @@ tiers:
         - {name: semicolon_instead_of_colon, rep: "if {i} >= {t};"}
         - {name: elif_instead_of_if, rep: "elif {i} >= {t}:"}
       explanation: "Dòng if nằm trong vòng lặp vẫn phải kết thúc bằng dấu hai chấm ':' trước khi viết khối lệnh thụt vào bên dưới."
+      explanation_en: "An if line inside a loop still has to end with a colon ':' before the indented block below it."

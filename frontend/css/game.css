@@ -117,6 +117,11 @@ body:has(#screen-start:not([hidden])) .home-bg { display: block; }
 .keyrow .keyopt .cap-top { padding: 0 6px; }
 .switch { display: flex; gap: 6px; padding: 6px; background: var(--plate); border-radius: 12px; box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6); }
 .switch .key { flex: 1 1 0; }
+/* VI | EN language toggle: a small two-key switch, top-right of the home screen, in flow so it never overlaps the title */
+.lang-switch { align-self: flex-end; gap: 4px; padding: 4px; margin-bottom: -14px; border-radius: 10px; }
+.lang-switch .key { flex: 0 0 auto; }
+.lang-switch .keyopt .cap-top { padding: 0 12px; min-height: 36px; }
+.lang-switch .kb-label { letter-spacing: 0.06em; }
 .setup-note { font-size: 13px; color: var(--muted); }
 .hs { font: 500 13px/1.4 var(--f-mono); color: var(--muted); min-height: 1em; text-align: center; }
 

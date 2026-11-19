@@ -5,11 +5,17 @@ hints:
   - "Một hàm phải được định nghĩa bằng def trước khi bạn gọi nó."
   - "Thân hàm (kể cả return) phải thụt vào một mức dưới dòng def; lời gọi hàm thẳng hàng với def."
   - "Thứ tự thường là: def, các dòng thân hàm thụt vào (return ở cuối), rồi phần gọi hàm và in kết quả."
+hints_en:
+  - "A function must be defined with def before you call it."
+  - "The function body (including return) must be indented one level under the def line; the call lines up with def."
+  - "The usual order is: def, the indented body lines (return at the end), then the call that prints the result."
 explanation: "Hàm phải được định nghĩa trước khi gọi. Thân hàm thụt vào dưới def, còn lời gọi hàm và print thẳng hàng với def. Đầu ra đúng là {expected_inline}."
+explanation_en: "A function must be defined before it is called. The body is indented under def, while the call and print line up with def. The correct output is {expected_inline}."
 tiers:
   1:
     - count: 8
       prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      prompt_en: "Arrange and indent the lines so the program prints {expected_inline}."
       code: |
         def {f}({x}):
             return {x} * {k}
@@ -33,6 +39,7 @@ tiers:
   2:
     - count: 12
       prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      prompt_en: "Arrange and indent the lines so the program prints {expected_inline}."
       code: |
         def {f}({p}, {q}):
             {r} = {p} + {q}
@@ -70,6 +77,7 @@ tiers:
   3:
     - count: 6
       prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      prompt_en: "Arrange and indent the lines so the program prints {expected_inline}."
       code: |
         def {f}({x}):
             return {x} * {k}
@@ -97,6 +105,7 @@ tiers:
             print({f}({i}))
     - count: 6
       prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      prompt_en: "Arrange and indent the lines so the program prints {expected_inline}."
       code: |
         def {f}({x}):
             return {x} * {k}

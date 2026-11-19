@@ -1,7 +1,8 @@
 # Syntax Stack backend
 
 FastAPI service for the two game modes (Code Rescue and Syntax Rows). API contract:
-`../docs/api-contract.md`. All player-facing strings are Vietnamese.
+`../docs/api-contract.md`. Player-facing strings are Vietnamese by default and English on request
+(`X-Lang: en` header, `lang=en` on the PvP WebSocket URL; see `app/i18n.py`).
 
 ## Install
 

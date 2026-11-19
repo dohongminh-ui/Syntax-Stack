@@ -21,7 +21,8 @@ from contextlib import closing
 from pathlib import Path
 from typing import Optional
 
-from . import bank, custom_gen, sandbox
+from . import bank, custom_gen, i18n, sandbox
+from .i18n import tr
 
 DB_PATH = Path(os.environ.get("SYNTAX_STACK_CUSTOM_DB",
                               Path(__file__).resolve().parents[1] / "data" / "custom.sqlite"))
@@ -35,7 +36,8 @@ _SET_ID = re.compile(r"^[a-z2-7]{8}$")
 
 
 class CustomError(bank.BankError):
-    """An error with an explicit HTTP status; the message is Vietnamese and shown to the learner."""
+    """An error with an explicit HTTP status; the message (Vietnamese or English, by the request) is shown to the
+    learner."""
 
     def __init__(self, message: str, status: int):
         super().__init__(message)
@@ -76,7 +78,9 @@ def _take_slot(key: str) -> None:
         if len(recent) >= RATE_LIMIT:
             _hits[key] = recent
             raise CustomError(
-                f"Bạn đã tạo {RATE_LIMIT} bộ câu đố trong một giờ qua, đó là mức tối đa. Hãy thử lại sau.", 429)
+                tr(f"Bạn đã tạo {RATE_LIMIT} bộ câu đố trong một giờ qua, đó là mức tối đa. Hãy thử lại sau.",
+                   f"You made {RATE_LIMIT} puzzle sets in the last hour, which is the maximum. Please try again later."),
+                429)
         recent.append(now)
         _hits[key] = recent
 
@@ -133,11 +137,12 @@ def _new_set_id() -> str:
 
 def _load_set(set_id: str) -> dict:
     if not _SET_ID.match(set_id):
-        raise CustomError("Không tìm thấy bộ câu đố này.", 404)
+        raise CustomError(tr("Không tìm thấy bộ câu đố này.", "This puzzle set was not found."), 404)
     with closing(_connect()) as con:
         r = con.execute("SELECT * FROM custom_sets WHERE id = ?", (set_id,)).fetchone()
     if r is None or r["created_at"] < _now() - TTL_S:
-        raise CustomError("Không tìm thấy bộ câu đố này, có thể nó đã hết hạn (30 ngày).", 404)
+        raise CustomError(tr("Không tìm thấy bộ câu đố này, có thể nó đã hết hạn (30 ngày).",
+                             "This puzzle set was not found, it may have expired (30 days)."), 404)
     return {"id": r["id"], "meta": json.loads(r["meta"]), "puzzles": json.loads(r["puzzles"])}
 
 
@@ -152,7 +157,7 @@ def _view(set_id: str, meta: dict, puzzles: list[dict], level: str, *, with_sour
         "code": meta["code"] if with_source else None,
         "expected_output": meta["expected_output"] if with_source else None,
         "puzzles": [bank.public_puzzle(p, level) for p in puzzles],
-        "skipped": meta["skipped"],
+        "skipped": [{"type": sk["type"], "reason": i18n.pick(sk, "reason")} for sk in meta["skipped"]],
     }
 
 
@@ -160,19 +165,23 @@ def create_set(code: str, level: str, client: Optional[str]) -> dict:
     try:
         clean, tree = custom_gen.prepare_source(code)
     except custom_gen.InvalidSource as e:
-        raise CustomError(str(e), 422) from None
+        raise CustomError(tr(str(e), e.en), 422) from None
     key = client_key(client)
     _take_slot(key)
     try:
         out = sandbox.generate(clean)
     except sandbox.SandboxError:
-        raise CustomError("Chương trình chạy quá lâu hoặc dùng quá nhiều tài nguyên nên đã bị dừng.", 422) from None
+        raise CustomError(tr("Chương trình chạy quá lâu hoặc dùng quá nhiều tài nguyên nên đã bị dừng.",
+                             "The program ran for too long or used too many resources, so it was stopped."),
+                          422) from None
     if not out.get("ok"):
-        raise CustomError(str(out.get("message") or "Chương trình không chạy được."), 422)
+        raise CustomError(str(i18n.pick_get(out, "message")
+                              or tr("Chương trình không chạy được.", "The program could not run.")), 422)
     generated = out["puzzles"]
     if not generated:
-        reasons = " ".join(s["reason"] for s in out["skipped"])
-        raise CustomError("Không tạo được câu đố nào từ đoạn mã này. " + reasons, 422)
+        reasons = " ".join(i18n.pick(s, "reason") for s in out["skipped"])
+        raise CustomError(tr("Không tạo được câu đố nào từ đoạn mã này. ",
+                             "No puzzle could be made from this code. ") + reasons, 422)
 
     set_id = _new_set_id()
     topic = custom_gen.infer_topic(tree)
@@ -199,11 +208,11 @@ def get_puzzle(puzzle_id: str) -> dict:
     """The stored puzzle row (with answers). Same shape as ``bank.get_puzzle``."""
     m = _PUZZLE_ID.match(puzzle_id)
     if not m:
-        raise CustomError(f"Không tìm thấy câu đố '{puzzle_id}'.", 404)
+        raise CustomError(tr(f"Không tìm thấy câu đố '{puzzle_id}'.", f"Puzzle '{puzzle_id}' was not found."), 404)
     for p in _load_set(m.group(1))["puzzles"]:
         if p["id"] == puzzle_id:
             return p
-    raise CustomError(f"Không tìm thấy câu đố '{puzzle_id}'.", 404)
+    raise CustomError(tr(f"Không tìm thấy câu đố '{puzzle_id}'.", f"Puzzle '{puzzle_id}' was not found."), 404)
 
 
 def diagnose(code: str, expected: str):

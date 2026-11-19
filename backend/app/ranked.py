@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from . import bank, custom, nicknames, rescue_engine, rooms
+from .i18n import tr
 
 DB_PATH = Path(os.environ.get("SYNTAX_STACK_RANKED_DB", custom.DB_PATH.parent / "ranked.sqlite"))
 
@@ -57,7 +58,7 @@ _RUN_RE = re.compile(r"^[0-9a-f]{16}$")
 
 
 class RankedError(bank.BankError):
-    """An error with an explicit HTTP status; the message is Vietnamese and shown to the user."""
+    """An error with an explicit HTTP status; the message (Vietnamese or English, by the request) is shown to the user."""
 
     def __init__(self, message: str, status: int):
         super().__init__(message)
@@ -72,7 +73,8 @@ def _now() -> float:
 
 
 class _Limiter:
-    def __init__(self, limit: int, message: str, window_s: int = RATE_WINDOW_S):
+    def __init__(self, limit: int, message: tuple[str, str], window_s: int = RATE_WINDOW_S):
+        """``message`` is the ``(Vietnamese, English)`` text of the 429."""
         self.limit, self.message, self.window_s = limit, message, window_s
         self._lock = threading.Lock()
         self._hits: dict[str, list[float]] = {}
@@ -91,20 +93,24 @@ class _Limiter:
             recent = [t for t in self._hits.get(key, []) if t > now - self.window_s]
             if len(recent) >= self.limit:
                 self._hits[key] = recent
-                raise RankedError(self.message, 429)
+                raise RankedError(tr(*self.message), 429)
             recent.append(now)
             self._hits[key] = recent
 
 
-_run_limiter = _Limiter(RUN_RATE_LIMIT, f"Bạn đã bắt đầu {RUN_RATE_LIMIT} ván xếp hạng trong một giờ qua, "
-                                        "đó là mức tối đa. Hãy thử lại sau.")
-_race_limiter = _Limiter(RACE_RATE_LIMIT, f"Bạn đã tạo {RACE_RATE_LIMIT} cuộc đua trong một giờ qua, "
-                                          "đó là mức tối đa. Hãy thử lại sau.")
+_run_limiter = _Limiter(RUN_RATE_LIMIT, (
+    f"Bạn đã bắt đầu {RUN_RATE_LIMIT} ván xếp hạng trong một giờ qua, đó là mức tối đa. Hãy thử lại sau.",
+    f"You started {RUN_RATE_LIMIT} ranked games in the last hour, which is the maximum. Please try again later."))
+_race_limiter = _Limiter(RACE_RATE_LIMIT, (
+    f"Bạn đã tạo {RACE_RATE_LIMIT} cuộc đua trong một giờ qua, đó là mức tối đa. Hãy thử lại sau.",
+    f"You created {RACE_RATE_LIMIT} races in the last hour, which is the maximum. Please try again later."))
 
 
-_nickname_limiter = _Limiter(60, "Bạn đã xin quá nhiều tên trong một phút. Hãy thử lại sau.", 60)
-_pvp_limiter = _Limiter(PVP_RATE_LIMIT, f"Bạn đã tìm trận đối kháng {PVP_RATE_LIMIT} lần trong một giờ qua, "
-                                        "đó là mức tối đa. Hãy thử lại sau.")
+_nickname_limiter = _Limiter(60, ("Bạn đã xin quá nhiều tên trong một phút. Hãy thử lại sau.",
+                                  "You asked for too many names in a minute. Please try again later."), 60)
+_pvp_limiter = _Limiter(PVP_RATE_LIMIT, (
+    f"Bạn đã tìm trận đối kháng {PVP_RATE_LIMIT} lần trong một giờ qua, đó là mức tối đa. Hãy thử lại sau.",
+    f"You searched for a duel {PVP_RATE_LIMIT} times in the last hour, which is the maximum. Please try again later."))
 
 
 def take_nickname_slot(client: Optional[str]) -> None:
@@ -205,12 +211,12 @@ def _device_hash(device_id: str) -> str:
 
 
 def _clean_identity(nickname: str, device_id: str) -> tuple[str, str]:
-    nickname = rooms._clean_text(nickname, rooms.MAX_NICKNAME, "Biệt danh", required=True)
+    nickname = rooms._clean_text(nickname, rooms.MAX_NICKNAME, ("Biệt danh", "Nickname"), required=True)
     if not nicknames.is_generated(nickname):
-        raise RankedError("Hãy dùng tên được tạo ngẫu nhiên.", 422)
+        raise RankedError(tr("Hãy dùng tên được tạo ngẫu nhiên.", "Please use the randomly generated name."), 422)
     nickname = unicodedata.normalize("NFC", nickname)
     if not isinstance(device_id, str) or not _DEVICE_RE.match(device_id):
-        raise RankedError("Mã thiết bị không hợp lệ.", 422)
+        raise RankedError(tr("Mã thiết bị không hợp lệ.", "That device id is not valid."), 422)
     return nickname, _device_hash(device_id)
 
 
@@ -222,9 +228,11 @@ def _load_race(con: sqlite3.Connection, code: str) -> sqlite3.Row:
     row = (con.execute("SELECT * FROM races WHERE code = ?", (code,)).fetchone()
            if rooms._CODE_RE.match(code) else None)
     if row is None:
-        raise RankedError("Không tìm thấy cuộc đua này.", 404)
+        raise RankedError(tr("Không tìm thấy cuộc đua này.",
+                      "This race was not found."), 404)
     if row["expires_at"] < _now():
-        raise RankedError("Cuộc đua này đã hết hạn (7 ngày sau khi tạo).", 410)
+        raise RankedError(tr("Cuộc đua này đã hết hạn (7 ngày sau khi tạo).",
+                      "This race has expired (7 days after it was created)."), 410)
     return row
 
 
@@ -244,7 +252,8 @@ def create_race(level: str, nickname: str, device_id: str, client: Optional[str]
             except sqlite3.IntegrityError:
                 continue
         else:  # pragma: no cover
-            raise RankedError("Không tạo được cuộc đua, hãy thử lại.", 503)
+            raise RankedError(tr("Không tạo được cuộc đua, hãy thử lại.",
+                      "Could not create the race, please try again."), 503)
         con.commit()
     return {"code": code, "seed": seed, "level": level}
 
@@ -291,12 +300,15 @@ def create_run(kind: str, level: Optional[str], nickname: str, device_id: str, r
                client: Optional[str]) -> dict:
     nickname, device_hash = _clean_identity(nickname, device_id)
     if kind == "race" and not race:
-        raise RankedError("Thiếu mã cuộc đua.", 422)
+        raise RankedError(tr("Thiếu mã cuộc đua.",
+                      "The race code is missing."), 422)
     if kind == "ranked":
         if race:
-            raise RankedError("Ván xếp hạng không có mã cuộc đua.", 422)
+            raise RankedError(tr("Ván xếp hạng không có mã cuộc đua.",
+                      "A ranked game has no race code."), 422)
         if level not in LEVELS:
-            raise RankedError("Thiếu cấp độ.", 422)
+            raise RankedError(tr("Thiếu cấp độ.",
+                      "The level is missing."), 422)
     _run_limiter.take(client)
     run_id, token = secrets.token_hex(8), secrets.token_hex(16)
     now = _now()
@@ -308,7 +320,8 @@ def create_run(kind: str, level: Optional[str], nickname: str, device_id: str, r
             race_code, level, seed = row["code"], row["level"], row["seed"]
             taken = con.execute("SELECT COUNT(*) FROM runs WHERE race = ?", (race_code,)).fetchone()[0]
             if taken >= MAX_RACE_RUNS:
-                raise RankedError(f"Cuộc đua đã đủ {MAX_RACE_RUNS} lượt chơi.", 410)
+                raise RankedError(tr(f"Cuộc đua đã đủ {MAX_RACE_RUNS} lượt chơi.",
+                      f"The race is full ({MAX_RACE_RUNS} runs)."), 410)
         else:
             _purge(con)
             seed = secrets.randbits(32)
@@ -430,13 +443,17 @@ def finish_run(run_id: str, token: str, moves: list, client_score: Optional[int]
         run = con.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone() \
             if _RUN_RE.match(run_id or "") else None
         if run is None:
-            raise RankedError("Không tìm thấy ván chơi này.", 404)
+            raise RankedError(tr("Không tìm thấy ván chơi này.",
+                      "This game was not found."), 404)
         if not token or len(token) > 64 or not hmac.compare_digest(rooms._hash(token), run["token_hash"]):
-            raise RankedError("Sai mã ván chơi.", 403)
+            raise RankedError(tr("Sai mã ván chơi.",
+                      "Wrong game token."), 403)
         if run["status"] != "open":
-            raise RankedError("Ván chơi này đã được gửi kết quả.", 409)
+            raise RankedError(tr("Ván chơi này đã được gửi kết quả.",
+                      "The result of this game has already been sent."), 409)
         if run["created_at"] < _now() - RUN_TTL_S:
-            raise RankedError("Ván chơi này đã quá 3 giờ nên không thể gửi kết quả.", 410)
+            raise RankedError(tr("Ván chơi này đã quá 3 giờ nên không thể gửi kết quả.",
+                      "This game is more than 3 hours old, so its result can no longer be sent."), 410)
         records = _records(con, run_id)
 
     reason: Optional[str] = None
@@ -457,7 +474,8 @@ def finish_run(run_id: str, token: str, moves: list, client_score: Optional[int]
             (status, reason, finished, duration, s.get("score", 0), s.get("locks", 0), s.get("mistakes", 0),
              s.get("bugs_fixed", 0), s.get("best_streak", 0), client_score, run_id))
         if cur.rowcount == 0:
-            raise RankedError("Ván chơi này đã được gửi kết quả.", 409)
+            raise RankedError(tr("Ván chơi này đã được gửi kết quả.",
+                      "The result of this game has already been sent."), 409)
         con.commit()
         if summary is None:
             return {"status": "rejected", "reason": reason}

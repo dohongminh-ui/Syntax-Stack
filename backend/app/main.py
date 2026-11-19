@@ -18,8 +18,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import bank, custom, hints, nicknames, pvp, ranked, rescue_engine, rooms, rows, tutor
+from . import bank, custom, hints, i18n, nicknames, pvp, ranked, rescue_engine, rooms, rows, tutor
 from . import validator as V
+from .i18n import tr
 
 if sys.version_info < (3, 12):  # the validator reads ast node.type_params (3.12+)
     raise RuntimeError(
@@ -67,7 +68,7 @@ class _BodyLimit:
         limit = MAX_FINISH_BODY_BYTES if _FINISH_PATH.match(scope.get("path", "")) else self.limit
         declared = dict(scope.get("headers") or []).get(b"content-length", b"")
         if declared.isdigit() and int(declared) > limit:
-            response = JSONResponse({"detail": "Yêu cầu quá lớn."}, status_code=413)
+            response = JSONResponse({"detail": tr("Yêu cầu quá lớn.", "The request is too large.")}, status_code=413)
             return await response(scope, receive, send)
         seen = 0
 
@@ -84,6 +85,9 @@ class _BodyLimit:
 
 
 app.add_middleware(_BodyLimit, limit=MAX_BODY_BYTES)  # added last = runs first
+# Language of the request (header ``X-Lang: en|vi``, default vi) for every message built while it is served; the
+# outermost middleware, so the 413 above is localized too. See app/i18n.py.
+app.add_middleware(i18n.LangMiddleware)
 
 
 def _client_ip(request: Request) -> Optional[str]:
@@ -171,7 +175,7 @@ class NextRequest(BaseModel):
 
 
 class CustomSetRequest(BaseModel):
-    # No length cap here: too long must be a Vietnamese 422 from custom.create_set, not a pydantic list.
+    # No length cap here: too long must be a 422 from custom.create_set (in the request's language), not a pydantic list.
     code: str
     level: Level = "intermediate"
 
@@ -199,12 +203,12 @@ class AnswerRequest(BaseModel):
 
 class RoomCreateRequest(BaseModel):
     level: Level = "intermediate"
-    title: Optional[str] = Field(default=None, max_length=200)  # real limit (40) is a Vietnamese 422 in rooms.py
+    title: Optional[str] = Field(default=None, max_length=200)  # real limit (40) is a 422 in rooms.py
     names: Literal["random", "free"] = "random"
 
 
 class RoomJoinRequest(BaseModel):
-    # Ignored in "random" rooms; in "free" rooms the real limit (20) is a Vietnamese 422 in rooms.py
+    # Ignored in "random" rooms; in "free" rooms the real limit (20) is a 422 in rooms.py
     nickname: Optional[str] = Field(default=None, max_length=200)
 
 
@@ -261,7 +265,7 @@ class DebriefRequest(BaseModel):
 class RunCreateRequest(BaseModel):
     kind: Literal["ranked", "race"]
     level: Optional[Level] = None  # required for "ranked"; a race brings its own level
-    nickname: str = Field(max_length=200)  # real limit (20) is a Vietnamese 422 in rooms.py
+    nickname: str = Field(max_length=200)  # real limit (20) is a 422 in rooms.py
     device_id: str = Field(max_length=64)
     race: Optional[str] = Field(default=None, max_length=16)
 
@@ -295,8 +299,9 @@ class PvpJoinRequest(BaseModel):
     device_id: str = Field(max_length=64)
 
 
-# Vietnamese topic names, as the frontend shows them (frontend/js/pieces.js: TOPIC_NAMES).
+# Topic names, as the frontend shows them (frontend/js/pieces.js: TOPIC_NAMES).
 TOPIC_NAMES_VI = {"variables": "Biến", "conditions": "Điều kiện", "loops": "Vòng lặp", "functions": "Hàm"}
+TOPIC_NAMES_EN = {"variables": "Variables", "conditions": "Conditions", "loops": "Loops", "functions": "Functions"}
 PREDICT_TRACE_STEPS = 40
 
 
@@ -312,9 +317,9 @@ def health():
 def puzzle_next(req: NextRequest):
     if req.kind == "debug":
         if not req.template_id:
-            raise HTTPException(422, "kind 'debug' cần có template_id.")
+            raise HTTPException(422, tr("kind 'debug' cần có template_id.", "kind 'debug' needs a template_id."))
     elif req.kind == "rescue" and (req.topic is None or req.tier is None):
-        raise HTTPException(422, "kind 'rescue' cần có topic và tier.")
+        raise HTTPException(422, tr("kind 'rescue' cần có topic và tier.", "kind 'rescue' needs a topic and a tier."))
     live = pvp.serve_puzzle(req.match_id, req.match_token, kind=req.kind, bug=req.bug, topic=req.topic,
                             template_id=req.template_id)
     if live is not None:  # a valid live match: the server picked the puzzle for the player's lock / bug line
@@ -378,7 +383,7 @@ def puzzle_explain(puzzle_id: str, req: AnswerRequest, request: Request):
     result = bank.check_answer(puzzle, option_id=req.option_id, order=order, reveal=True,
                                diagnose=_diagnoser(puzzle_id))
     if result["correct"]:
-        raise HTTPException(422, "Câu trả lời này đã đúng.")
+        raise HTTPException(422, tr("Câu trả lời này đã đúng.", "This answer is already correct."))
     data = puzzle["data"]
     code = puzzle["code"]
     if puzzle["type"] == "parsons":
@@ -390,10 +395,10 @@ def puzzle_explain(puzzle_id: str, req: AnswerRequest, request: Request):
         if puzzle["type"] == "find_bug":
             line_number = next(i for i, line in enumerate(data["lines"], 1)
                                if line["id"] == option["line_id"])
-            choice = f"Dòng {line_number}: {choice}"
+            choice = tr(f"Dòng {line_number}: {choice}", f"Line {line_number}: {choice}")
             code = "\n".join("    " * line["indent"] + line["text"] for line in data["lines"])
     return tutor.feedback("explain", {
-        "prompt": puzzle["prompt"], "type": puzzle["type"], "code": code,
+        "prompt": i18n.pick(puzzle, "prompt"), "type": puzzle["type"], "code": code,
         "choice": choice, "diagnosis": result["message"], "actual_output": result["actual_output"],
         "expected_output": puzzle["expected_output"], "reference": result["explanation"],
         "solution": result["solution_code"],
@@ -403,16 +408,17 @@ def puzzle_explain(puzzle_id: str, req: AnswerRequest, request: Request):
 @app.get("/api/puzzle/{puzzle_id}/rematch")
 def puzzle_rematch(puzzle_id: str, request: Request, level: Level = "intermediate"):
     if custom.is_custom_id(puzzle_id):
-        raise HTTPException(422, "Câu đố tự tạo không có bản luyện lại.")
+        raise HTTPException(422, tr("Câu đố tự tạo không có bản luyện lại.", "Custom puzzles have no rematch."))
     original = bank.get_puzzle(puzzle_id)
     followup = bank.select_puzzle(
         kind="rescue", topic=original["topic"], tier=original["tier"], level=level,
         template_id=original["template_id"], exclude_ids=[original["id"]], exclude_templates=[],
     )
     intro = tutor.feedback("rematch", {
-        "previous_prompt": original["prompt"], "next_prompt": followup["prompt"],
-        "topic": original["topic"], "hint": followup["hints"][0],
-    }, "Thử áp dụng lại quy tắc vừa gặp vào câu đố mới này.", client=_client_ip(request))
+        "previous_prompt": i18n.pick(original, "prompt"), "next_prompt": i18n.pick(followup, "prompt"),
+        "topic": original["topic"], "hint": i18n.pick(followup, "hints")[0],
+    }, tr("Thử áp dụng lại quy tắc vừa gặp vào câu đố mới này.",
+          "Try applying the rule you just met to this new puzzle."), client=_client_ip(request))
     return {**intro, "puzzle": bank.public_puzzle(followup, level)}
 
 
@@ -436,19 +442,24 @@ def rescue_debrief(req: DebriefRequest, request: Request):
             except bank.BankError:
                 pass  # an invalid attempt only loses its diagnosis
         mistakes.append({"topic": puzzle["topic"], "type": puzzle["type"],
-                         "template_id": puzzle["template_id"], "prompt": puzzle["prompt"],
+                         "template_id": puzzle["template_id"], "prompt": i18n.pick(puzzle, "prompt"),
                          "diagnosis": diagnosis})
     if not mistakes:
-        raise HTTPException(422, "Không có lỗi nào để tổng kết.")
+        raise HTTPException(422, tr("Không có lỗi nào để tổng kết.", "There are no mistakes to sum up."))
     topic_counts: dict[str, int] = {}
     for m in mistakes:
         topic_counts[m["topic"]] = topic_counts.get(m["topic"], 0) + 1
     focus_topic = max(topic_counts, key=topic_counts.get)  # ties: first in order of appearance
-    name = TOPIC_NAMES_VI.get(focus_topic, focus_topic)
-    fallback = (f"Ván này bạn sai nhiều nhất ở chủ đề {name} ({topic_counts[focus_topic]} lần). "
-                "Hãy chơi Luyện tập chủ đề này để quen lại quy tắc trước ván sau.")
+    count = topic_counts[focus_topic]
+    fallback = tr(
+        f"Ván này bạn sai nhiều nhất ở chủ đề {TOPIC_NAMES_VI.get(focus_topic, focus_topic)} ({count} lần). "
+        "Hãy chơi Luyện tập chủ đề này để quen lại quy tắc trước ván sau.",
+        f"In this game you made the most mistakes in {TOPIC_NAMES_EN.get(focus_topic, focus_topic)} "
+        f"({count} time{'' if count == 1 else 's'}). "
+        "Play Practice on this topic to get used to the rule again before your next game.")
     if req.end_reason == "crash":
-        fallback += " Nhớ rằng hai câu trả lời sai sẽ kết thúc một ván Code Rescue."
+        fallback += tr(" Nhớ rằng hai câu trả lời sai sẽ kết thúc một ván Code Rescue.",
+                       " Remember that two wrong answers end a Code Rescue game.")
     context = {"level": req.level, "mode": req.mode, "end_reason": req.end_reason,
                "topic_counts": topic_counts, "focus_topic": focus_topic, "mistakes": mistakes}
     reply = tutor.feedback("debrief", context, fallback, client=_client_ip(request))
@@ -602,8 +613,10 @@ def pvp_misaki(device_id: str = Query(default="", max_length=64)):
 
 
 @app.websocket("/api/pvp/ws")
-async def pvp_ws(ws: WebSocket, ticket: str = Query(default="", max_length=64)):
-    await pvp.serve_socket(ws, ticket)
+async def pvp_ws(ws: WebSocket, ticket: str = Query(default="", max_length=64),
+                 lang: Optional[str] = Query(default=None, max_length=8)):
+    """``?ticket=...&lang=en|vi``: ``lang`` is this player's display language (per connection; missing = ``vi``)."""
+    await pvp.serve_socket(ws, ticket, lang)
 
 
 # --------------------------------------------------------------------------- Syntax Rows
@@ -643,14 +656,16 @@ def rows_teach_back(level_id: str, req: TeachBackRequest, request: Request):
     lv = rows.get_level(level_id)
     reflection = req.reflection.strip()
     if not reflection:
-        raise HTTPException(422, "Hãy viết lời giải thích của bạn.")
+        raise HTTPException(422, tr("Hãy viết lời giải thích của bạn.", "Please write your explanation."))
     result = rows.run_level(lv, [r.model_dump() for r in req.rows])
     if not result["passed"]:
-        raise HTTPException(422, "Hãy hoàn thành màn trước khi giải thích.")
+        raise HTTPException(422, tr("Hãy hoàn thành màn trước khi giải thích.",
+                                    "Finish the level before you explain it."))
     return tutor.feedback("teach_back", {
-        "goal": lv["goal"], "code": result["code"], "output": result["actual_output"],
+        "goal": i18n.pick(lv, "goal"), "code": result["code"], "output": result["actual_output"],
         "learner_explanation": reflection,
-    }, "Nếu đổi đúng một mảnh mã, đầu ra sẽ thay đổi thế nào? / What would change in the output if you swapped one tile?",
+    }, tr("Nếu đổi đúng một mảnh mã, đầu ra sẽ thay đổi thế nào? / What would change in the output if you swapped one tile?",
+          "What would change in the output if you swapped one tile?"),
         client=_client_ip(request))
 
 
@@ -660,26 +675,29 @@ def rows_explain_prediction(level_id: str, req: RunRequest, request: Request):
     lv = rows.get_level(level_id)
     prediction = (req.prediction or "").strip()
     if not prediction:
-        raise HTTPException(422, "Hãy nhập dự đoán của bạn.")
+        raise HTTPException(422, tr("Hãy nhập dự đoán của bạn.", "Please enter your prediction."))
     result = rows.run_level(lv, [r.model_dump() for r in req.rows], include_trace=True,
                             prediction=prediction)
     verdict = result["prediction"]["correct"]
     if verdict is None or result["actual_output"] is None:
-        raise HTTPException(422, "Chương trình chưa chạy xong để đối chiếu dự đoán.")
+        raise HTTPException(422, tr("Chương trình chưa chạy xong để đối chiếu dự đoán.",
+                                    "The program did not finish running, so the prediction can't be checked."))
     if verdict:
-        raise HTTPException(422, "Dự đoán này đã đúng.")
+        raise HTTPException(422, tr("Dự đoán này đã đúng.", "This prediction is already correct."))
     actual = result["actual_output"]
     steps = result["trace"]["steps"]
     context = {
-        "goal": lv["goal"], "code": result["code"], "prediction": V.normalize_output(prediction),
+        "goal": i18n.pick(lv, "goal"), "code": result["code"], "prediction": V.normalize_output(prediction),
         "actual_output": actual, "expected_output": result["expected_output"],
         "passed": result["passed"], "trace": steps[:PREDICT_TRACE_STEPS],
         "trace_truncated": result["trace"]["truncated"] or len(steps) > PREDICT_TRACE_STEPS,
     }
     guess = V.normalize_output(prediction)
-    shown = actual or "(không in gì)"
-    fallback = (f"Bạn đoán:\n{guess}\nChương trình in:\n{shown}\n"
-                "Mở «Theo dõi từng bước» để xem mỗi dòng print chạy lúc nào.")
+    fallback = tr(
+        f"Bạn đoán:\n{guess}\nChương trình in:\n{actual or '(không in gì)'}\n"
+        "Mở «Theo dõi từng bước» để xem mỗi dòng print chạy lúc nào.",
+        f"You predicted:\n{guess}\nThe program prints:\n{actual or '(nothing)'}\n"
+        "Open \"Step-by-step trace\" to see when each print line runs.")
     return tutor.feedback("predict", context, fallback, client=_client_ip(request))
 
 
@@ -701,7 +719,7 @@ def rows_coach(level_id: str, req: RowsHintRequest, request: Request,
     if diagnosis["passed"] or not diagnosis["code"]:
         return hint
     context = {
-        "goal": config["goal"],
+        "goal": i18n.pick(config, "goal"),
         "hint_level": level,
         "tier": level,  # deprecated alias of hint_level, kept for existing n8n workflows
         "code": diagnosis["code"],
@@ -712,7 +730,8 @@ def rows_coach(level_id: str, req: RowsHintRequest, request: Request,
     if req.trace_step is not None:
         steps = diagnosis["trace"]["steps"]
         if req.trace_step >= len(steps):
-            raise HTTPException(422, "Bước chạy này không có trong chương trình.")
+            raise HTTPException(422, tr("Bước chạy này không có trong chương trình.",
+                                        "This step is not in the program."))
         context["current_step"] = {"step": req.trace_step + 1, **steps[req.trace_step]}
     return {"level": level, **tutor.feedback("coach", context, hint["text"], client=_client_ip(request))}
 

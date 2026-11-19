@@ -5,11 +5,17 @@ hints:
   - "return gửi một giá trị từ trong hàm ra cho nơi gọi hàm."
   - "Thay giá trị truyền vào cho tham số, tính biểu thức, rồi so với đầu ra cần có."
   - "Biểu thức sau return phải biến giá trị đầu vào thành đúng giá trị đầu ra. Thử từng lựa chọn với số được truyền vào."
+hints_en:
+  - "return sends a value from inside the function back to wherever the function was called."
+  - "Put the passed value into the parameter, calculate the expression, then compare it with the output you need."
+  - "The expression after return must turn the input value into the right output value. Try each choice with the number that is passed in."
 explanation: "Hàm nhận đầu vào, tính biểu thức sau return và trả kết quả về cho print(). Chỉ biểu thức đúng mới cho ra {expected_inline}."
+explanation_en: "The function takes an input, calculates the expression after return and gives the result back to print(). Only the right expression gives {expected_inline}."
 tiers:
   1:
     - count: 5
       prompt: "Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      prompt_en: "Fill in the expression after return so the program prints {expected_inline}."
       code: |
         def {f}({x}):
             return ___
@@ -25,8 +31,10 @@ tiers:
         - {name: returned_argument, frag: "{x}"}
         - {name: returned_constant, frag: "2"}
       explanation: "{f}({a}) thay {x} = {a} vào biểu thức sau return. Muốn có {expected_inline} thì biểu thức phải là {answer}."
+      explanation_en: "{f}({a}) puts {x} = {a} into the expression after return. To get {expected_inline}, the expression has to be {answer}."
     - count: 6
       prompt: "Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      prompt_en: "Fill in the expression after return so the program prints {expected_inline}."
       code: |
         def {f}({x}):
             return ___
@@ -43,8 +51,10 @@ tiers:
         - {name: returned_constant, frag: "{k}"}
         - {name: returned_argument, frag: "{x}"}
       explanation: "{f}({a}) thay {x} = {a} vào biểu thức sau return. Muốn có {expected_inline} thì biểu thức phải là {answer}."
+      explanation_en: "{f}({a}) puts {x} = {a} into the expression after return. To get {expected_inline}, the expression has to be {answer}."
     - count: 4
       prompt: "Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      prompt_en: "Fill in the expression after return so the program prints {expected_inline}."
       code: |
         def {f}({x}):
             return ___
@@ -60,9 +70,11 @@ tiers:
         - {name: returned_argument, frag: "{x}"}
         - {name: cubed_instead_of_squared, frag: "{x} * {x} * {x}"}
       explanation: "Bình phương của {a} là {a} * {a} = {expected_inline}, nên biểu thức sau return phải là {answer}."
+      explanation_en: "The square of {a} is {a} * {a} = {expected_inline}, so the expression after return has to be {answer}."
   2:
     - count: 6
       prompt: "Hàm có hai tham số. Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      prompt_en: "The function has two parameters. Fill in the expression after return so the program prints {expected_inline}."
       code: |
         def {f}({p}, {q}):
             return ___
@@ -83,8 +95,10 @@ tiers:
         - {name: squared_first, frag: "{p} * {p}"}
         - {name: returned_second, frag: "{q}"}
       explanation: "{f}({a}, {b}) gán {p} = {a} và {q} = {b}. Cần {expected_inline} nên biểu thức là {answer}."
+      explanation_en: "{f}({a}, {b}) sets {p} = {a} and {q} = {b}. We need {expected_inline}, so the expression is {answer}."
     - count: 6
       prompt: "Hàm có hai tham số. Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      prompt_en: "The function has two parameters. Fill in the expression after return so the program prints {expected_inline}."
       code: |
         def {f}({p}, {q}):
             return ___
@@ -104,9 +118,11 @@ tiers:
         - {name: multiplied_instead_of_subtracted, frag: "{p} * {q}"}
         - {name: returned_first, frag: "{p}"}
       explanation: "{f}({a}, {b}) gán {p} = {a} và {q} = {b}. Cần {expected_inline} nên biểu thức là {answer}; thứ tự trừ quan trọng."
+      explanation_en: "{f}({a}, {b}) sets {p} = {a} and {q} = {b}. We need {expected_inline}, so the expression is {answer}; the order of the subtraction matters."
   3:
     - count: 6
       prompt: "Hàm được gọi trong vòng lặp. Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      prompt_en: "The function is called inside a loop. Fill in the expression after return so the program prints {expected_inline}."
       code: |
         def {f}({x}):
             return ___
@@ -126,8 +142,10 @@ tiers:
         - {name: cubed_instead_of_squared, frag: "{x} * {x} * {x}"}
         - {name: wrong_factor, frag: "{x} * 3"}
       explanation: "Hàm được gọi lần lượt với {i} từ {a} đến {b-1} và mỗi lần in kết quả trả về. Với kết quả {expected_inline}, biểu thức phải là {answer}."
+      explanation_en: "The function is called for {i} from {a} to {b-1}, and each time the returned value is printed. To get {expected_inline}, the expression has to be {answer}."
     - count: 6
       prompt: "Hàm được gọi trong vòng lặp. Điền biểu thức sau return để chương trình in ra {expected_inline}."
+      prompt_en: "The function is called inside a loop. Fill in the expression after return so the program prints {expected_inline}."
       code: |
         def {f}({x}):
             return ___
@@ -147,3 +165,4 @@ tiers:
         - {name: wrong_factor, frag: "{x} * 3"}
         - {name: forgot_factor, frag: "{x} + 1"}
       explanation: "Với mỗi giá trị {i}, hàm trả về nhân đôi rồi cộng 1. Các kết quả in ra là {expected_inline}."
+      explanation_en: "For each value of {i}, the function returns double the value plus 1. The printed results are {expected_inline}."

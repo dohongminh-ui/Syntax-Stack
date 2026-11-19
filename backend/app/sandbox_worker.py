@@ -60,6 +60,7 @@ def _flatten(diag) -> dict:
     run = diag.run
     return {
         "passed": diag.passed, "error_group": diag.error_group, "message": diag.message,
+        "message_en": diag.message_en,
         "actual_output": diag.actual_output, "lineno": diag.lineno,
         "run_ok": bool(run.ok) if run is not None else False,
         "error_kind": run.error_kind if run is not None else None,

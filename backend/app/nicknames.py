@@ -14,6 +14,8 @@ from typing import Optional
 
 import yaml
 
+from . import i18n
+
 CONTENT = Path(__file__).resolve().parents[1] / "content"
 WORDS_FILE = CONTENT / "nickname_words.yaml"
 BLOCKLIST_FILE = CONTENT / "name_blocklist.yaml"
@@ -38,6 +40,16 @@ ADJECTIVES: tuple[str, ...] = tuple(_nfc(str(a)).strip() for a in _words["adject
 NUM_MIN: int = int(_words["numbers"]["min"])
 NUM_MAX: int = int(_words["numbers"]["max"])
 _PREFIXES = frozenset(f"{a} {j}" for a in ANIMALS for j in ADJECTIVES)
+# English twins (same order, same length): English names read "<adjective> <animal> <NN>", e.g. "Blue Cat 42"
+ANIMALS_EN: tuple[str, ...] = tuple(str(a).strip() for a in _words["animals_en"])
+ADJECTIVES_EN: tuple[str, ...] = tuple(str(a).strip() for a in _words["adjectives_en"])
+if len(ANIMALS_EN) != len(ANIMALS) or len(ADJECTIVES_EN) != len(ADJECTIVES):
+    raise ValueError("nickname_words.yaml: animals_en / adjectives_en must parallel animals / adjectives")
+_PREFIXES_EN = frozenset(f"{j} {a}" for a in ANIMALS_EN for j in ADJECTIVES_EN)
+
+
+def animals(lang: Optional[str] = None) -> tuple[str, ...]:
+    return ANIMALS_EN if i18n.resolve(lang) == "en" else ANIMALS
 
 _blocked = _load(BLOCKLIST_FILE)
 BLOCK_SUBSTRING: tuple[str, ...] = tuple(str(w).lower() for w in _blocked.get("substring") or [])
@@ -47,24 +59,32 @@ BLOCK_WORD: frozenset[str] = frozenset(str(w).lower() for w in _blocked.get("wor
 # --------------------------------------------------------------------------- generated names
 
 
-def generate(rng: Optional[random.Random] = None) -> str:
-    """A fresh "<animal> <adjective> <NN>" name of at most 20 characters."""
+def generate(rng: Optional[random.Random] = None, lang: Optional[str] = None) -> str:
+    """A fresh name of at most 20 characters: "<animal> <adjective> <NN>" ("Mèo Xanh 42"), or in English (``lang``,
+    default the request's) "<adjective> <animal> <NN>" ("Blue Cat 42"). The English lists are parallel to the
+    Vietnamese ones, so both draw the same way from ``rng``."""
     pick = rng or random.SystemRandom()
+    english = i18n.resolve(lang) == "en"
     while True:
-        name = f"{pick.choice(ANIMALS)} {pick.choice(ADJECTIVES)} {pick.randint(NUM_MIN, NUM_MAX)}"
+        animal = pick.choice(ANIMALS_EN if english else ANIMALS)
+        adjective = pick.choice(ADJECTIVES_EN if english else ADJECTIVES)
+        number = pick.randint(NUM_MIN, NUM_MAX)
+        name = f"{adjective} {animal} {number}" if english else f"{animal} {adjective} {number}"
         if len(name) <= MAX_LEN:
             return name
 
 
 def is_generated(name: object) -> bool:
-    """True only for an exact generated-format name (after NFC normalisation); anything else is False."""
+    """True only for an exact generated-format name, Vietnamese or English (after NFC normalisation); anything else
+    is False. Names already chosen are never translated, so both forms stay valid whatever the request's language."""
     if not isinstance(name, str):
         return False
     name = _nfc(name)
     if len(name) > MAX_LEN:
         return False
     prefix, _, num = name.rpartition(" ")
-    if prefix not in _PREFIXES or not num.isascii() or not num.isdigit() or num != str(int(num)):
+    if (prefix not in _PREFIXES and prefix not in _PREFIXES_EN) or not num.isascii() or not num.isdigit() \
+            or num != str(int(num)):
         return False
     return NUM_MIN <= int(num) <= NUM_MAX
 

@@ -4,7 +4,31 @@ Backend: Python FastAPI in `backend/`, serves the static frontend from `frontend
 Run: `cd backend && python -m uvicorn app.main:app --port 8000`
 The server is stateless. Game state (grid, score, mistakes, streak) lives in the browser. The server owns puzzles and correctness.
 
-All user-facing strings (prompt, message, explanation, hints) are Vietnamese with full diacritics.
+All user-facing strings (prompt, message, explanation, hints) are Vietnamese with full diacritics, unless the request
+asks for English (next section).
+
+## Language (Vietnamese or English)
+
+Every HTTP request may send the header `X-Lang: en` or `X-Lang: vi`. Missing or unknown means `vi`, and the Vietnamese
+responses are byte-identical to what the server sent before English existed. The language only changes display text
+(prompts, hints, explanations, `message`, `detail` of errors, level titles and goals, dashboard labels, canned tutor
+fallbacks); the code, the options and their order, the answers, the verdicts, the puzzle selection and every ranked / PvP
+replay are the same in both languages. Program code and output stay as authored (`diem`, `"Tổng: 3"`, `"Đậu"`).
+
+The PvP WebSocket takes the language per connection: `/api/pvp/ws?ticket=...&lang=en`. Messages sent to that player
+(coach lines, suggestions, errors, the cancel reason, Misaki's title) are in it; the two players of a match may differ.
+Without `lang` the connection keeps the language of the request that created the ticket (`X-Lang`, default `vi`).
+
+Generated nicknames follow the language of the request too (`GET /api/nickname`, random classroom names, the "Bot" opponent): Vietnamese
+"Mèo Xanh 42", English "Blue Cat 42" (`<adjective> <animal> <NN>`, same length rules). A name already chosen is never translated, and
+the check that a ranked / race name is a generated one accepts both forms.
+
+Misaki's AI tutor: the body sent to n8n for every task is `{"task", "lang": "en" | "vi", "context"}`, and the reply cache
+is keyed by the language as well.
+
+Implementation: `backend/app/i18n.py` (`LangMiddleware`, `tr(vi, en)`, `pick(obj, field)`). Authored content keeps the
+English text in a sibling field with an `_en` suffix (`prompt_en`, `hints_en`, `explanation_en`, `title_en`, `goal_en`,
+`group_hints_en`, and `<name>_en` keys in `mistakes.yaml`, `mistake_labels.yaml` and `misaki_coach.yaml`).
 
 ## Enums
 

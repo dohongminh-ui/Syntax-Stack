@@ -1,4 +1,5 @@
 // Boot, screens and the Code Rescue controller (glue between game.js, board.js, the puzzle panel and the API).
+import './i18n.js'; // first: sets <html lang> and translates the static page before anything renders
 import * as Game from './game.js';
 import * as api from './api.js';
 import { isMock } from './api.js';

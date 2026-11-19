@@ -25,6 +25,7 @@ import random
 import time
 from typing import NamedTuple, Optional
 
+from . import i18n
 from . import rescue_engine as E
 
 SIZE = E.SIZE
@@ -33,10 +34,10 @@ _FULL = (1 << 64) - 1
 # --------------------------------------------------------------------------- the ladder (docs/pvp.md section 5.2)
 
 LADDER: dict[int, dict] = {
-    1: {"name": "Tập sự", "beam": 1, "think": (2.0, 3.0), "accuracy": 0.60, "bomb": False, "shuffle": False},
-    2: {"name": "Khá", "beam": 4, "think": (1.4, 2.2), "accuracy": 0.72, "bomb": True, "shuffle": False},
-    3: {"name": "Giỏi", "beam": 12, "think": (0.9, 1.5), "accuracy": 0.84, "bomb": True, "shuffle": True},
-    4: {"name": "Bậc thầy", "beam": 32, "think": (0.5, 1.0), "accuracy": 0.93, "bomb": True, "shuffle": True},
+    1: {"name": "Tập sự", "name_en": "Apprentice", "beam": 1, "think": (2.0, 3.0), "accuracy": 0.60, "bomb": False, "shuffle": False},
+    2: {"name": "Khá", "name_en": "Skilled", "beam": 4, "think": (1.4, 2.2), "accuracy": 0.72, "bomb": True, "shuffle": False},
+    3: {"name": "Giỏi", "name_en": "Expert", "beam": 12, "think": (0.9, 1.5), "accuracy": 0.84, "bomb": True, "shuffle": True},
+    4: {"name": "Bậc thầy", "name_en": "Master", "beam": 32, "think": (0.5, 1.0), "accuracy": 0.93, "bomb": True, "shuffle": True},
 }
 MAX_LEVEL = 4
 NAME = "Misaki"
@@ -48,8 +49,9 @@ PUZZLE_SPEED = {1: 1.0, 2: 0.95, 3: 0.9, 4: 0.85}
 LEGACY_LEVEL = {"beginner": 1, "intermediate": 2, "advanced": 3}
 
 
-def title(level: int) -> str:
-    return f"{NAME} · {LADDER[level]['name']}"
+def title(level: int, lang: Optional[str] = None) -> str:
+    """``Misaki · Tập sự`` / ``Misaki · Apprentice`` (the ladder level names are Apprentice, Skilled, Expert, Master)."""
+    return f"{NAME} · {i18n.pick(LADDER[level], 'name', lang)}"
 
 
 def effective_level(chosen: int, training: bool) -> int:

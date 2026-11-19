@@ -26,6 +26,8 @@ from typing import Optional
 import yaml
 
 from . import bank, custom, nicknames
+from . import i18n
+from .i18n import tr
 
 DB_PATH = Path(os.environ.get("SYNTAX_STACK_ROOMS_DB", custom.DB_PATH.parent / "rooms.sqlite"))
 TTL_S = 12 * 3600
@@ -51,6 +53,11 @@ GROUP_LABELS = {
     "syntax": "Lỗi cú pháp", "wrong_fix": "Sửa sai dòng", "wrong_line": "Sửa nhầm dòng",
     "runtime": "Lỗi khi chạy", "wrong_choice": "Chọn sai đáp án", "other": "Lỗi khác",
 }
+GROUP_LABELS_EN = {
+    "output_mismatch": "Wrong output", "wrong_order": "Wrong order", "bad_indent": "Wrong indentation",
+    "syntax": "Syntax error", "wrong_fix": "Wrong fix", "wrong_line": "Fixed the wrong line",
+    "runtime": "Error while running", "wrong_choice": "Wrong choice", "other": "Other mistake",
+}
 MISTAKES_FILE = Path(__file__).resolve().parents[1] / "content" / "mistakes.yaml"
 LABEL_MAX = 60
 
@@ -58,7 +65,7 @@ _CODE_RE = re.compile(rf"^[{CODE_ALPHABET}]{{{CODE_LEN}}}$")
 
 
 class RoomError(bank.BankError):
-    """An error with an explicit HTTP status; the message is Vietnamese and shown to the user."""
+    """An error with an explicit HTTP status; the message (Vietnamese or English, by the request) is shown to the user."""
 
     def __init__(self, message: str, status: int):
         super().__init__(message)
@@ -73,30 +80,34 @@ def _now() -> float:
 
 
 _notes: Optional[dict] = None
+_notes_en: dict = {}
 
 
 def _mistake_notes() -> dict:
-    global _notes
+    """The Vietnamese notes (content/mistakes.yaml); the ``<name>_en`` siblings are kept apart in ``_notes_en``."""
+    global _notes, _notes_en
     if _notes is None:
         try:
-            _notes = yaml.safe_load(MISTAKES_FILE.read_text(encoding="utf-8")) or {}
+            _notes, _notes_en = i18n.split_en(yaml.safe_load(MISTAKES_FILE.read_text(encoding="utf-8")) or {})
         except (OSError, yaml.YAMLError):
-            _notes = {}
+            _notes, _notes_en = {}, {}
     return _notes
 
 
 LABELS_FILE = MISTAKES_FILE.with_name("mistake_labels.yaml")
 _labels: Optional[dict] = None
+_labels_en: dict = {}
 
 
 def _mistake_labels() -> dict:
-    """Hand-written short labels for the projector (content/mistake_labels.yaml)."""
-    global _labels
+    """Hand-written short labels for the projector (content/mistake_labels.yaml, Vietnamese; the English ones are the
+    ``<name>_en`` siblings, kept apart in ``_labels_en``)."""
+    global _labels, _labels_en
     if _labels is None:
         try:
-            _labels = yaml.safe_load(LABELS_FILE.read_text(encoding="utf-8")) or {}
+            _labels, _labels_en = i18n.split_en(yaml.safe_load(LABELS_FILE.read_text(encoding="utf-8")) or {})
         except (OSError, yaml.YAMLError):
-            _labels = {}
+            _labels, _labels_en = {}, {}
     return _labels
 
 
@@ -110,8 +121,19 @@ def _short(text: str) -> str:
     return text if len(text) <= LABEL_MAX else text[:LABEL_MAX - 1].rstrip() + "…"
 
 
-def mistake_label(key: Optional[str]) -> str:
-    """Short Vietnamese label for a mistake key (a named mistake or an error group)."""
+def mistake_label(key: Optional[str], lang: Optional[str] = None) -> str:
+    """Short label for a mistake key (a named mistake or an error group), in Vietnamese or English."""
+    if i18n.resolve(lang) == "en":
+        if not key:
+            return GROUP_LABELS_EN["other"]
+        _mistake_labels(), _mistake_notes()  # load
+        label = _labels_en.get(key)
+        if isinstance(label, str) and label.strip():
+            return label.strip()
+        note = _notes_en.get(key)
+        if isinstance(note, str) and note.strip():
+            return _short(note)
+        return GROUP_LABELS_EN.get(key, GROUP_LABELS_EN["other"])
     if not key:
         return GROUP_LABELS["other"]
     label = _mistake_labels().get(key)
@@ -150,7 +172,9 @@ def _take_slot(key: str) -> None:
         if len(recent) >= RATE_LIMIT:
             _hits[key] = recent
             raise RoomError(
-                f"Bạn đã mở {RATE_LIMIT} phòng học trong một giờ qua, đó là mức tối đa. Hãy thử lại sau.", 429)
+                tr(f"Bạn đã mở {RATE_LIMIT} phòng học trong một giờ qua, đó là mức tối đa. Hãy thử lại sau.",
+                   f"You opened {RATE_LIMIT} classrooms in the last hour, which is the maximum. Please try again later."),
+                429)
         recent.append(now)
         _hits[key] = recent
 
@@ -240,27 +264,30 @@ def _load_room(con: sqlite3.Connection, code: str) -> sqlite3.Row:
     code = _normalize_code(code)
     row = con.execute("SELECT * FROM rooms WHERE code = ?", (code,)).fetchone() if _CODE_RE.match(code) else None
     if row is None:
-        raise RoomError("Không tìm thấy phòng học này.", 404)
+        raise RoomError(tr("Không tìm thấy phòng học này.", "This classroom was not found."), 404)
     if row["last_activity"] < _now() - TTL_S:
         _wipe(con, code)
         con.commit()
-        raise RoomError("Phòng học này đã hết hạn (12 giờ sau lần hoạt động cuối).", 404)
+        raise RoomError(tr("Phòng học này đã hết hạn (12 giờ sau lần hoạt động cuối).",
+                           "This classroom has expired (12 hours after its last activity)."), 404)
     return row
 
 
 def _check_teacher(row: sqlite3.Row, teacher_key: Optional[str]) -> None:
     if not teacher_key or not hmac.compare_digest(_hash(teacher_key), row["teacher_hash"]):
-        raise RoomError("Sai mã giáo viên.", 403)
+        raise RoomError(tr("Sai mã giáo viên.", "Wrong teacher key."), 403)
 
 
-def _clean_text(text: str, limit: int, what: str, *, required: bool) -> str:
+def _clean_text(text: str, limit: int, what, *, required: bool) -> str:
+    """``what`` names the field in the message: a Vietnamese string, or a ``(Vietnamese, English)`` pair."""
+    vi, en = (what, what) if isinstance(what, str) else what
     text = (text or "").strip()
     if any(unicodedata.category(ch).startswith("C") for ch in text):
-        raise RoomError(f"{what} không được chứa ký tự điều khiển.", 422)
+        raise RoomError(tr(f"{vi} không được chứa ký tự điều khiển.", f"{en} must not contain control characters."), 422)
     if required and not text:
-        raise RoomError(f"{what} không được để trống.", 422)
+        raise RoomError(tr(f"{vi} không được để trống.", f"{en} must not be empty."), 422)
     if len(text) > limit:
-        raise RoomError(f"{what} tối đa {limit} ký tự.", 422)
+        raise RoomError(tr(f"{vi} tối đa {limit} ký tự.", f"{en} can be at most {limit} characters."), 422)
     return text
 
 
@@ -269,8 +296,8 @@ def _clean_text(text: str, limit: int, what: str, *, required: bool) -> str:
 
 def create_room(level: str, title: Optional[str], client: Optional[str], names: str = "random") -> dict:
     if names not in NAME_MODES:
-        raise RoomError("Chế độ đặt tên không hợp lệ.", 422)
-    title = _clean_text(title or "", MAX_TITLE, "Tên phòng", required=False)
+        raise RoomError(tr("Chế độ đặt tên không hợp lệ.", "That naming mode is not valid."), 422)
+    title = _clean_text(title or "", MAX_TITLE, ("Tên phòng", "Room name"), required=False)
     _take_slot(client_key(client))
     teacher_key = secrets.token_hex(16)
     now = _now()
@@ -286,7 +313,7 @@ def create_room(level: str, title: Optional[str], client: Optional[str], names: 
             except sqlite3.IntegrityError:
                 continue
         else:  # pragma: no cover
-            raise RoomError("Không tạo được phòng học, hãy thử lại.", 503)
+            raise RoomError(tr("Không tạo được phòng học, hãy thử lại.", "Could not create the classroom, please try again."), 503)
         con.commit()
     return {"code": code, "teacher_key": teacher_key, "level": level, "title": title, "names": names}
 
@@ -305,22 +332,25 @@ def join_room(code: str, nickname: Optional[str]) -> dict:
         room = _load_room(con, code)
         random_mode = room["names"] == "random"
         if not random_mode:
-            nickname = _clean_text(nickname or "", MAX_NICKNAME, "Biệt danh", required=True)
+            nickname = _clean_text(nickname or "", MAX_NICKNAME, ("Biệt danh", "Nickname"), required=True)
             if not nicknames.is_allowed_free(nickname):
-                raise RoomError("Biệt danh này không được dùng. Hãy chọn tên khác.", 422)
+                raise RoomError(tr("Biệt danh này không được dùng. Hãy chọn tên khác.",
+                                   "This nickname can't be used. Please pick another one."), 422)
         if not room["open"]:
-            raise RoomError("Phòng học này đã đóng.", 410)
+            raise RoomError(tr("Phòng học này đã đóng.", "This classroom is closed."), 410)
         existing = [r["nickname"].casefold() for r in
                     con.execute("SELECT nickname FROM players WHERE room = ?", (room["code"],))]
         if len(existing) >= MAX_PLAYERS:
-            raise RoomError(f"Phòng học đã đủ {MAX_PLAYERS} người.", 409)
+            raise RoomError(tr(f"Phòng học đã đủ {MAX_PLAYERS} người.",
+                               f"The classroom is full ({MAX_PLAYERS} players)."), 409)
         if random_mode:
             for _ in range(200):
                 final = nicknames.generate()
                 if final.casefold() not in existing:
                     break
             else:  # pragma: no cover - 60 players against ~60k names
-                raise RoomError("Không tạo được biệt danh, hãy thử lại.", 503)
+                raise RoomError(tr("Không tạo được biệt danh, hãy thử lại.",
+                                   "Could not make a nickname, please try again."), 503)
         else:
             final, n = nickname, 1
             while final.casefold() in existing:
@@ -344,7 +374,7 @@ def kick_player(code: str, player_id: str, teacher_key: Optional[str]) -> None:
         row = con.execute("SELECT id FROM players WHERE room = ? AND id = ?",
                           (room["code"], player_id or "")).fetchone()
         if row is None:
-            raise RoomError("Không tìm thấy người chơi này.", 404)
+            raise RoomError(tr("Không tìm thấy người chơi này.", "This player was not found."), 404)
         con.execute("DELETE FROM answers WHERE room = ? AND player_id = ?", (room["code"], row["id"]))
         con.execute("DELETE FROM players WHERE id = ?", (row["id"],))
         con.commit()
@@ -402,7 +432,7 @@ def record_progress(code: str, token: str, score: int, status: str, bugs_fixed: 
         room = _load_room(con, code)
         player = _find_player(con, room["code"], token)
         if player is None:
-            raise RoomError("Mã người chơi không hợp lệ.", 403)
+            raise RoomError(tr("Mã người chơi không hợp lệ.", "That player token is not valid."), 403)
         if not room["open"]:
             return  # a closed room keeps its final board
         now = _now()
@@ -473,7 +503,7 @@ def summary(code: str, teacher_key: Optional[str]) -> dict:
         if p["wrong"] < 2 or p["correct"] > 0:
             continue
         try:
-            prompt = bank.get_puzzle(pid)["prompt"]
+            prompt = i18n.pick(bank.get_puzzle(pid), "prompt")
         except bank.BankError:
             prompt = pid
         unsolved.append({"puzzle_id": pid, "prompt": prompt, "topic": p["topic"],

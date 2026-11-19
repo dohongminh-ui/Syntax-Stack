@@ -1,8 +1,10 @@
 id: r2
 order: 2
 title: "Đậu hay trượt"
+title_en: "Pass or fail"
 concept: conditions
 goal: "Điểm của bạn là 8. Viết chương trình dùng if để in ra Đậu khi điểm từ 5 trở lên."
+goal_en: "Your score is 8. Write a program that uses if to print Đậu (\"Pass\" in Vietnamese) when the score is 5 or higher."
 expected_output: "Đậu"
 twist_output: "Trượt"
 practice: {replace: t2, with: t8}
@@ -31,6 +33,10 @@ hints:
   - "Câu lệnh if cho chương trình rẽ nhánh: dòng thụt vào dưới if chỉ chạy khi điều kiện đúng."
   - "Tạo biến điểm, viết dòng if kiểm tra điểm, rồi in Đậu ở dòng thụt vào dưới if. Dòng if kết thúc bằng dấu hai chấm."
   - "Điều kiện cần là điểm lớn hơn hoặc bằng 5. Chọn toán tử so sánh đúng, và nhớ mảnh = chỉ dùng để gán giá trị."
+hints_en:
+  - "The if statement lets the program branch: the indented line under if runs only when the condition is true."
+  - "Create the score variable, write an if line that checks the score, then print Đậu on the indented line under the if. The if line ends with a colon."
+  - "The condition is that the score is greater than or equal to 5. Pick the right comparison operator, and remember that the = tile is only for assigning a value."
 group_hints:
   output_mismatch:
     - "Chương trình chạy nhưng in ra khác yêu cầu, hoặc không in gì."
@@ -52,3 +58,24 @@ group_hints:
     - "Màn này yêu cầu dùng câu lệnh if (và một biến)."
     - "Đầu ra đúng chưa đủ: chương trình cần kiểm tra điều kiện bằng if."
     - "Dùng mảnh if, so sánh diem với 5, rồi đặt dòng print thụt vào dưới."
+group_hints_en:
+  output_mismatch:
+    - "The program runs but prints something different from what is needed, or prints nothing."
+    - "The score is 8 and the output must be Đậu. Check the if condition and the print tile you picked."
+    - "With a score of 8, the comparison of diem with 5 has to be true; the < operator makes it false. And the print tile has to print Đậu."
+  wrong_order:
+    - "A variable must be created before the if uses it."
+    - "The line that assigns the score must be above the if line."
+    - "From top to bottom: assign the score, the if line, then the indented print line."
+  bad_indent:
+    - "A line inside an if must be indented one level; the other lines are not."
+    - "Only the print tile needs to be indented, at indent column 1. The assignment and the if line stay at column 0."
+    - "Put the print tile at column 1 in the row right below the if line, not at column 0."
+  missing_colon:
+    - "The if line must end with a colon."
+    - "The ':' tile goes at the end of the if line, after the 5."
+    - "Add the ':' tile to the end of the row that holds if diem >= 5."
+  missing_construct:
+    - "This level asks you to use an if statement (and a variable)."
+    - "The right output is not enough: the program has to check the condition with if."
+    - "Use the if tile, compare diem with 5, then put the print line indented below it."

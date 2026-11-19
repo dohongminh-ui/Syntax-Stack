@@ -5,11 +5,17 @@ hints:
   - "Các dòng nằm bên trong if hoặc else phải được thụt vào một mức so với dòng if / else."
   - "Dòng kết thúc bằng dấu hai chấm mở ra một khối; dòng ngay sau nó phải thụt lề vào trong khối đó."
   - "Đặt dòng gán biến lên đầu, rồi if, rồi các dòng của nhánh (thụt vào một mức). else thẳng hàng với if."
+hints_en:
+  - "Lines inside an if or else must be indented one level more than the if / else line."
+  - "A line that ends with a colon opens a block; the line right after it must be indented into that block."
+  - "Put the assignment first, then the if, then the lines of each branch (indented one level). The else lines up with the if."
 explanation: "Thụt lề cho Python biết dòng nào thuộc về khối nào: các dòng sau if hoặc else phải thụt vào một mức, còn else thẳng hàng với if. Đầu ra đúng là {expected_inline}."
+explanation_en: "Indentation tells Python which block a line belongs to: lines after an if or else are indented one level, while the else lines up with the if. The correct output is {expected_inline}."
 tiers:
   1:
     - count: 8
       prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      prompt_en: "Arrange and indent the lines so the program prints {expected_inline}."
       code: |
         {var} = {d}
         if {var} >= {t}:
@@ -36,6 +42,7 @@ tiers:
   2:
     - count: 12
       prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      prompt_en: "Arrange and indent the lines so the program prints {expected_inline}."
       code: |
         {var} = {d}
         if {var} >= {t}:
@@ -76,6 +83,7 @@ tiers:
   3:
     - count: 10
       prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      prompt_en: "Arrange and indent the lines so the program prints {expected_inline}."
       code: |
         for {i} in range({a}, {b}):
             if {i} >= {t}:

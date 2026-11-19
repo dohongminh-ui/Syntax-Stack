@@ -5,11 +5,17 @@ hints:
   - "Chỉ một nhánh của if / elif / else được chạy: nhánh đầu tiên có điều kiện đúng."
   - "Thay giá trị của biến vào từng điều kiện theo thứ tự từ trên xuống, dừng ở điều kiện đầu tiên đúng."
   - "Khi một điều kiện đã đúng, các elif và else phía dưới bị bỏ qua hoàn toàn."
+hints_en:
+  - "Only one branch of if / elif / else runs: the first one whose condition is true."
+  - "Put the variable's value into each condition from top to bottom and stop at the first one that is true."
+  - "Once a condition is true, every elif and else below it is skipped completely."
 explanation: "Python kiểm tra điều kiện từ trên xuống và chỉ chạy nhánh đầu tiên đúng, rồi bỏ qua các nhánh còn lại. Kết quả là {expected_inline}."
+explanation_en: "Python checks the conditions from top to bottom and runs only the first true branch, then skips the rest. The result is {expected_inline}."
 tiers:
   1:
     - count: 12
       prompt: "Chương trình này in ra gì?"
+      prompt_en: "What does this program print?"
       code: |
         {var} = {d}
         if {var} >= {t}:
@@ -34,6 +40,7 @@ tiers:
   2:
     - count: 12
       prompt: "Chương trình này in ra gì?"
+      prompt_en: "What does this program print?"
       code: |
         {var} = {d}
         if {var} >= {t1}:
@@ -64,6 +71,7 @@ tiers:
   3:
     - count: 6
       prompt: "Chương trình này in ra những gì? (Mỗi lần print là một dòng.)"
+      prompt_en: "What does this program print? (Each print is one line.)"
       code: |
         for i in range({a}, {b}):
             if i % 2 == 0:
@@ -86,6 +94,7 @@ tiers:
         - {name: numbers_only, out: "{J(range(a, b))}"}
     - count: 8
       prompt: "Chương trình này in ra những gì? (Mỗi lần print là một dòng.)"
+      prompt_en: "What does this program print? (Each print is one line.)"
       code: |
         for {i} in range({a}, {b}):
             if {i} < {t}:

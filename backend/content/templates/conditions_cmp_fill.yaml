@@ -5,11 +5,17 @@ hints:
   - "Toán tử so sánh quyết định nhánh nào chạy: > là lớn hơn, >= là lớn hơn hoặc bằng, < là nhỏ hơn, == là bằng."
   - "Nhìn giá trị của biến và ngưỡng, rồi hỏi: điều kiện phải đúng hay sai thì mới in ra được kết quả cần có?"
   - "Thử từng lựa chọn trong đầu với các số trong chương trình, và chú ý trường hợp hai số bằng nhau."
+hints_en:
+  - "The comparison operator decides which branch runs: > means greater than, >= means greater than or equal, < means less than, == means equal."
+  - "Look at the variable's value and the threshold, then ask: does the condition need to be true or false to print the result we want?"
+  - "Try each choice in your head with the numbers in the program, and watch out for the case where the two numbers are equal."
 explanation: "Điều kiện sau if quyết định nhánh nào chạy. Với các số trong chương trình, chỉ có toán tử đã chọn mới cho ra {expected_inline}."
+explanation_en: "The condition after if decides which branch runs. With the numbers in this program, only the operator you pick gives {expected_inline}."
 tiers:
   1:
     - count: 5
       prompt: "Giá trị của biến đúng bằng ngưỡng. Điền toán tử so sánh để chương trình in ra {expected_inline}."
+      prompt_en: "The variable is exactly equal to the threshold. Fill in the comparison operator so the program prints {expected_inline}."
       code: |
         {var} = {t}
         if {var} ___ {t}:
@@ -29,8 +35,10 @@ tiers:
         - {name: flipped_direction, frag: "<"}
         - {name: not_equal, frag: "!="}
       explanation: "Hai số bằng nhau. Chỉ >= (lớn hơn hoặc bằng) cho kết quả đúng khi hai vế bằng nhau, còn > và < thì sai khi bằng nhau."
+      explanation_en: "The two numbers are equal. Only >= (greater than or equal) gives the right result when both sides are equal; > and < are false when they are equal."
     - count: 6
       prompt: "Giá trị của biến lớn hơn ngưỡng. Điền toán tử so sánh để chương trình in ra {expected_inline}."
+      prompt_en: "The variable is greater than the threshold. Fill in the comparison operator so the program prints {expected_inline}."
       code: |
         {var} = {d}
         if {var} ___ {t}:
@@ -52,8 +60,10 @@ tiers:
         - {name: equality_only, frag: "=="}
         - {name: flipped_inclusive, frag: "<="}
       explanation: "{var} là {d}, lớn hơn {t}, nên điều kiện cần đúng. Toán tử > cho kết quả đúng; <, == và <= cho kết quả sai."
+      explanation_en: "{var} is {d}, which is greater than {t}, so the condition has to be true. The operator > gives the right result; <, == and <= give a wrong one."
     - count: 5
       prompt: "Giá trị của biến nhỏ hơn ngưỡng. Điền toán tử so sánh để chương trình in ra {expected_inline}."
+      prompt_en: "The variable is smaller than the threshold. Fill in the comparison operator so the program prints {expected_inline}."
       code: |
         {var} = {d}
         if {var} ___ {t}:
@@ -75,9 +85,11 @@ tiers:
         - {name: equality_only, frag: "=="}
         - {name: flipped_inclusive, frag: ">="}
       explanation: "{var} là {d}, nhỏ hơn {t}, nên điều kiện cần đúng. Toán tử < cho kết quả đúng; >, == và >= cho kết quả sai."
+      explanation_en: "{var} is {d}, which is smaller than {t}, so the condition has to be true. The operator < gives the right result; >, == and >= give a wrong one."
   2:
     - count: 12
       prompt: "Chọn ngưỡng cho nhánh elif để chương trình in ra {expected_inline}."
+      prompt_en: "Choose the threshold for the elif branch so the program prints {expected_inline}."
       code: |
         {var} = {d}
         if {var} >= {t1}:
@@ -104,9 +116,11 @@ tiers:
         - {name: copied_first_threshold, frag: "{t1}"}
         - {name: threshold_far_too_high, frag: "{d+3}"}
       explanation: "{var} = {d} không đạt điều kiện đầu ({d} < {t1}). Để elif chạy thì ngưỡng phải không lớn hơn {d}; chỉ có {t2} thoả điều đó."
+      explanation_en: "{var} = {d} does not meet the first condition ({d} < {t1}). For the elif to run, its threshold must not be greater than {d}; only {t2} does that."
   3:
     - count: 8
       prompt: "Vòng lặp chỉ in ra một số số. Điền toán tử để chương trình in ra {expected_inline}."
+      prompt_en: "The loop prints only some of the numbers. Fill in the operator so the program prints {expected_inline}."
       code: |
         for {i} in range({a}, {b}):
             if {i} ___ {t}:
@@ -129,8 +143,10 @@ tiers:
         - {name: flipped_direction, frag: "{d2}"}
         - {name: equality_only, frag: "{d3}"}
       explanation: "Vòng lặp thử từng giá trị của {i} từ {a} đến {b-1}; chỉ những số thoả điều kiện {i} {op} {t} mới được in ra, tức là {expected_inline}."
+      explanation_en: "The loop tries each value of {i} from {a} to {b-1}; only the numbers that satisfy {i} {op} {t} are printed, which gives {expected_inline}."
     - count: 4
       prompt: "Vòng lặp chỉ in ra các số chẵn. Điền toán tử để chương trình in ra {expected_inline}."
+      prompt_en: "The loop prints only the even numbers. Fill in the operator so the program prints {expected_inline}."
       code: |
         for {i} in range({a}, {b}):
             if {i} % 2 ___ 0:
@@ -146,3 +162,4 @@ tiers:
         - {name: wrong_comparison, frag: ">"}
         - {name: wrong_comparison, frag: ">="}
       explanation: "Số chẵn chia hết cho 2, tức là i % 2 bằng 0. Phải dùng == để kiểm tra phần dư bằng 0."
+      explanation_en: "An even number is divisible by 2, so i % 2 equals 0. You need == to check that the remainder is 0."

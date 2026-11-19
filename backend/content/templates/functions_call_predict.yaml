@@ -5,11 +5,17 @@ hints:
   - "Gọi hàm là thay các giá trị truyền vào cho tham số rồi chạy phần thân hàm; giá trị sau return là kết quả của lời gọi."
   - "Viết ra giá trị của từng tham số, tính biểu thức sau return theo đúng thứ tự ưu tiên, và kiểm tra hàm có return hay không."
   - "Hàm không có return trả về None. Tham số được gán theo thứ tự truyền vào: đối số đầu cho tham số đầu."
+hints_en:
+  - "Calling a function means putting the values you pass into the parameters and running the body; the value after return is the result of the call."
+  - "Write down the value of each parameter, calculate the expression after return in the right order of operations, and check whether the function has a return at all."
+  - "A function without return gives back None. Parameters get their values in the order you pass them: the first argument goes to the first parameter."
 explanation: "Gọi hàm gán đối số cho tham số theo thứ tự, chạy thân hàm và dùng giá trị return làm kết quả. Hàm không có return trả về None. Kết quả đúng là {expected_inline}."
+explanation_en: "A call assigns the arguments to the parameters in order, runs the body and uses the return value as the result. A function without return gives back None. The correct result is {expected_inline}."
 tiers:
   1:
     - count: 10
       prompt: "Chương trình này in ra gì?"
+      prompt_en: "What does this program print?"
       code: |
         def {f}({x}):
             return {x} * {k} + {c}
@@ -28,6 +34,7 @@ tiers:
   2:
     - count: 6
       prompt: "Chương trình này in ra những gì? (Mỗi lần print là một dòng.)"
+      prompt_en: "What does this program print? (Each print is one line.)"
       code: |
         def {f}({p}, {q}):
             return {p} - {q}
@@ -48,6 +55,7 @@ tiers:
         - {name: added_instead_of_subtracted, out: "{a+b}\n{a+b}"}
     - count: 8
       prompt: "Chương trình này in ra gì?"
+      prompt_en: "What does this program print?"
       code: |
         def {f}({x}):
             {r} = {x} * {k}
@@ -66,6 +74,7 @@ tiers:
   3:
     - count: 10
       prompt: "Chương trình này in ra gì?"
+      prompt_en: "What does this program print?"
       code: |
         def {f}({x}):
             return {x} * {k}
@@ -90,6 +99,7 @@ tiers:
         - {name: only_first_call, out: "{k*seq[0]}"}
     - count: 6
       prompt: "Chương trình này in ra những gì? (Mỗi lần print là một dòng.)"
+      prompt_en: "What does this program print? (Each print is one line.)"
       code: |
         def {f}({x}):
             if {x} > {t}:

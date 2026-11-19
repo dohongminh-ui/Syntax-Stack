@@ -20,6 +20,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from . import i18n as I
+
 # --------------------------------------------------------------------------- limits
 
 STEP_LIMIT = 20_000
@@ -60,6 +62,16 @@ _NODE_NAMES_VI = {
     "AnnAssign": "chú thích kiểu", "Yield": "yield", "Await": "await",
 }
 
+_NODE_NAMES_EN = {
+    "Import": "import", "ImportFrom": "import", "Attribute": "the dot for attribute access",
+    "Lambda": "lambda", "ListComp": "list comprehension", "SetComp": "comprehension",
+    "DictComp": "comprehension", "GeneratorExp": "generator", "Global": "global",
+    "Nonlocal": "nonlocal", "With": "with", "Try": "try", "ClassDef": "class",
+    "Pow": "the power operator **", "Dict": "dict", "Set": "set", "Starred": "the * star",
+    "AsyncFunctionDef": "async", "Delete": "del", "Assert": "assert", "Raise": "raise",
+    "AnnAssign": "type annotation", "Yield": "yield", "Await": "await",
+}
+
 SAFE_BUILTIN_NAMES = ("range", "len", "str", "int", "float", "abs", "min", "max", "sum", "round")
 
 
@@ -69,9 +81,10 @@ _RECURSION_LOCK = threading.Lock()
 class UnsafeCode(Exception):
     """Raised when the AST whitelist rejects a program."""
 
-    def __init__(self, reason: str, lineno: Optional[int] = None):
+    def __init__(self, reason: str, lineno: Optional[int] = None, reason_en: Optional[str] = None):
         super().__init__(reason)
-        self.reason = reason
+        self.reason = reason                    # Vietnamese
+        self.reason_en = reason_en or reason    # English
         self.lineno = lineno
 
 
@@ -95,44 +108,48 @@ def check_ast(tree: ast.AST) -> None:
         line = getattr(node, "lineno", None)
         if not isinstance(node, ALLOWED_NODES):
             kind = type(node).__name__
-            raise UnsafeCode(_NODE_NAMES_VI.get(kind, kind), line)
+            raise UnsafeCode(_NODE_NAMES_VI.get(kind, kind), line, _NODE_NAMES_EN.get(kind, kind))
         if isinstance(node, ast.Name) and node.id.startswith("_"):
-            raise UnsafeCode(f"tên bắt đầu bằng dấu gạch dưới ({node.id})", line)
+            raise UnsafeCode(f"tên bắt đầu bằng dấu gạch dưới ({node.id})", line,
+                             f"a name starting with an underscore ({node.id})")
         if isinstance(node, ast.arg):
             if node.arg.startswith("_"):
-                raise UnsafeCode(f"tên bắt đầu bằng dấu gạch dưới ({node.arg})", line)
+                raise UnsafeCode(f"tên bắt đầu bằng dấu gạch dưới ({node.arg})", line,
+                                 f"a name starting with an underscore ({node.arg})")
             if node.annotation is not None:
-                raise UnsafeCode("chú thích kiểu", line)
+                raise UnsafeCode("chú thích kiểu", line, "type annotation")
         if isinstance(node, ast.FunctionDef):
             if node.name.startswith("_"):
-                raise UnsafeCode(f"tên hàm bắt đầu bằng dấu gạch dưới ({node.name})", line)
+                raise UnsafeCode(f"tên hàm bắt đầu bằng dấu gạch dưới ({node.name})", line,
+                                 f"a function name starting with an underscore ({node.name})")
             if node.decorator_list or node.returns is not None or node.type_params:
-                raise UnsafeCode("decorator hoặc chú thích kiểu", line)
+                raise UnsafeCode("decorator hoặc chú thích kiểu", line, "decorator or type annotation")
             a = node.args
             if a.vararg or a.kwarg or a.kwonlyargs or a.posonlyargs:
-                raise UnsafeCode("tham số đặc biệt (*args, **kwargs)", line)
+                raise UnsafeCode("tham số đặc biệt (*args, **kwargs)", line, "special parameters (*args, **kwargs)")
         if isinstance(node, ast.keyword):
             if node.arg is None or node.arg.startswith("_"):
-                raise UnsafeCode("đối số từ khóa không hợp lệ", line)
+                raise UnsafeCode("đối số từ khóa không hợp lệ", line, "invalid keyword argument")
         if isinstance(node, ast.Call):
             f = node.func
             if not isinstance(f, ast.Name) or f.id not in allowed_call_names:
-                name = f.id if isinstance(f, ast.Name) else "biểu thức"
-                raise UnsafeCode(f"gọi hàm không được phép ({name})", line)
+                name = f.id if isinstance(f, ast.Name) else None
+                raise UnsafeCode(f"gọi hàm không được phép ({name or 'biểu thức'})", line,
+                                 f"a function call that is not allowed ({name or 'expression'})")
         if isinstance(node, ast.Constant):
             v = node.value
             if isinstance(v, bool) or v is None:
                 continue
             if isinstance(v, int) and abs(v) > MAX_INT_CONSTANT:
-                raise UnsafeCode("số quá lớn", line)
+                raise UnsafeCode("số quá lớn", line, "a number that is too big")
             if isinstance(v, str) and len(v) > MAX_STR_CONSTANT:
-                raise UnsafeCode("chuỗi quá dài", line)
+                raise UnsafeCode("chuỗi quá dài", line, "a string that is too long")
             if isinstance(v, (bytes, complex)):
-                raise UnsafeCode("kiểu dữ liệu không hỗ trợ", line)
+                raise UnsafeCode("kiểu dữ liệu không hỗ trợ", line, "a data type that is not supported")
         if isinstance(node, ast.Assign):
             for t in node.targets:
                 if not isinstance(t, (ast.Name, ast.Tuple, ast.Subscript)):
-                    raise UnsafeCode("phép gán không hợp lệ", line)
+                    raise UnsafeCode("phép gán không hợp lệ", line, "an invalid assignment")
 
 
 # --------------------------------------------------------------------------- results
@@ -149,6 +166,10 @@ class RunResult:
     lineno: Optional[int] = None
     exc_name: Optional[str] = None
     tree: Optional[ast.AST] = field(default=None, repr=False)
+    message_en: Optional[str] = None  # the same description in English
+
+    def msg(self, lang: Optional[str] = None) -> Optional[str]:
+        return (self.message_en or self.message) if I.resolve(lang) == "en" else self.message
 
 
 @dataclass
@@ -174,51 +195,72 @@ def normalize_output(s: str) -> str:
     return "\n".join(line.rstrip() for line in s.split("\n")).rstrip("\n")
 
 
-def describe_output(s: str) -> str:
-    """Inline description used in messages: 0, 1, 2 (empty -> 'không in gì')."""
+def describe_output(s: str, lang: Optional[str] = None) -> str:
+    """Inline description used in messages: 0, 1, 2 (empty -> 'không in gì' / 'prints nothing')."""
     s = normalize_output(s)
     if not s:
-        return "không in gì"
+        return I.tr("không in gì", "prints nothing", lang)
     return ", ".join(s.split("\n"))
 
 
-def _classify_syntax_error(exc: SyntaxError) -> tuple[str, str]:
+def _classify_syntax_error_bi(exc: SyntaxError) -> tuple[str, str, str]:
+    """``(error_group, Vietnamese message, English message)``."""
     msg = (exc.msg or "").lower()
     if isinstance(exc, IndentationError) or "indent" in msg:
         if "expected an indented block" in msg:
-            return "bad_indent", "Thiếu thụt lề: dòng sau lệnh kết thúc bằng dấu hai chấm cần được thụt vào."
+            return ("bad_indent", "Thiếu thụt lề: dòng sau lệnh kết thúc bằng dấu hai chấm cần được thụt vào.",
+                    "Missing indentation: the line after a statement that ends with a colon must be indented.")
         if "unexpected indent" in msg:
-            return "bad_indent", "Dòng này bị thụt lề không đúng chỗ."
-        return "bad_indent", "Thụt lề chưa đúng."
+            return "bad_indent", "Dòng này bị thụt lề không đúng chỗ.", "This line is indented in the wrong place."
+        return "bad_indent", "Thụt lề chưa đúng.", "The indentation is not right."
     if "expected ':'" in msg:
-        return "missing_colon", "Thiếu dấu hai chấm ':' ở cuối lệnh."
+        return ("missing_colon", "Thiếu dấu hai chấm ':' ở cuối lệnh.",
+                "A colon ':' is missing at the end of the statement.")
     if "'return' outside function" in msg:
-        return "syntax", "Lệnh return chỉ dùng được bên trong hàm."
-    return "syntax", "Sai cú pháp: Python không hiểu dòng này."
+        return "syntax", "Lệnh return chỉ dùng được bên trong hàm.", "return can only be used inside a function."
+    return "syntax", "Sai cú pháp: Python không hiểu dòng này.", "Syntax error: Python does not understand this line."
 
 
-def _runtime_message(exc: BaseException, lineno: Optional[int]) -> str:
+def _classify_syntax_error(exc: SyntaxError) -> tuple[str, str]:
+    group, vi, _ = _classify_syntax_error_bi(exc)
+    return group, vi
+
+
+def _runtime_message_bi(exc: BaseException, lineno: Optional[int]) -> tuple[str, str]:
+    """``(Vietnamese, English)`` description of an error raised by the learner's program."""
     where = f" (dòng {lineno})" if lineno else ""
+    where_en = f" (line {lineno})" if lineno else ""
     name = type(exc).__name__
     text = str(exc)
     if isinstance(exc, NameError):
         var = getattr(exc, "name", None)
-        return f"Tên '{var}' chưa được tạo trước khi dùng{where}." if var else f"Có tên chưa được tạo{where}."
+        if var:
+            return (f"Tên '{var}' chưa được tạo trước khi dùng{where}.",
+                    f"The name '{var}' is used before it is created{where_en}.")
+        return f"Có tên chưa được tạo{where}.", f"A name has not been created{where_en}."
     if isinstance(exc, TypeError):
         if "concatenate str" in text or "can only concatenate" in text:
-            return f"Không thể cộng chuỗi với số{where}; hãy đổi số thành chuỗi bằng str()."
+            return (f"Không thể cộng chuỗi với số{where}; hãy đổi số thành chuỗi bằng str().",
+                    f"You can't add a string and a number{where_en}; turn the number into a string with str().")
         if "positional argument" in text:
-            return f"Số đối số khi gọi hàm không khớp với khai báo{where}."
-        return f"Phép toán không hợp lệ giữa các kiểu dữ liệu{where} (TypeError)."
+            return (f"Số đối số khi gọi hàm không khớp với khai báo{where}.",
+                    f"The number of arguments in the call does not match the function's parameters{where_en}.")
+        return (f"Phép toán không hợp lệ giữa các kiểu dữ liệu{where} (TypeError).",
+                f"That operation is not valid between these data types{where_en} (TypeError).")
     if isinstance(exc, ZeroDivisionError):
-        return f"Không thể chia cho 0{where}."
+        return f"Không thể chia cho 0{where}.", f"You can't divide by 0{where_en}."
     if isinstance(exc, RecursionError):
-        return f"Hàm gọi lại chính nó quá nhiều lần{where}."
+        return (f"Hàm gọi lại chính nó quá nhiều lần{where}.",
+                f"The function calls itself too many times{where_en}.")
     if isinstance(exc, (IndexError, KeyError)):
-        return f"Truy cập vị trí không tồn tại{where}."
+        return f"Truy cập vị trí không tồn tại{where}.", f"That position does not exist{where_en}."
     if isinstance(exc, ValueError):
-        return f"Giá trị không hợp lệ{where}."
-    return f"Chương trình báo lỗi {name}{where}."
+        return f"Giá trị không hợp lệ{where}.", f"That value is not valid{where_en}."
+    return f"Chương trình báo lỗi {name}{where}.", f"The program raised {name}{where_en}."
+
+
+def _runtime_message(exc: BaseException, lineno: Optional[int]) -> str:
+    return _runtime_message_bi(exc, lineno)[0]
 
 
 # --------------------------------------------------------------------------- runner
@@ -271,33 +313,37 @@ def _trace_bindings(values) -> dict[str, str]:
 def run_program(code: str, *, trace: Optional[ExecutionTrace] = None) -> RunResult:
     """Parse, whitelist-check and execute ``code``. Never raises for bad user code."""
     if len(code) > MAX_SOURCE_CHARS:
-        return RunResult(False, error_kind="unsafe", error_group="syntax", message="Chương trình quá dài.")
+        return RunResult(False, error_kind="unsafe", error_group="syntax", message="Chương trình quá dài.",
+                         message_en="The program is too long.")
     try:
         tree = ast.parse(code, filename="<puzzle>")
     except SyntaxError as e:
-        group, msg = _classify_syntax_error(e)
+        group, msg, msg_en = _classify_syntax_error_bi(e)
         return RunResult(False, error_kind="syntax", error_group=group, message=msg, lineno=e.lineno,
-                         exc_name=type(e).__name__)
+                         exc_name=type(e).__name__, message_en=msg_en)
     except (ValueError, RecursionError, MemoryError) as e:  # null bytes, absurd nesting
         return RunResult(False, error_kind="syntax", error_group="syntax",
-                         message="Sai cú pháp: Python không hiểu chương trình này.", exc_name=type(e).__name__)
+                         message="Sai cú pháp: Python không hiểu chương trình này.", exc_name=type(e).__name__,
+                         message_en="Syntax error: Python does not understand this program.")
 
     try:
         check_ast(tree)
     except UnsafeCode as e:
         return RunResult(False, error_kind="unsafe", error_group="syntax",
                          message=f"Chương trình dùng thứ chưa được hỗ trợ: {e.reason}.",
-                         lineno=e.lineno, exc_name="UnsafeCode", tree=tree)
+                         lineno=e.lineno, exc_name="UnsafeCode", tree=tree,
+                         message_en=f"The program uses something that is not supported yet: {e.reason_en}.")
 
     try:
         compiled = compile(tree, "<puzzle>", "exec")
     except SyntaxError as e:  # e.g. 'return' outside function
-        group, msg = _classify_syntax_error(e)
+        group, msg, msg_en = _classify_syntax_error_bi(e)
         return RunResult(False, error_kind="syntax", error_group=group, message=msg, lineno=e.lineno,
-                         exc_name=type(e).__name__, tree=tree)
+                         exc_name=type(e).__name__, tree=tree, message_en=msg_en)
     except (ValueError, RecursionError, MemoryError):
         return RunResult(False, error_kind="syntax", error_group="syntax",
-                         message="Sai cú pháp: Python không hiểu chương trình này.", tree=tree)
+                         message="Sai cú pháp: Python không hiểu chương trình này.", tree=tree,
+                         message_en="Syntax error: Python does not understand this program.")
 
     buf: list[str] = []
     size = [0]
@@ -355,11 +401,12 @@ def run_program(code: str, *, trace: Optional[ExecutionTrace] = None) -> RunResu
     except _Abort as a:
         output = "".join(buf)
         if a.kind == "output":
-            msg = "Chương trình in ra quá nhiều dòng."
+            msg, msg_en = "Chương trình in ra quá nhiều dòng.", "The program prints too many lines."
         else:
             msg = "Chương trình chạy quá lâu, có thể có vòng lặp vô hạn."
+            msg_en = "The program runs for too long, maybe there is an endless loop."
         return RunResult(False, output=output, error_kind="limit", error_group="output_mismatch",
-                         message=msg, exc_name=a.kind, tree=tree)
+                         message=msg, exc_name=a.kind, tree=tree, message_en=msg_en)
     except BaseException as e:  # noqa: BLE001 - user program errors
         error = e
         tb = e.__traceback__
@@ -377,9 +424,9 @@ def run_program(code: str, *, trace: Optional[ExecutionTrace] = None) -> RunResu
         var = getattr(error, "name", None)
         if var and var in _defined_names(tree):
             group = "wrong_order"
+    msg, msg_en = _runtime_message_bi(error, tb_line)
     return RunResult(False, output=output, error_kind="runtime", error_group=group,
-                     message=_runtime_message(error, tb_line), lineno=tb_line,
-                     exc_name=type(error).__name__, tree=tree)
+                     message=msg, lineno=tb_line, exc_name=type(error).__name__, tree=tree, message_en=msg_en)
 
 
 # --------------------------------------------------------------------------- diagnosis
@@ -393,11 +440,18 @@ class Diagnosis:
     actual_output: Optional[str]
     lineno: Optional[int] = None
     run: Optional[RunResult] = field(default=None, repr=False)
+    message_en: Optional[str] = None  # the same message in English
+
+    def msg(self, lang: Optional[str] = None) -> str:
+        return (self.message_en or self.message) if I.resolve(lang) == "en" else self.message
 
 
-def mismatch_message(actual: str, expected: str) -> str:
-    got = "không in gì" if not normalize_output(actual) else f"in {describe_output(actual)}"
-    return f"Đầu ra không khớp: chương trình {got} nhưng cần {describe_output(expected)}."
+def mismatch_message(actual: str, expected: str, lang: Optional[str] = None) -> str:
+    if I.resolve(lang) == "en":
+        got = "prints nothing" if not normalize_output(actual) else f"prints {describe_output(actual, 'en')}"
+        return f"The output does not match: the program {got} but it should print {describe_output(expected, 'en')}."
+    got = "không in gì" if not normalize_output(actual) else f"in {describe_output(actual, 'vi')}"
+    return f"Đầu ra không khớp: chương trình {got} nhưng cần {describe_output(expected, 'vi')}."
 
 
 def diagnose(code: str, expected_output: str) -> Diagnosis:
@@ -405,8 +459,11 @@ def diagnose(code: str, expected_output: str) -> Diagnosis:
     res = run_program(code)
     if not res.ok:
         actual = normalize_output(res.output) if res.output else None
-        return Diagnosis(False, res.error_group, res.message or "Chương trình bị lỗi.", actual, res.lineno, res)
+        return Diagnosis(False, res.error_group, res.message or "Chương trình bị lỗi.", actual, res.lineno, res,
+                         res.message_en or "The program has an error.")
     actual = normalize_output(res.output)
     if actual == normalize_output(expected_output):
-        return Diagnosis(True, None, "Chính xác! Chương trình in đúng đầu ra.", actual, None, res)
-    return Diagnosis(False, "output_mismatch", mismatch_message(actual, expected_output), actual, None, res)
+        return Diagnosis(True, None, "Chính xác! Chương trình in đúng đầu ra.", actual, None, res,
+                         "Correct! The program prints the right output.")
+    return Diagnosis(False, "output_mismatch", mismatch_message(actual, expected_output, "vi"), actual, None, res,
+                     mismatch_message(actual, expected_output, "en"))

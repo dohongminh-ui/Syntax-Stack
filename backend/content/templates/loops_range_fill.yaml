@@ -5,11 +5,17 @@ hints:
   - "range() dừng trước giá trị kết thúc."
   - "Đếm xem cần bao nhiêu số được in ra, và số đầu tiên là số nào."
   - "Giá trị kết thúc lớn hơn số cuối cùng cần in đúng một đơn vị."
+hints_en:
+  - "range() stops before the end value."
+  - "Count how many numbers should be printed, and which number comes first."
+  - "The end value is exactly one more than the last number you need to print."
 explanation: "range(bắt_đầu, kết_thúc) chạy từ bắt_đầu đến kết_thúc - 1, không gồm giá trị kết thúc. Muốn in {expected_inline} thì giá trị kết thúc phải là {answer}."
+explanation_en: "range(start, end) runs from start to end - 1 and does not include the end value. To print {expected_inline}, the end value has to be {answer}."
 tiers:
   1:
     - count: 10
       prompt: "Điền giá trị còn thiếu để chương trình in ra {expected_inline}."
+      prompt_en: "Fill in the missing value so the program prints {expected_inline}."
       code: |
         for {v} in range(___):
             print({v})
@@ -23,9 +29,11 @@ tiers:
         - {name: start_at_one, frag: "1, {n}"}
         - {name: too_long, frag: "{n+2}"}
       explanation: "range({n}) cho các số từ 0 đến {n-1}, tức là {expected_inline}. range() không bao giờ gồm số kết thúc."
+      explanation_en: "range({n}) gives the numbers from 0 to {n-1}, which is {expected_inline}. range() never includes its end value."
   2:
     - count: 10
       prompt: "Điền giá trị kết thúc để chương trình in ra {expected_inline}."
+      prompt_en: "Fill in the end value so the program prints {expected_inline}."
       code: |
         for {v} in range({a}, ___):
             print({v})
@@ -42,9 +50,11 @@ tiers:
         - {name: count_instead_of_end, frag: "{n}"}
         - {name: product_instead_of_end, frag: "{a*n}"}
       explanation: "range({a}, {end}) bắt đầu từ {a} và dừng trước {end}, nên in {expected_inline}. Giá trị kết thúc = số bắt đầu + số lần lặp = {a} + {n}."
+      explanation_en: "range({a}, {end}) starts at {a} and stops before {end}, so it prints {expected_inline}. End value = start + number of rounds = {a} + {n}."
   3:
     - count: 10
       prompt: "Vòng lặp cộng các số chẵn. Điền giá trị kết thúc của range() để in ra {expected_inline}."
+      prompt_en: "The loop adds up the even numbers. Fill in the end value of range() so the program prints {expected_inline}."
       code: |
         {t} = 0
         for {v} in range({a}, ___):
@@ -62,3 +72,4 @@ tiers:
         - {name: too_short, frag: "{e-2}"}
         - {name: too_long, frag: "{e+2}"}
       explanation: "range({a}, {e}) xét các số từ {a} đến {e-1}; chỉ số chẵn được cộng vào {t}, và tổng là {expected_inline}."
+      explanation_en: "range({a}, {e}) looks at the numbers from {a} to {e-1}; only the even ones are added to {t}, and the total is {expected_inline}."

@@ -5,11 +5,17 @@ hints:
   - "Các dòng cần lặp lại phải thụt vào dưới dòng for. Dòng không thụt chỉ chạy một lần."
   - "Dòng for kết thúc bằng dấu hai chấm. Mọi dòng thụt vào sau nó là thân vòng lặp; dòng thẳng hàng với for chạy sau khi vòng lặp kết thúc."
   - "Khởi tạo biến trước vòng lặp, đặt phép cập nhật thụt vào trong vòng lặp, và print kết quả cuối thẳng hàng với for."
+hints_en:
+  - "The lines that should repeat must be indented under the for line. A line that is not indented runs only once."
+  - "The for line ends with a colon. Every indented line after it is the loop body; a line that lines up with for runs after the loop is finished."
+  - "Set up the variable before the loop, put the update indented inside the loop, and put the final print lined up with for."
 explanation: "Chỉ những dòng thụt vào dưới for mới được lặp lại. Dòng khởi tạo đứng trước vòng lặp và dòng in kết quả thẳng hàng với for nên chỉ chạy một lần. Đầu ra đúng là {expected_inline}."
+explanation_en: "Only the lines indented under for are repeated. The setup line comes before the loop and the print line lines up with for, so they run only once. The correct output is {expected_inline}."
 tiers:
   1:
     - count: 8
       prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      prompt_en: "Arrange and indent the lines so the program prints {expected_inline}."
       code: |
         for {i} in range({n}):
             print({i})
@@ -32,6 +38,7 @@ tiers:
   2:
     - count: 12
       prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      prompt_en: "Arrange and indent the lines so the program prints {expected_inline}."
       code: |
         {t} = 0
         for {i} in range({a}, {b}):
@@ -65,6 +72,7 @@ tiers:
   3:
     - count: 10
       prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      prompt_en: "Arrange and indent the lines so the program prints {expected_inline}."
       code: |
         {t} = 0
         for {i} in range({a}, {b}):

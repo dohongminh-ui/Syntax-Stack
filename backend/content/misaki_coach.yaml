@@ -43,3 +43,47 @@ suggestion:
   danger: "Đặt ở đây để tránh vùng đỏ sắp bị đẩy lên."
   fit: "Chỗ này để lại nhiều không gian nhất cho các khối sau."
   none: "Không còn chỗ nào đặt vừa. Hãy giải hàng hoặc dùng vật phẩm."
+
+# English lines, same kinds and the same number of variants (the variant index comes from the match seed, so a
+# Vietnamese and an English player in one match hear the same story). Same placeholders; {topic} is Variables,
+# Conditions, Loops or Functions.
+
+danger_en:
+  - "Careful! {n} bug lines are about to push the board up. Clear the red cells at the top first."
+  - "The red zone is about to be pushed out. Don't put blocks in the top {n} rows right now."
+  - "{n} lines are waiting. Solve a row to hold some back, or keep the top nice and empty."
+
+incoming_en:
+  - "Your opponent just sent bug lines! They queue up in the side bar, so you still have time to block them."
+  - "The first bug line is here. Solving one row can cancel it before it drops."
+
+cancel_en:
+  - "Nice! You blocked {n} bug lines. Attacking is defending too."
+  - "Blocked {n} lines! A correct solve cancels your waiting lines first."
+
+streak_en:
+  - "{n} correct in a row! Keep this streak going to send more bug lines to your opponent."
+  - "Streak of {n}! Skip the hints that cost points and you'll send one more line next time."
+
+wrong_en:
+  - "No worries, mistakes are how we learn. Tap the new bug line to fix it, or ask me “Why was I wrong?”."
+  - "That row became a bug line. Fix it with a {topic} puzzle, you can do it."
+
+bugline_en:
+  - "You still have a bug line to fix. Tap it: once it's fixed, your board gets one more row."
+  - "The {topic} bug line is still there. Fix it before your opponent sends more."
+
+nofit_risk_en:
+  - "Only one block fits right now. Solve a row first to open up some space."
+  - "The board is getting tight. Place the block so it completes a row."
+
+good_en:
+  - "Beautiful! Clearing {n} rows at once sends more bug lines."
+  - "{n} rows in one go! Your opponent is going to have a hard time."
+
+suggestion_en:
+  line: "Placing it here completes {n} rows."
+  safe: "This spot keeps the top empty and doesn't leave holes."
+  danger: "Place it here to stay out of the red zone that is about to be pushed up."
+  fit: "This spot leaves the most room for the next blocks."
+  none: "Nothing fits anymore. Solve a row or use an item."

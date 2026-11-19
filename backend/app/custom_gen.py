@@ -39,7 +39,12 @@ ENABLED = False
 
 
 class InvalidSource(Exception):
-    """The pasted program is rejected before anything runs. ``str(exc)`` is a Vietnamese reason."""
+    """The pasted program is rejected before anything runs. ``str(exc)`` is a Vietnamese reason, ``exc.en`` the
+    English one."""
+
+    def __init__(self, reason: str, en: Optional[str] = None):
+        super().__init__(reason)
+        self.en = en if en is not None else reason
 
 
 # --------------------------------------------------------------------------- reading the text
@@ -122,37 +127,47 @@ def prepare_source(raw: str) -> tuple[str, ast.Module]:
     Nothing here executes the code.
     """
     if len(raw) > MAX_CODE_CHARS:
-        raise InvalidSource(f"Đoạn mã quá dài: tối đa {MAX_CODE_CHARS} ký tự.")
+        raise InvalidSource(f"Đoạn mã quá dài: tối đa {MAX_CODE_CHARS} ký tự.",
+                            f"The code is too long: at most {MAX_CODE_CHARS} characters.")
     if "\t" in raw:
-        raise InvalidSource("Đoạn mã có ký tự Tab. Hãy thụt lề bằng 4 dấu cách.")
+        raise InvalidSource("Đoạn mã có ký tự Tab. Hãy thụt lề bằng 4 dấu cách.",
+                            "The code contains a Tab character. Indent with 4 spaces instead.")
     if "\x00" in raw:
-        raise InvalidSource("Đoạn mã có ký tự không hợp lệ.")
+        raise InvalidSource("Đoạn mã có ký tự không hợp lệ.", "The code contains an invalid character.")
     text = _strip_comments(raw.replace("\r\n", "\n").replace("\r", "\n"))
     lines = [l.rstrip() for l in text.split("\n") if l.strip()]
     if len(lines) < MIN_LINES:
-        raise InvalidSource(f"Đoạn mã quá ngắn: cần ít nhất {MIN_LINES} dòng lệnh.")
+        raise InvalidSource(f"Đoạn mã quá ngắn: cần ít nhất {MIN_LINES} dòng lệnh.",
+                            f"The code is too short: it needs at least {MIN_LINES} lines of code.")
     if len(lines) > MAX_LINES:
-        raise InvalidSource(f"Đoạn mã quá dài: tối đa {MAX_LINES} dòng lệnh.")
+        raise InvalidSource(f"Đoạn mã quá dài: tối đa {MAX_LINES} dòng lệnh.",
+                            f"The code is too long: at most {MAX_LINES} lines of code.")
     for n, line in enumerate(lines, 1):
         indent = len(line) - len(line.lstrip(" "))
         if indent % 4:
-            raise InvalidSource(f"Dòng {n} thụt lề {indent} dấu cách. Hãy thụt lề theo bội số của 4 dấu cách.")
+            raise InvalidSource(f"Dòng {n} thụt lề {indent} dấu cách. Hãy thụt lề theo bội số của 4 dấu cách.",
+                                f"Line {n} is indented by {indent} spaces. Indent in multiples of 4 spaces.")
     code = "\n".join(lines)
     try:
         tree = ast.parse(code, filename="<custom>")
     except SyntaxError as e:
-        _, msg = V._classify_syntax_error(e)
-        raise InvalidSource(f"{msg} (dòng {e.lineno})" if e.lineno else msg) from None
+        _, msg, msg_en = V._classify_syntax_error_bi(e)
+        raise InvalidSource(f"{msg} (dòng {e.lineno})" if e.lineno else msg,
+                            f"{msg_en} (line {e.lineno})" if e.lineno else msg_en) from None
     except (ValueError, RecursionError, MemoryError):
-        raise InvalidSource("Sai cú pháp: Python không hiểu đoạn mã này.") from None
+        raise InvalidSource("Sai cú pháp: Python không hiểu đoạn mã này.",
+                            "Syntax error: Python does not understand this code.") from None
     try:
         V.check_ast(tree)
     except V.UnsafeCode as e:
         where = f" (dòng {e.lineno})" if e.lineno else ""
-        raise InvalidSource(f"Đoạn mã dùng thứ chưa được hỗ trợ: {e.reason}{where}.") from None
+        where_en = f" (line {e.lineno})" if e.lineno else ""
+        raise InvalidSource(f"Đoạn mã dùng thứ chưa được hỗ trợ: {e.reason}{where}.",
+                            f"The code uses something that is not supported yet: {e.reason_en}{where_en}.") from None
     bad = find_seq_multiplication(tree)
     if bad is not None:
-        raise InvalidSource(f"Chưa hỗ trợ phép nhân chuỗi hoặc danh sách (dòng {bad}).")
+        raise InvalidSource(f"Chưa hỗ trợ phép nhân chuỗi hoặc danh sách (dòng {bad}).",
+                            f"Multiplying a string or a list is not supported yet (line {bad}).")
     return code, tree
 
 
@@ -192,6 +207,29 @@ HINTS = {
     ],
 }
 
+HINTS_EN = {
+    "predict_output": [
+        "Run the program one line at a time, in order, just like a computer.",
+        "Write down the values of the variables after every line (and after every round of a loop, if there is one).",
+        "Only print() produces output: count how many times print runs and which value it prints each time.",
+    ],
+    "find_bug": [
+        "The program runs but prints the wrong thing: the bug is usually a number or an operator that was changed.",
+        "Compare the output you want with what the program prints now to guess which line throws the result off.",
+        "Try putting each choice into that line and run it by hand: only one fix gives the right result.",
+    ],
+    "fill_blank": [
+        "The blank is a number or an operator: it decides the final result.",
+        "Run the program by hand with each choice, then compare it with the output you want.",
+        "Cross out the choices that give a different output; only one choice prints the right result.",
+    ],
+    "parsons": [
+        "A line that creates a value must come before the line that uses it.",
+        "A line that ends with a colon opens a block: the lines that belong to that block must be indented.",
+        "Put the setup line first, then the loop or condition, then the print lines, as the program intends.",
+    ],
+}
+
 _TOKEN = re.compile(r"\d+|==|!=|<=|>=|//|\w+|\S")
 
 
@@ -206,6 +244,19 @@ def describe_edit(old: str, new: str) -> str:
                 return f"con số {x} bị đổi thành {y}"
             return f"phép toán `{x}` bị đổi thành `{y}`"
     return "dòng này bị chỉnh sửa"
+
+
+def describe_edit_en(old: str, new: str) -> str:
+    """English twin of ``describe_edit``."""
+    a, b = _TOKEN.findall(old), _TOKEN.findall(new)
+    if len(a) == len(b):
+        diff = [(x, y) for x, y in zip(a, b) if x != y]
+        if len(diff) == 1:
+            x, y = diff[0]
+            if x.isdigit() and y.isdigit():
+                return f"the number {x} was changed to {y}"
+            return f"the operator `{x}` was changed to `{y}`"
+    return "this line was edited"
 
 
 # --------------------------------------------------------------------------- running (sandbox only)
@@ -286,17 +337,25 @@ def _make_predict(code, items, expected, muts, rng):
             used_lines.add(mu.line)
             picked.append(mu)
     if len(picked) < 3:
-        raise Drop("Không tìm được 3 đầu ra sai khác nhau để làm đáp án nhiễu.")
+        raise Drop("Không tìm được 3 đầu ra sai khác nhau để làm đáp án nhiễu.",
+                   "Could not find 3 different wrong outputs to use as distractors.")
     correct = {"text": expected, "correct": True, "name": None, "group": None, "note": None}
     wrong = [{"text": mu.diag.actual_output, "correct": False, "name": "edited_line", "group": "wrong_choice",
-              "note": f"Đầu ra này chỉ xảy ra nếu dòng {mu.line + 1} bị đổi ({describe_edit(items[mu.line][1], mu.text)})."}
+              "note": f"Đầu ra này chỉ xảy ra nếu dòng {mu.line + 1} bị đổi ({describe_edit(items[mu.line][1], mu.text)}).",
+              "note_en": (f"This output only happens if line {mu.line + 1} is changed "
+                          f"({describe_edit_en(items[mu.line][1], mu.text)}).")}
              for mu in picked]
     return {
-        "type": "predict_output", "prompt": "Chương trình dưới đây in ra kết quả nào?", "code": code,
+        "type": "predict_output", "prompt": "Chương trình dưới đây in ra kết quả nào?",
+        "prompt_en": "Which output does the program below print?", "code": code,
         "expected_output": expected, "solution_code": code,
         "explanation": (f"Chương trình thật sự in ra: {_inline(expected)}. Hãy chạy từng dòng và ghi lại giá trị "
                         "biến sau mỗi bước; các đáp án khác là đầu ra của những phiên bản chương trình bị sửa một chút."),
-        "hints": HINTS["predict_output"], "data": {"options": _options(correct, wrong, rng)},
+        "explanation_en": (f"The program really prints: {_inline(expected)}. Run it line by line and write down the "
+                           "values of the variables after each step; the other choices are the outputs of versions "
+                           "of the program that were changed a little."),
+        "hints": HINTS["predict_output"], "hints_en": HINTS_EN["predict_output"],
+        "data": {"options": _options(correct, wrong, rng)},
     }
 
 
@@ -304,13 +363,16 @@ def _make_bug(code, items, expected, muts, rng):
     cands = [mu for mu in muts if not mu.diag.passed]
     cands.sort(key=lambda mu: not mu.ran)  # stable: bugs that still run (wrong output, no crash) first
     if not cands:
-        raise Drop("Mọi chỉnh sửa nhỏ đều cho đúng kết quả cũ, không tạo được lỗi rõ ràng.")
+        raise Drop("Mọi chỉnh sửa nhỏ đều cho đúng kết quả cũ, không tạo được lỗi rõ ràng.",
+                   "Every small edit still gives the original result, so no clear bug could be made.")
     for bug in cands[:10]:
         fix = items[bug.line][1]
         buggy_items = _replace(items, bug.line, bug.text)
         wrong_fixes = [
             {"name": "edited_bug_line", "text": m.text,
-             "note": f"Với dòng này, {describe_edit(fix, m.text)} so với dòng đúng nên chương trình vẫn in sai."}
+             "note": f"Với dòng này, {describe_edit(fix, m.text)} so với dòng đúng nên chương trình vẫn in sai.",
+             "note_en": (f"On this line, compared with the right line, {describe_edit_en(fix, m.text)}, "
+                         "so the program still prints the wrong thing.")}
             for m in muts if m.line == bug.line and m.text != bug.text and not m.diag.passed][:3]
         try:
             form = build_bug_form(buggy_items, bug.line, fix, wrong_fixes, expected, rng)
@@ -319,12 +381,17 @@ def _make_bug(code, items, expected, muts, rng):
         return {
             "type": "find_bug",
             "prompt": f"Chương trình in sai kết quả. Chọn cách sửa đúng để in ra {_inline(expected)}.",
+            "prompt_en": f"The program prints the wrong result. Choose the right fix to print {_inline(expected)}.",
             "code": None, "expected_output": expected, "solution_code": code,
             "explanation": (f"Lỗi nằm ở dòng {bug.line + 1}: `{bug.text}` cần sửa thành `{fix}` để in ra "
                             f"{_inline(expected)}. Sửa một dòng khác, hoặc sửa dòng này theo cách khác, vẫn cho kết quả sai."),
-            "hints": HINTS["find_bug"], "data": form,
+            "explanation_en": (f"The bug is on line {bug.line + 1}: `{bug.text}` has to be fixed to `{fix}` to print "
+                               f"{_inline(expected)}. Fixing another line, or fixing this line in a different way, "
+                               "still gives a wrong result."),
+            "hints": HINTS["find_bug"], "hints_en": HINTS_EN["find_bug"], "data": form,
         }
-    raise Drop("Không dựng được đủ phương án sửa khác nhau cho một lỗi (đoạn mã quá ngắn hoặc quá đơn giản).")
+    raise Drop("Không dựng được đủ phương án sửa khác nhau cho một lỗi (đoạn mã quá ngắn hoặc quá đơn giản).",
+               "Could not build enough different fixes for one bug (the code is too short or too simple).")
 
 
 _OP_TOKEN = re.compile(r"(?<= )(==|!=|<=|>=|//|[-+*/%<>])(?= )")
@@ -366,14 +433,16 @@ def _wrong_fragments(kind: str, frag: str) -> list[str]:
 
 def _make_fill(code, items, expected, ev, rng, deadline):
     if "___" in code:
-        raise Drop("Mã có chuỗi ___ nên không thể làm chỗ trống.")
+        raise Drop("Mã có chuỗi ___ nên không thể làm chỗ trống.",
+                   "The code contains ___ already, so it can't be used for a blank.")
     sites = [(i, s) for i, (_, text) in enumerate(items) for s in fragment_sites(text)]
     if not sites:
-        raise Drop("Không có số hoặc phép toán nào để làm chỗ trống.")
+        raise Drop("Không có số hoặc phép toán nào để làm chỗ trống.",
+                   "There is no number or operator that could become a blank.")
     rng.shuffle(sites)
     for i, (start, end, kind, frag) in sites[:12]:
         if time.monotonic() > deadline:
-            raise Drop("Hết thời gian xử lý.")
+            raise Drop("Hết thời gian xử lý.", "Ran out of processing time.")
         text = items[i][1]
         found = []
         for alt in _wrong_fragments(kind, frag):
@@ -399,31 +468,43 @@ def _make_fill(code, items, expected, ev, rng, deadline):
         skeleton_items = _replace(items, i, text[:start] + "___" + text[end:])
         skeleton = join_lines(skeleton_items)
         what = "con số" if kind == "number" else "phép toán"
+        what_en = "number" if kind == "number" else "operator"
         correct = {"text": frag, "correct": True, "name": None, "group": None,
                    "actual_output": expected, "message": None, "note": None}
         wrong = [{"text": alt, "correct": False, "name": "wrong_fragment",
                   "group": d.error_group or "output_mismatch", "actual_output": d.actual_output,
-                  "message": d.message, "note": f"Với `{alt}` ở chỗ trống, đầu ra khác với kết quả cần in."}
+                  "message": d.message, "message_en": d.message_en,
+                  "note": f"Với `{alt}` ở chỗ trống, đầu ra khác với kết quả cần in.",
+                  "note_en": f"With `{alt}` in the blank, the output differs from the result you need."}
                  for alt, d in picked]
         return {
             "type": "fill_blank",
             "prompt": f"Điền {what} còn thiếu để chương trình in ra {_inline(expected)}.",
+            "prompt_en": f"Fill in the missing {what_en} so the program prints {_inline(expected)}.",
             "code": skeleton, "expected_output": expected, "solution_code": code,
             "explanation": (f"Điền `{frag}` vào chỗ trống thì chương trình in ra {_inline(expected)}. Mỗi lựa chọn khác "
                             "làm đầu ra thay đổi: hãy thay từng lựa chọn vào chương trình và chạy tay để thấy khác biệt."),
-            "hints": HINTS["fill_blank"], "data": {"options": _options(correct, wrong, rng)},
+            "explanation_en": (f"Put `{frag}` in the blank and the program prints {_inline(expected)}. Every other "
+                               "choice changes the output: put each choice into the program and run it by hand to "
+                               "see the difference."),
+            "hints": HINTS["fill_blank"], "hints_en": HINTS_EN["fill_blank"],
+            "data": {"options": _options(correct, wrong, rng)},
         }
-    raise Drop("Không có chỗ trống nào cho ra ít nhất 3 đáp án sai khác với đáp án đúng.")
+    raise Drop("Không có chỗ trống nào cho ra ít nhất 3 đáp án sai khác với đáp án đúng.",
+               "No blank gives at least 3 wrong answers that differ from the right one.")
 
 
 def _make_parsons(code, items, expected, rng):
     n = len(items)
     if n < 3:
-        raise Drop("Cần ít nhất 3 dòng để làm bài sắp xếp.")
+        raise Drop("Cần ít nhất 3 dòng để làm bài sắp xếp.", "At least 3 lines are needed for an ordering puzzle.")
     if len({t for _, t in items}) != n:
-        raise Drop("Có dòng trùng nhau nên không thể kiểm tra thứ tự một cách chắc chắn.")
+        raise Drop("Có dòng trùng nhau nên không thể kiểm tra thứ tự một cách chắc chắn.",
+                   "Some lines are identical, so the order can't be checked reliably.")
     if max(ind for ind, _ in items) > MAX_PARSONS_INDENT:
-        raise Drop(f"Thụt lề sâu hơn {MAX_PARSONS_INDENT} mức, bài sắp xếp chỉ hỗ trợ tối đa {MAX_PARSONS_INDENT} mức.")
+        raise Drop(f"Thụt lề sâu hơn {MAX_PARSONS_INDENT} mức, bài sắp xếp chỉ hỗ trợ tối đa {MAX_PARSONS_INDENT} mức.",
+                   f"The indentation is deeper than {MAX_PARSONS_INDENT} levels; ordering puzzles support at most "
+                   f"{MAX_PARSONS_INDENT} levels.")
     perm = None
     for _ in range(80):
         cand = rng.sample(range(n), n)
@@ -434,44 +515,55 @@ def _make_parsons(code, items, expected, rng):
             perm = cand
             break
     if perm is None:
-        raise Drop("Không tìm được cách xáo trộn làm chương trình in sai.")
+        raise Drop("Không tìm được cách xáo trộn làm chương trình in sai.",
+                   "Could not find a shuffle that makes the program print the wrong thing.")
     lines = [{"id": f"l{j + 1}", "text": items[perm[j]][1]} for j in range(n)]
     id_of = {perm[j]: f"l{j + 1}" for j in range(n)}
     solution = [{"line_id": id_of[i], "indent": items[i][0]} for i in range(n)]
     return {
         "type": "parsons",
         "prompt": f"Sắp xếp và thụt lề các dòng để chương trình in ra {_inline(expected)}.",
+        "prompt_en": f"Arrange and indent the lines so the program prints {_inline(expected)}.",
         "code": None, "expected_output": expected, "solution_code": code,
         "explanation": ("Chương trình chạy từ trên xuống dưới; các dòng thuộc một khối lệnh (sau dấu hai chấm) phải "
                         f"thụt vào 4 dấu cách. Sắp xếp đúng thì chương trình in ra {_inline(expected)}."),
-        "hints": HINTS["parsons"], "data": {"lines": lines, "solution": solution, "distractors": []},
+        "explanation_en": ("A program runs from top to bottom; the lines that belong to a block (after a colon) must "
+                           f"be indented by 4 spaces. Arranged correctly, the program prints {_inline(expected)}."),
+        "hints": HINTS["parsons"], "hints_en": HINTS_EN["parsons"],
+        "data": {"lines": lines, "solution": solution, "distractors": []},
     }
 
 
 def generate(raw_code: str) -> dict:
     """Run the program and build up to four verified puzzles from it. SANDBOX ONLY.
 
-    Returns ``{"ok": False, "message": ...}`` for an unusable program, otherwise
-    ``{"ok": True, "code", "expected_output", "puzzles": [...], "skipped": [{"type", "reason"}]}``.
+    Returns ``{"ok": False, "message": ..., "message_en": ...}`` for an unusable program, otherwise
+    ``{"ok": True, "code", "expected_output", "puzzles": [...], "skipped": [{"type", "reason", "reason_en"}]}``.
     """
     _require_sandbox()
     deadline = time.monotonic() + GENERATION_BUDGET_S
     try:
         code, _ = prepare_source(raw_code)
     except InvalidSource as e:
-        return {"ok": False, "message": str(e)}
+        return {"ok": False, "message": str(e), "message_en": e.en}
     res = V.run_program(code)
     if not res.ok:
         if res.error_kind == "limit":
-            return {"ok": False, "message": "Chương trình chạy quá lâu hoặc in quá nhiều dòng (có thể có vòng lặp vô hạn)."}
+            return {"ok": False,
+                    "message": "Chương trình chạy quá lâu hoặc in quá nhiều dòng (có thể có vòng lặp vô hạn).",
+                    "message_en": "The program runs for too long or prints too many lines (maybe an endless loop)."}
         if res.error_kind == "runtime":
-            return {"ok": False, "message": f"Chương trình bị lỗi khi chạy: {res.message}"}
-        return {"ok": False, "message": res.message or "Chương trình không chạy được."}
+            return {"ok": False, "message": f"Chương trình bị lỗi khi chạy: {res.message}",
+                    "message_en": f"The program raised an error while running: {res.message_en}"}
+        return {"ok": False, "message": res.message or "Chương trình không chạy được.",
+                "message_en": res.message_en or "The program could not run."}
     expected = V.normalize_output(res.output)
     if not expected:
-        return {"ok": False, "message": "Chương trình không in ra gì. Hãy dùng print() để in kết quả."}
+        return {"ok": False, "message": "Chương trình không in ra gì. Hãy dùng print() để in kết quả.",
+                "message_en": "The program prints nothing. Use print() to print a result."}
     if not output_ok(expected):
-        return {"ok": False, "message": "Đầu ra quá dài: tối đa 5 dòng và mỗi dòng không quá 40 ký tự."}
+        return {"ok": False, "message": "Đầu ra quá dài: tối đa 5 dòng và mỗi dòng không quá 40 ký tự.",
+                "message_en": "The output is too long: at most 5 lines and no more than 40 characters per line."}
 
     items = split_lines(code)
     rng = random.Random(int(hashlib.sha1(code.encode("utf-8")).hexdigest()[:16], 16))
@@ -496,10 +588,10 @@ def generate(raw_code: str) -> dict:
     puzzles, skipped = [], []
     for typ in TYPE_ORDER:
         if time.monotonic() > deadline:
-            skipped.append({"type": typ, "reason": "Hết thời gian xử lý."})
+            skipped.append({"type": typ, "reason": "Hết thời gian xử lý.", "reason_en": "Ran out of processing time."})
             continue
         try:
             puzzles.append(makers[typ]())
         except Drop as e:
-            skipped.append({"type": typ, "reason": str(e)})
+            skipped.append({"type": typ, "reason": str(e), "reason_en": e.en})
     return {"ok": True, "code": code, "expected_output": expected, "puzzles": puzzles, "skipped": skipped}

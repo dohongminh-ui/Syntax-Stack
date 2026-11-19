@@ -5,11 +5,17 @@ hints:
   - "Một biến phải được gán giá trị trước khi dùng nó ở dòng khác."
   - "Tìm dòng không phụ thuộc vào ai (gán số cụ thể) để đặt đầu tiên, và dòng print() thường đứng cuối."
   - "Mỗi dòng dùng biến nào thì biến đó phải được tạo ở dòng đứng trước nó. Sắp xếp theo chuỗi phụ thuộc đó."
+hints_en:
+  - "A variable must be given a value before you use it on another line."
+  - "Find the line that depends on nothing (it assigns a plain number) and put it first; the print() line usually comes last."
+  - "Each line can only use variables that were created on an earlier line. Arrange the lines along that chain of dependencies."
 explanation: "Chương trình chạy từng dòng từ trên xuống, nên biến phải được tạo trước khi dùng và print() đứng sau khi đã tính xong. Đầu ra đúng là {expected_inline}."
+explanation_en: "The program runs line by line from top to bottom, so a variable must be created before it is used and print() comes after everything has been calculated. The correct output is {expected_inline}."
 tiers:
   1:
     - count: 8
       prompt: "Sắp xếp các dòng để chương trình in ra {expected_inline}."
+      prompt_en: "Arrange the lines so the program prints {expected_inline}."
       code: |
         {n1} = {p}
         {n2} = {n1} + {q}
@@ -35,6 +41,7 @@ tiers:
   2:
     - count: 12
       prompt: "Sắp xếp các dòng để hoán đổi hai biến rồi in ra {expected_inline}."
+      prompt_en: "Arrange the lines to swap the two variables and print {expected_inline}."
       code: |
         {n1} = {p}
         {n2} = {q}
@@ -71,6 +78,7 @@ tiers:
   3:
     - count: 10
       prompt: "Sắp xếp và thụt lề các dòng để chương trình in ra {expected_inline}."
+      prompt_en: "Arrange and indent the lines so the program prints {expected_inline}."
       code: |
         {n1} = {p}
         {n2} = {q}
