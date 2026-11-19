@@ -93,13 +93,14 @@ Learn Python by stacking real code
 
 ## Slide 3 — Project introduction
 
-**Misaki helps a student understand a mistake and try again.**
+**An AI tutor helps a student understand a mistake and try again.**
 
 - **AI in studying:** an explanation of the student's actual attempt, followed by a correction they make.
 - The practice environment is a Python block-puzzle game; a validator checks the program's output.
 - For BTEC FPT students and anyone writing their first lines of Python. Learning gains are a pilot question.
 
-**Visual:** Misaki's labelled tutor card beside the student's code and checked output.
+**Visual:** the student's code and checked output, with the tutor card's text but **not** Misaki's name
+or portrait (crop or blur the "MISAKI" label; she is revealed on slide 8).
 
 ---
 
@@ -134,7 +135,7 @@ Learn Python by stacking real code
 | --- | --- | --- |
 | Online judges (LeetCode…) | ✗ | pass/fail only |
 | Video courses | ✗ | ✗ |
-| **AI chatbots / AI mentors** | ✓ | ✗ can be confidently wrong |
+| **AI chatbots / AI mentors** | ✓ | ✗ illusion of understanding |
 | Casual puzzle games | ✓ | ✗ teach nothing |
 | **Syntax Stack** | ✓ | ✓ **verified by running the code** |
 
@@ -146,12 +147,15 @@ Learn Python by stacking real code
 ## Slide 8 — Our solution
 
 1. **The board is the program.** Rows are lines; the column is the indentation.
-2. **Misaki explains the student's attempt.** The language-model tutor gets the prediction and execution
-   trace after the validator checks the output. The student makes the correction and tests it again.
-   AI explanations are labelled; authored fallbacks are identified separately.
+2. **An AI tutor explains the student's attempt.** The language-model tutor gets the prediction and
+   execution trace after the validator checks the output. The student makes the correction and tests it
+   again. AI explanations are labelled; authored fallbacks are identified separately.
 3. **No time pressure.** Thinking slowly is allowed.
 
-**Visual:** numbered-circle layout (SERS slide 9).
+**Reveal (one click after point 2):** "**Introducing Misaki, our AI tutor**", with her name large and
+her tutor card. This is the first time the deck names her.
+
+**Visual:** numbered-circle layout (SERS slide 9), then the Misaki reveal as a build on the same slide.
 
 ---
 

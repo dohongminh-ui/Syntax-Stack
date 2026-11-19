@@ -3,6 +3,8 @@
 v2 is kept in `presentation-script.v2.md`. The talk is **10 minutes including a 3:20 live demo**
 (hard stop at 3:45). The theme is **AI in studying**: Misaki explains a specific mistake, the student
 applies the explanation, then Misaki supports practice. The classroom closes the learning story.
+**Misaki is not named before slide 8**: Cuong and Lam say "an AI tutor" until Lam's reveal,
+"Introducing Misaki, our AI tutor", so her name lands as a moment.
 
 | Presenter | Slides | Section | Time |
 | --- | --- | --- | --- |
@@ -75,14 +77,14 @@ Good morning. We're team **Le Rouge** from BTEC FPT, class SE08301, supervised b
 I'm Bui Manh Cuong, with Tran Thuong Vu Lam and Do Hong Minh. Our project is **Syntax Stack**.
 
 ### Slide 2 — Table of contents
-Problem, the gap, then **Misaki helping a student understand and retry**, with a live classroom you can join.
+Problem, the gap, **our solution and a live demo**, with a classroom you can join from your phone.
 
 ### Slide 3 — Project introduction
-Our theme is **AI in studying**. Syntax Stack is a Python-learning game with **Misaki**, an AI tutor
-that explains a student's specific mistake, so they can try again with understanding.
+Our theme is **AI in studying**. Syntax Stack is a Python-learning game with an **AI tutor** that
+explains a student's specific mistake, so they can try again with understanding.
 
 The blocks are Python code: students arrange a program, predict its output and test their thinking.
-A validator checks the result. Misaki uses that checked context to explain why it happened.
+A validator checks the result. The tutor uses that checked context to explain why it happened.
 The student still has to make the correction. That's the learning loop we will show.
 
 ### Slides 4–5 — Hard first step; feedback that doesn't teach
@@ -108,17 +110,19 @@ and **hints that reveal a little at a time**.
 Online judges like LeetCode are built for people who can already code. Video courses are passive.
 Casual games are engaging but teach nothing.
 
-An AI chatbot can give a student a complete answer before they try, and its explanation can be wrong.
+An AI chatbot can give a student a complete answer before they try. Reading a good explanation feels like
+understanding, but the student never tested their own thinking: an **illusion of understanding**.
 We want AI to respond **after a real attempt**, using the student's code and the result of running it.
-That is Misaki's job in Syntax Stack.
+That is the job we gave our AI tutor.
 
 ### Slide 8 — Our solution
 **One: the board is the program.** Each row is a line; the column where it starts is the indentation.
 You can *see* that `print` is inside the loop.
 
-**Two: Misaki explains a checked result.** Our validator runs the supported exercises in a limited
-environment and compares the output. Misaki gets the student's prediction and the actual execution
-trace, then explains the mismatch. The student applies that explanation and runs again.
+**Two: an AI tutor that explains a checked result.** *(Pause; click to reveal her.)* Introducing
+**Misaki, our AI tutor.** Our validator runs the supported exercises in a limited environment and
+compares the output. Misaki gets the student's prediction and the actual execution trace, then
+explains the mismatch. The student applies that explanation and runs again.
 
 ### Slide 9 — Two modes
 **Code Rescue** trains recognition. Blocks are coloured by topic: variables, conditions, loops,
@@ -156,13 +160,13 @@ topic.
 
 | Clock | Action | Evidence to point at |
 | --- | --- | --- |
-| 0:00–0:15 | Tab 1: introduce Misaki beside the prepared r3 exercise. | A specific student task, not an open-ended chatbot. |
+| 0:00–0:15 | Tab 1: bring Misaki back beside the prepared r3 exercise. | A specific student task, not an open-ended chatbot. |
 | 0:15–1:35 | Predict `0`, `1`, `2`, run, tap **Vì sao?**, then replace `range(2)` with `range(3)` and run again. | Checked mismatch → labelled AI explanation → the student's correction passes. |
 | 1:35–2:35 | Ctrl+2: start the prepared level-1 training match; after countdown tap **Gợi ý nước đi** and place one suggested piece. | Misaki as an opponent, a legal highlighted suggestion and its reason. |
 | 2:35–3:10 | Ctrl+3: Lam answers the prepared classroom puzzle wrong. | Teacher sees the actual named mistake; briefly invite QR joins without waiting. |
 | 3:10–3:20 | Connect the three beats. | AI explanation, guided practice and a teacher who can still see the class. |
 
-**Misaki, the tutor.** This is **Misaki**, our AI study companion. I predict this loop prints 0, 1, 2.
+**Misaki, the tutor.** Lam introduced **Misaki**; let's see her at work. I predict this loop prints 0, 1, 2.
 *(Run.)* It prints 0, 1. The validator has checked the mismatch. I ask **Vì sao?**.
 *(Point at the AI card.)* Misaki explains using my prediction and the program's execution trace:
 `range(2)` stops before 2. She has the context of my actual attempt.
