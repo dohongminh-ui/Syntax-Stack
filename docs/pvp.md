@@ -10,8 +10,10 @@ Two players play Code Rescue on their own boards, at the same time, dealt the **
 seed). When you clear a lock by answering its puzzle correctly, you **send bug lines**: rows of ERR
 blocks that rise from the bottom of your opponent's board, like garbage in a falling-block versus game.
 Incoming bug lines wait in a queue first, and lines you clear cancel your own queue before anything is
-sent. Opening a puzzle pauses **your** board only; your opponent keeps playing, so thinking speed is
-the skill. You lose when incoming lines push your blocks off the top, or when none of your pieces fits.
+sent. The queue lands after your next placement, or by itself 4 seconds after it started (2 seconds in
+overtime) while no lock is open, so standing still does not save you. A lock must be answered within 40 seconds
+(70 for a boss lock), or it turns into one of your own bug lines. Opening a puzzle pauses **your** board only;
+your opponent keeps playing, so thinking speed is the skill. You lose when none of your pieces fits.
 
 ## 2. Rule changes (`mode: 'pvp'`)
 
@@ -26,10 +28,18 @@ lockstep by the golden test (§7). Everything not listed works as in `mode: 'res
 3. **Cancelling.** Lines you would send first cancel your own pending incoming lines, one for one; only
    the remainder is sent.
 4. **Pending queue.** Incoming lines are held in `s.pending` (a list of `{topic, templateId}` entries,
-   one per row). They **land after your next placement that does not create a lock**, all at once. A
-   placement that creates a lock keeps them pending until that lock is resolved (answer, or undo), then
-   they land on the next placement that does not create a lock. Lines that arrive while a lock is open
-   are queued behind the older ones.
+   one per row). They **land after your next placement that does not create a lock**, all at once, **or by
+   themselves** when the landing timer runs out. A placement that creates a lock keeps them pending until that
+   lock is resolved (answer, timeout or undo), then they land on the next placement that does not create a
+   lock (or by the timer). Lines that arrive while a lock is open are queued behind the older ones.
+   **Landing timer:** it starts when the queue goes from empty to non-empty, with a delay of `LAND_DELAY_S` = 4.0 s
+   (`LAND_DELAY_OVERTIME_S` = 2.0 s when the timer starts at or after 4:00 of match time). More rows arriving
+   while it runs do **not** extend it. When the queue empties (a placement landed it, or your clears cancelled all
+   of it) the timer is cleared. When it runs out and you have no lock open, every pending row lands at once with
+   the same rules as a placement landing (rule 5), then the no-fit check runs (rule 7, it can end the match). While
+   a lock is open the timer is held (the deadline is not moved): if it has passed when the lock is resolved, the
+   rows land on the next server tick. Placing early still lands the rows immediately. A timed landing leaves no undo
+   snapshot either. A player whose socket dropped is frozen (section 4): the deadline moves back by the time away.
 5. **Landing** k rows: every existing cell moves up k rows (existing bug lines move with their cells). Any
    cell pushed above row 0 is **destroyed** (a bug line pushed off goes with it). This is never fatal: you
    lose only when no piece fits (rule 6). With more than 8 rows the oldest are pushed off too. The bottom k rows are filled with ERR bug cells: each row is a full row of
@@ -58,6 +68,18 @@ lockstep by the golden test (§7). Everything not listed works as in `mode: 'res
 13. **Same pieces.** Both players are dealt from the same seed. Breaking a lock-topic tie draws no random
     number in pvp (the first tied topic in row-major order of the lock cells wins), so the piece sequence
     only depends on how many pieces a player drew (a Shuffle draws 3 more).
+14. **Lock limit.** A lock must be answered within `LOCK_LIMIT_S` = 40 s, or `LOCK_LIMIT_BOSS_S` = 70 s for a
+    boss lock (two puzzles), counted from the moment the lock was created, whether or not its puzzle was ever
+    opened. When it runs out the lock is resolved exactly as a **wrong answer** (rule 1): it turns into one of
+    your own bug lines (topic and template of the open puzzle, or the lock's topic with template `<topic>_bug` when
+    none was opened), the streak resets, nothing is sent. A puzzle that was open for that lock is marked answered: a
+    late answer is checked as always but not applied, and a new `puzzle/next` for it is `409` (no lock). Undo clears
+    the lock's deadline, a new lock gets a new one. A landing that was due is done on the next tick (rule 4).
+
+The two timers (rule 4 landing timer, rule 14 lock limit) belong to the **match layer** (`backend/app/pvp.py`, on the
+match clock): they only call the existing engine functions (`land_pending` + `check_no_fit`, and the wrong-answer
+path of `pvp_resolve_lock`), so `game.js` needs no change. The golden replay knows them as the events `land` and
+`lock_timeout` (section 7).
 
 ### `game.js` interface for PvP (owned by the rules work; the frontend builds against it)
 
@@ -163,11 +185,12 @@ Server → client:
 | --- | --- | --- |
 | `lobby` | `you: {nickname, rating}, opponent: {nickname, bot, connected, rating} \| null, level, starts_in` | waiting / countdown. `opponent` is `null` until paired; `rating` is the Elo (1000 for a new device) and `null` for the bot; `starts_in` is `null` or 3, 2, 1, 0 |
 | `start` | `seed, level, match_id, match_token, at, elapsed` | 3-2-1 done, play. `at` = server Unix time of the start; `elapsed` = seconds since then (0, or more when re-sent on a reconnect: use it instead of `at` to avoid clock skew) |
-| `state` | `you: {grid, tray, score, streak, items, pending, bugLines, lock, phase, status, bestStreak, sent, received, endReason}`, `rev` | your full state after **every** change, including every change to your pending queue (incoming, cancel, landing, overtime, undo) (`rev` increases per player; `start`/new round restarts it) |
+| `state` | `you: {grid, tray, score, streak, items, pending, bugLines, lock, phase, status, bestStreak, sent, received, endReason, land_in, lock_in}`, `rev` | your full state after **every** change, including every change to your pending queue (incoming, cancel, landing, overtime, undo) (`rev` increases per player; `start`/new round restarts it). `land_in`: seconds until the timed landing (float, rounded to 0.1), `null` when nothing is pending; still reported while an open lock holds the timer (then it can be 0 or negative). `lock_in`: seconds left on the lock limit (float, 0.1), `null` without a lock. Seconds remaining, not absolute times: the state is pushed on changes only, so the client counts down locally between pushes |
 | `opponent` | `{grid, score, pending, lock: bool, phase, connected}` | opponent's board, at most 4× per second; `pending` is a **number** of rows |
 | `sent` | `lines, cancelled` | you sent / cancelled lines (for the animation); only when either is above 0 |
 | `incoming` | `lines, from_topic, overtime?` | lines added to your pending queue (`overtime: true` for the overtime lines) |
-| `landed` | `rows` | your pending lines just landed (not sent when the game ended) |
+| `landed` | `rows, timed?` | your pending lines just landed (not sent when the game ended). `timed: true` when the landing timer made them land (no placement of yours); absent after a placement. Sent just before the `state` that shows the landing |
+| `lock_timeout` | | your lock ran out of time and became a bug line (rule 14); sent just before the `state` that shows it. A puzzle open for that lock is stale |
 | `opponent_status` | `connected, grace_s` | opponent dropped (`grace_s` 20) / is back (0) |
 | `end` | `winner: "you"\|"opponent"\|"draw", reason, you: {score, sent, received, locks}, opponent: {score, sent, received, locks, nickname, bot}, rating?: {before, after}` | match over (the last `opponent` and `state` are sent just before it) |
 | `rematch_status` | `you, opponent, expired?` | private duels after `end`, see below |
@@ -218,7 +241,8 @@ rematch is a new search (the sockets are closed after `end`; `rematch` is `no_re
   (and the socket is closed unless it is a private duel inside the rematch window).
 - Grace expired → the dropped player loses (`reason: disconnect`). Both dropped → draw
   (`both_disconnected`: checked when the first grace runs out while the other is still gone). Lines the
-  opponent sends keep queueing on a dropped player's board; nothing lands until they place again.
+  opponent sends keep queueing on a dropped player's board; nothing lands until they place again. Their landing
+  timer and lock limit stand still while away (the deadlines move back by the time away).
 - Closing the tab or tapping back = resign after a confirm dialog.
 - A server restart (deploy) ends live matches with `server_restart` (winner `draw`); no rating change.
   uvicorn closes the sockets (close code 1012) before the app can send anything on a SIGTERM, so in
@@ -344,7 +368,14 @@ count as 0.5.
   suggestion legality) and the strength check `backend/tests/misaki_sim.py`: full bot-vs-bot matches on the real
   match code (virtual clock, no sleeping), each level against the one below, seats alternating; the test requires
   at least 65% over 40 games per pair. `python -m tests.misaki_sim 200` prints the numbers (200 games per pair,
-  seeds 1000..1199): Misaki 2 beats 1 in 70% (141/200), 3 beats 2 in 90% (179/200),
-  4 beats 3 in 92% (183/200), no draws; matches last about 1 to 1.5 minutes of match time.
+  seeds 1000..1199, with the timers of rules 4 and 14 on): Misaki 2 beats 1 in 60% (121/200), 3 beats 2 in 86%
+  (172/200), 4 beats 3 in 96% (193/200), no draws; matches last about 1.5 to 2 minutes of match time.
+- Timers (rules 4 and 14): `backend/tests/test_pvp_timers.py` (a match on a virtual clock: landing after 4 s, no
+  extension, 2 s in overtime, held while a lock is open, lock limit 40 s / 70 s for a boss, late answer ignored, undo
+  clears the deadline, `land_in` / `lock_in` in the state; plus the socket messages). The golden harness also feeds the
+  events `{"t":"land"}` (timed landing: landing + no-fit check) and `{"t":"lock_timeout","parts":[...]}` (a lock
+  resolved as a wrong answer, no Debugger spent) to `game.js` and to `replay_pvp`. `pvp_audit.py` checks every
+  `timed_landing` trace like a placement landing. The other match tests run with the timers switched off
+  (`pvp.LAND_DELAY_S` etc. set very high in their fixture).
 - Match tests: `backend/tests/test_pvp_match.py` (HTTP + WebSocket, accelerated clock via `pvp.SPEED`);
   rules: `backend/tests/test_pvp_rules.py` (golden against `game.js`, 400 pvp games).

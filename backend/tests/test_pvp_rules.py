@@ -66,6 +66,7 @@ def test_pvp_golden_games_cover_the_rules(traces):
     assert total["resign"] >= 1 and total["quit"] >= 1
     assert total["undo"] >= 20 and total["undoWithPending"] >= 3 and total["undoQueuedDuring"] >= 1
     assert total["bugfix"] >= 100 and total["bugfixWrong"] >= 10                # wrong Debug answers never crash
+    assert total["timedLand"] >= 50 and total["lockTimeout"] >= 20              # the two server timers (replay events)
     assert total["lockFail"] >= 50                                              # wrong lock answers never crash
     assert total["bomb"] >= 50 and total["shuffle"] >= 50 and total["debugger"] >= 50 and total["hinted"] >= 50
     assert {t["final"]["end_reason"] for t in traces} >= {"nofit", "resign", "quit"}

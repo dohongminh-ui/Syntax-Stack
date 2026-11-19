@@ -30,6 +30,10 @@ def tc(tmp_path, monkeypatch):
     monkeypatch.setattr(pvp, "SPEED", 20.0)
     monkeypatch.setattr(pvp, "TICK_S", 0.01)
     monkeypatch.setattr(pvp, "MAX_ACTIONS_PER_S", 10_000)
+    # The match timers (timed landing, lock limit) are covered by test_pvp_timers.py; the other tests here play
+    # with idle clients and an accelerated clock, so they run with the timers switched off.
+    for name in ("LAND_DELAY_S", "LAND_DELAY_OVERTIME_S", "LOCK_LIMIT_S", "LOCK_LIMIT_BOSS_S"):
+        monkeypatch.setattr(pvp, name, 1e9)
     ranked.reset_rate_limits()
     pvp.reset()
     with TestClient(app) as c:

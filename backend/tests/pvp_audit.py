@@ -47,6 +47,12 @@ def audit(events: list[dict]) -> dict:
             expected = placed[n:] + ["BBBBBBBB"] * n
             assert e["board_after"] == expected, e
             landings[e["side"]] = e
+        elif e["event"] == "timed_landing":      # the landing timer ran out: no piece, the same landing rule
+            assert e["rows"] == e["pending_before"] > 0, e
+            n = min(e["rows"], 8)
+            assert e["end_reason"] is None or e["end_reason"] == "nofit", e
+            assert e["board_after"] == e["board_before"][n:] + ["BBBBBBBB"] * n, e
+            landings[e["side"]] = e
     end = next(e for e in events if e["event"] == "end")
     for player in end["players"]:
         assert player["received"] == incoming[player["side"]], end

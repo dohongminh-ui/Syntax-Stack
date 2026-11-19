@@ -187,7 +187,9 @@ export class PvpMatch {
       track.append(s);
     }
     this.meterN = el('b', { class: 'pm-n', hidden: true });
-    meter.append(track, this.meterN);
+    // landing fuse: a 4px strip beside the track, draining while pending lines wait for their timed landing
+    this.fuse = el('div', { class: 'pm-fuse', 'aria-hidden': 'true', hidden: true }, el('i'));
+    meter.append(track, this.meterN, this.fuse);
 
     // opponent panel
     const cells = [];
@@ -319,6 +321,7 @@ export class PvpMatch {
       case 'sent': return this.onSent(msg);
       case 'incoming': return this.onIncoming(msg);
       case 'landed': return this.onLanded(msg);
+      case 'lock_timeout': return this.onLockTimeout();
       case 'opponent_status': return this.onOppStatus(msg);
       case 'end': return this.onEnd(msg);
       case 'rematch_status': return this.onRematchStatus(msg);
@@ -374,6 +377,11 @@ export class PvpMatch {
     this.rev = rev;
     this.server = this.normalize(msg.you);
     this.stateAt = Date.now();
+    // PvP timers: seconds remaining at push time. They are only pushed on changes, so count down locally from now.
+    this.timerAt = performance.now();
+    this.landIn = Number.isFinite(msg.you.land_in) ? Math.max(0, msg.you.land_in) : null;
+    this.lockIn = Number.isFinite(msg.you.lock_in) ? Math.max(0, msg.you.lock_in) : null;
+    this.restartFuse();
     this.settle();
     for (const w of this.stateWaiters.splice(0)) w(rev);
     if (this.ended) return;
@@ -447,6 +455,95 @@ export class PvpMatch {
     this.landRows = rows;
     this.landAt = Date.now();
     this.tryLand();
+  }
+
+  /** The server turned the open lock into a bug line because its time ran out. */
+  onLockTimeout() {
+    this.lockIn = null;
+    if (this.expireNow) this.expireNow(); // a puzzle flow is open: it closes the panel and shows the notice itself
+    else toast('Hết giờ: khóa đã thành dòng lỗi.', 3000);
+  }
+
+  // ---- PvP timers (landing fuse, lock clock) ---------------------------------------------------------------------
+  landLeft() {
+    if (this.landIn == null) return null;
+    if (this.fuseHeld()) return this.landIn; // held while a lock is open
+    return Math.max(0, this.landIn - (performance.now() - this.timerAt) / 1000);
+  }
+
+  lockLeft() {
+    if (this.lockIn == null) return null;
+    return Math.max(0, this.lockIn - (performance.now() - this.timerAt) / 1000);
+  }
+
+  fuseHeld() {
+    return !!(this.view?.lock || this.server?.lock);
+  }
+
+  /** A new land_in arrived (or the lock released it): restart the CSS drain from the time left. */
+  restartFuse() {
+    const f = this.fuse;
+    if (!f) return;
+    const left = this.landIn;
+    const bar = f.firstChild;
+    bar.style.animation = 'none';
+    void bar.offsetWidth;
+    bar.style.animation = '';
+    if (left == null) return;
+    const total = Math.max(left, this.inOvertime() ? 2 : 4);
+    bar.style.setProperty('--fuse-dur', total + 's');
+    bar.style.setProperty('--fuse-delay', -(total - left) + 's');
+    bar.style.setProperty('--fuse-hot', (left - 1.5) + 's');
+    this.fuseTotal = total;
+  }
+
+  inOvertime() {
+    return this.started && (Date.now() - this.t0) / 1000 >= OVERTIME_S;
+  }
+
+  /** Visibility, held state and the reduced-motion (tick-driven) fill of the fuse. */
+  paintFuse(n) {
+    const f = this.fuse;
+    if (!f) return;
+    const left = this.landLeft();
+    const show = n > 0 && left != null && !this.ended;
+    f.hidden = !show;
+    if (!show) return;
+    f.classList.toggle('is-held', this.fuseHeld());
+    f.classList.toggle('is-hot', left <= 1.5);
+    if (reducedMotion()) f.firstChild.style.transform = `scaleY(${Math.min(1, left / (this.fuseTotal || 4))})`;
+  }
+
+  /** Called every 250 ms: fuse + lock chip. Aria text changes only when the whole second changes. */
+  tickTimers() {
+    if (this.fuse && !this.fuse.hidden) {
+      this.paintFuse(this.meterPrev || 0);
+      const l = this.landLeft();
+      const sec = l == null || this.fuseHeld() ? -1 : Math.ceil(l);
+      if (sec !== this.fuseSec) {
+        this.fuseSec = sec;
+        this.paintMeterAria();
+      }
+    }
+    this.paintLockChip();
+  }
+
+  paintLockChip() {
+    const c = this.lockChip;
+    if (!c || !c.isConnected) return;
+    const left = this.lockLeft();
+    if (left == null) {
+      c.hidden = true;
+      return;
+    }
+    const whole = Math.ceil(left);
+    c.hidden = false;
+    if (c.dataset.w !== String(whole)) {
+      c.dataset.w = String(whole);
+      c.textContent = whole + ' s';
+      c.setAttribute('aria-label', `Còn ${whole} giây`);
+    }
+    c.dataset.s = left > 10 ? 'ok' : left > 5 ? 'warn' : 'crit';
   }
 
   tryLand() {
@@ -676,7 +773,8 @@ export class PvpMatch {
     this.puzzleOpen = true;
     this.sentBuf = null;
     this.paint();
-    let outcome = null; // 'correct' | 'wrong'
+    this.lockExpired = new Promise((r) => { this.expireNow = r; }); // settles on the server's `lock_timeout`
+    let outcome = null; // 'correct' | 'wrong' | 'timeout'
     const rev0 = this.rev;
     const scoreBefore = this.view.score;
     try {
@@ -702,6 +800,8 @@ export class PvpMatch {
           maxAttempts: 1,
           free,
           track: false,
+          clock: this.lockIn != null ? { get: () => this.lockLeft() ?? 0, total: L.boss ? 70 : 40 } : null,
+          closeOn: this.lockExpired,
           awardText: (h) => {
             if (i < parts - 1) return 'Đúng câu 1/2. Còn một câu nữa.';
             const e = this.expectedSend(L, h <= free);
@@ -711,6 +811,10 @@ export class PvpMatch {
         });
         if (!res || this.ended) return;
         maxHint = Math.max(maxHint, res.maxHint);
+        if (res.timedOut) {
+          outcome = 'timeout';
+          break;
+        }
         if (!res.correct) {
           outcome = 'wrong';
           break;
@@ -739,9 +843,10 @@ export class PvpMatch {
         if (this.ended) return;
         this.frozen = false;
         this.rebuild();
-        toast('Hàng này thành dòng lỗi của bạn. Bạn không bị loại.', 3000);
+        toast(outcome === 'timeout' ? 'Hết giờ: khóa đã thành dòng lỗi.' : 'Hàng này thành dòng lỗi của bạn. Bạn không bị loại.', 3000);
       }
     } finally {
+      this.expireNow = null;
       this.puzzleOpen = false;
       this.frozen = false;
       this.busy = false;
@@ -845,11 +950,14 @@ export class PvpMatch {
     solve.type = 'button';
     solve.id = 'btn-solve';
     solve.addEventListener('click', () => this.runLock());
+    this.lockChip = el('span', { class: 'lock-chip', 'data-s': 'ok', hidden: true });
+    solve.querySelector('.kb-label').after(this.lockChip);
     b.replaceChildren(
       el('div', { class: 'lb-title' }, icon('lock', { size: 22 }), `${L.count >= 4 ? '4+' : L.count} hàng bị khóa`),
       el('div', { class: 'lb-sub' }, el('span', { class: 'chip', text: TOPIC_NAMES[L.topic] }), `${tierText} · đúng thì gửi tối đa ${e.total} dòng lỗi${v.items.debugger > 0 ? ' · dùng Debugger: Gợi ý 2 miễn phí' : ''}`),
       el('div', { class: 'lb-actions' }, solve,
         canUndo ? el('button', { class: 'btn', type: 'button', onclick: () => this.undo() }, icon('undo', { size: 16 }), 'Hoàn tác') : null));
+    this.paintLockChip();
   }
 
   paintBoardState() {
@@ -897,7 +1005,19 @@ export class PvpMatch {
     const meter = $('pvp-meter');
     meter.classList.toggle('danger', danger);
     meter.setAttribute('role', 'img');
-    meter.setAttribute('aria-label', n ? `Dòng lỗi đang chờ: ${n}${danger ? '. Cảnh báo: khối ở vùng đỏ sẽ bị mất' : ''}` : 'Không có dòng lỗi đang chờ');
+    this.meterInfo = { n, danger };
+    this.paintFuse(n);
+    this.paintMeterAria();
+  }
+
+  paintMeterAria() {
+    const { n, danger } = this.meterInfo || { n: 0, danger: false };
+    const l = this.fuse && !this.fuse.hidden && !this.fuseHeld() ? this.landLeft() : null;
+    const sec = l != null ? Math.max(1, Math.ceil(l)) : 0;
+    let label = 'Không có dòng lỗi đang chờ';
+    if (n && sec) label = danger ? `Dòng lỗi đang chờ: ${n}, rơi sau ${sec} giây. Cảnh báo: khối ở vùng đỏ sẽ bị mất` : `Dòng lỗi đang chờ: ${n}, rơi sau ${sec} giây`;
+    else if (n) label = danger ? `Dòng lỗi đang chờ: ${n}. Cảnh báo: khối ở vùng đỏ sẽ bị mất` : `Dòng lỗi đang chờ: ${n}`;
+    $('pvp-meter').setAttribute('aria-label', label);
   }
 
   paintOpp() {
@@ -1080,6 +1200,7 @@ export class PvpMatch {
       }
     }
     this.tickAway();
+    this.tickTimers();
   }
 
   showOverlay(kind, n) {

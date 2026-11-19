@@ -263,7 +263,8 @@ every mistake becomes a lesson. Thank you. We'd be happy to take your questions.
   same rules and computes the score itself. We check that the server's copy of the rules matches the
   game exactly by replaying hundreds of games in both. A faked score is simply rejected.
 - **"Can you play against each other live?"** (Minh) Yes, 1v1: both players get the same pieces, solving
-  a lock sends bug lines to the opponent, and the server runs both boards, so nobody can cheat. When
+  a lock sends bug lines to the opponent, and the server runs both boards, so nobody can cheat. Bug
+  lines drop on their own after four seconds and every lock has a time limit, so stalling never wins. When
   nobody else is online you play **Misaki**: four levels you unlock by beating the one before, and a
   training mode where she coaches you during the match. Players see their own progress by climbing
   her levels.

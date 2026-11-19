@@ -315,6 +315,9 @@ class Sim {
     this.started = false;
     this.over = false;
     this.endMsg = null;
+    this.landAt = null; // timed landing deadline (ms), null when nothing waits or a lock holds it
+    this.landHeld = null; // ms left on the landing timer while a lock is open
+    this.lockAt = null; // lock limit deadline (ms)
     this.maxHint = 0;
     this.bossDone = 0;
     this.lockDbg = false;
@@ -502,6 +505,7 @@ class Sim {
   startLoops() {
     this.after(rand(1200, 1800), () => this.botStep());
     this.every(1000, () => this.clock());
+    this.every(250, () => this.limitTick());
   }
 
   // -- reload resume: the browser keeps a snapshot, a revived sim carries on from it --
@@ -555,7 +559,7 @@ class Sim {
     this.seed = Math.floor(Math.random() * 4294967296);
     this.matchId = 'mock-m-' + seq++;
     this.token = 'mock-mt-' + seq++;
-    Object.assign(this, { over: false, started: false, endMsg: null, rev: 0, otDone: 0, oppSolving: null, oppAway: false, served: null, maxHint: 0, bossDone: 0, lockDbg: false, dropped: true });
+    Object.assign(this, { over: false, started: false, endMsg: null, rev: 0, otDone: 0, oppSolving: null, oppAway: false, served: null, maxHint: 0, bossDone: 0, lockDbg: false, dropped: true, landAt: null, landHeld: null, lockAt: null });
     this.after(500, () => this.begin());
   }
 
@@ -579,9 +583,62 @@ class Sim {
     });
   }
 
+  /** Same rules as the real server: pending lines land 4 s (2 s in overtime) after the queue became non-empty, held while a lock is open; a lock must be solved in 40 s (boss 70 s). */
+  syncTimers() {
+    const me = this.me;
+    const now = Date.now();
+    const ot = Number(qs().get('pvpot')) || 240;
+    const full = (now - this.t0) / 1000 >= ot ? 2000 : 4000;
+    if (!me.pending.length) {
+      this.landAt = this.landHeld = null;
+    } else if (me.lock) {
+      if (this.landAt != null) {
+        this.landHeld = this.landAt - now;
+        this.landAt = null;
+      } else if (this.landHeld == null) this.landHeld = full;
+    } else if (this.landHeld != null) {
+      this.landAt = now + Math.max(0, this.landHeld);
+      this.landHeld = null;
+    } else if (this.landAt == null) this.landAt = now + full;
+    if (!me.lock) this.lockAt = null;
+    else if (this.lockAt == null) this.lockAt = now + (me.lock.boss ? 70000 : 40000);
+    const landMs = this.landAt != null ? this.landAt - now : this.landHeld;
+    return {
+      land_in: me.pending.length && landMs != null ? Math.max(0, landMs) / 1000 : null,
+      lock_in: me.lock && this.lockAt != null ? Math.max(0, this.lockAt - now) / 1000 : null,
+    };
+  }
+
   sendState() {
     this.rev++;
-    this.emit({ t: 'state', you: serialize(this.me), rev: this.rev });
+    this.emit({ t: 'state', you: { ...serialize(this.me), ...this.syncTimers() }, rev: this.rev });
+  }
+
+  /** 250 ms loop: the timed landing and the lock limit. */
+  limitTick() {
+    if (this.over || !this.started || !this.me) return;
+    const me = this.me;
+    const now = Date.now();
+    if (me.lock && this.lockAt != null && now >= this.lockAt) {
+      this.served = null;
+      this.bossDone = 0;
+      this.lockDbg = false;
+      wrongFor(me); // expiry counts as a wrong answer: the lock becomes your own bug line
+      this.emit({ t: 'lock_timeout' });
+      this.sendState();
+      this.coach('wrong', { topic: '' }, me.bugLines.length ? me.bugLines[me.bugLines.length - 1].cells : null);
+      if (me.phase === 'over') this.finish('opponent', me.endReason || 'nofit');
+      return;
+    }
+    if (!me.lock && me.pending.length && this.landAt != null && now >= this.landAt) {
+      const k = landPending(me);
+      if (me.phase === 'over') {
+        this.sendState();
+        return this.finish('opponent', me.endReason || 'topped_out');
+      }
+      if (k) this.emit({ t: 'landed', rows: k, timed: true });
+      this.sendState();
+    }
   }
 
   sendOpp(now = false) {

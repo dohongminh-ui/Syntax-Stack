@@ -44,6 +44,10 @@ COUNTDOWN_S = 3
 GRACE_S = 20
 OVERTIME_AT_S = 240
 OVERTIME_EVERY_S = 20
+LAND_DELAY_S = 4.0               # incoming lines land by themselves this long after the queue went from empty to non-empty
+LAND_DELAY_OVERTIME_S = 2.0      # ... and this long once overtime has started (match time >= OVERTIME_AT_S)
+LOCK_LIMIT_S = 40.0              # a lock must be answered within this (from its creation, opened or not) ...
+LOCK_LIMIT_BOSS_S = 70.0         # ... a boss lock (two puzzles) within this; then it turns into a bug line
 OPPONENT_PUSH_S = 0.25           # opponent board pushes: at most 4 per second
 PRIVATE_TTL_S = 600              # a private duel code lives 10 minutes without a second player
 LOBBY_TIMEOUT_S = 60             # two players paired but not both ready within this: the match is cancelled
@@ -205,6 +209,8 @@ class Player:
         self.rev = 0
         self.dropped_at: Optional[float] = None
         self.final: Optional[dict] = None
+        self.land_at: Optional[float] = None      # match clock: when the pending rows land by themselves (docs rule 4)
+        self.lock_at: Optional[float] = None      # match clock: when the open lock times out (docs rule 14)
         self.stamps: deque = deque()              # real times of recent messages (rate limit)
         self.opp_dirty = True
         self.opp_pushed = -1e9
@@ -264,6 +270,9 @@ def _template_of(topic: str, template_id: Optional[str]) -> str:
 def state_view(p: Player) -> dict:
     g = p.game
     lock = None
+    t = now()
+    land_in = round(p.land_at - t, 1) if p.land_at is not None and g.pending else None
+    lock_in = round(p.lock_at - t, 1) if p.lock_at is not None and g.lock else None
     if g.lock:
         lock = {**{k: g.lock[k] for k in ("rows", "cols", "count", "tier", "boss", "topic")},
                 "cells": [list(x) for x in g.lock["cells"]], "debugger": p.lock_debugger}
@@ -275,6 +284,7 @@ def state_view(p: Player) -> dict:
                       "templateId": _template_of(b["topic"], b["template_id"])} for b in g.bug_lines],
         "lock": lock, "phase": g.phase, "status": g.status, "bestStreak": g.best_streak,
         "sent": g.sent, "received": g.received, "endReason": g.end_reason,
+        "land_in": land_in, "lock_in": lock_in,
     }
 
 
@@ -393,6 +403,10 @@ class Match:
             self.push_lobby()
         elif self.phase == "playing":
             back = p.dropped_at is not None
+            if back and p.game is not None:                    # the timers stood still while the player was away
+                away = max(0.0, now() - p.dropped_at)
+                p.land_at = None if p.land_at is None else p.land_at + away
+                p.lock_at = None if p.lock_at is None else p.lock_at + away
             p.dropped_at = None
             self.send_start(p)
             self.push_state(p, bump=True)
@@ -437,6 +451,7 @@ class Match:
             p.final, p.dropped_at, p.rev = None, None, 0
             p.served, p.history, p.counts, p.open_debug = {}, [], {}, None
             p.reset_lock()
+            p.land_at = p.lock_at = None
             p.opp_pushed = -1e9
         self.start()
 
@@ -473,6 +488,7 @@ class Match:
                             for p in self.players()])
         for p in self.players():
             p.game = E.RescueGame(self.seed, self.level, "pvp")
+            p.land_at = p.lock_at = None
             if p.bot:
                 chosen = p.misaki or pvp_bot.LEGACY_LEVEL[self.level]
                 p.brain = pvp_bot.BotBrain(self.seed, pvp_bot.effective_level(chosen, p.training), p.training,
@@ -486,7 +502,27 @@ class Match:
             p.opp_dirty = True
 
     # ---- pushes ----
+    def sync_timers(self, p: Player, t: Optional[float] = None) -> None:
+        """Keep ``p``'s two deadlines in step with the game (called before every state push, so every change to the
+        pending queue or the lock passes through it). The landing timer starts when the queue goes from empty to
+        non-empty and is never extended; it is cleared when the queue empties. The lock timer starts when the lock
+        appears and is cleared when it is gone (answer, timeout, undo)."""
+        g = p.game
+        if g is None:
+            return
+        t = now() if t is None else t
+        if g.phase == "over" or not g.pending:
+            p.land_at = None
+        elif p.land_at is None:
+            late = t - self.started_at >= OVERTIME_AT_S
+            p.land_at = t + (LAND_DELAY_OVERTIME_S if late else LAND_DELAY_S)
+        if g.lock is None or g.phase == "over":
+            p.lock_at = None
+        elif p.lock_at is None:
+            p.lock_at = t + (LOCK_LIMIT_BOSS_S if g.lock["boss"] else LOCK_LIMIT_S)
+
     def push_state(self, p: Player, bump: bool = True) -> None:
+        self.sync_timers(p)
         if bump:
             p.rev += 1
         if p.conn is not None:
@@ -655,21 +691,7 @@ class Match:
                 return
             if correct and len(p.lock_parts) < (2 if g.lock["boss"] else 1):
                 return                                          # a boss lock: the second puzzle is next
-            parts = [{"correct": s.correct, "hint": s.hint, "topic": s.topic, "template_id": s.template_id}
-                     for s in p.lock_parts]
-            lines = g.lock["count"]
-            res = g.pvp_resolve_lock(p.lock_debugger, parts)
-            p.reset_lock()
-            if p.coach is not None:
-                if res["result"] == "bug":
-                    self.coach_event(p, "wrong", topic=res["topic"])
-                else:
-                    if lines >= 2:
-                        self.coach_event(p, "good", n=lines)
-                    if g.streak == 3:
-                        self.coach_event(p, "streak", n=3)
-            self.deliver(p, res)
-            self.changed(p)
+            self.resolve_lock(p, [self.part_of(x) for x in p.lock_parts])
         elif sv.kind == "debug":
             if g.phase != "play" or p.open_debug is not sv:
                 return
@@ -682,6 +704,77 @@ class Match:
             else:
                 g.apply_debug_wrong(sv.topic, sv.template_id)
             self.changed(p)
+
+    @staticmethod
+    def part_of(sv: Served) -> dict:
+        return {"correct": sv.correct, "hint": sv.hint, "topic": sv.topic, "template_id": sv.template_id}
+
+    def resolve_lock(self, p: Player, parts: list[dict]) -> None:
+        """Resolve the player's open lock from its puzzle results (the first wrong one ends the list) and tell everyone.
+        The one path of a correct answer, a wrong answer and a lock timeout."""
+        g = p.game
+        lines = g.lock["count"]
+        res = g.pvp_resolve_lock(p.lock_debugger, parts)
+        p.reset_lock()
+        if p.coach is not None:
+            if res["result"] == "bug":
+                self.coach_event(p, "wrong", topic=res["topic"])
+            else:
+                if lines >= 2:
+                    self.coach_event(p, "good", n=lines)
+                if g.streak == 3:
+                    self.coach_event(p, "streak", n=3)
+        self.deliver(p, res)
+        self.changed(p)
+
+    def lock_timeout(self, p: Player) -> None:
+        """The lock limit ran out: resolve the lock exactly as a wrong answer to its current puzzle. A puzzle that is
+        open for it is marked answered, so a late answer finds nothing to apply."""
+        g = p.game
+        lk = g.lock
+        parts = [self.part_of(x) for x in p.lock_parts if x.answered]
+        cur = p.lock_parts[-1] if p.lock_parts and not p.lock_parts[-1].answered else None
+        if cur is not None:
+            cur.answered, cur.correct = True, False
+            parts.append(self.part_of(cur))
+        else:                                                  # no puzzle was open: the bug line asks for the topic's Debug puzzle
+            parts.append({"correct": False, "hint": 0, "topic": lk["topic"],
+                          "template_id": _template_of(lk["topic"], None)})
+        self.trace("lock_timeout", side=p.index, topic=lk["topic"], boss=lk["boss"], count=lk["count"],
+                   opened=p.lock_opened, streak=g.streak)
+        if p.brain is not None:
+            p.brain.think_until = None
+        p.send({"t": "lock_timeout"})
+        self.resolve_lock(p, parts)
+
+    def timed_landing(self, p: Player) -> None:
+        """The landing timer ran out with no lock open: all pending rows land now (as after a placement)."""
+        g = p.game
+        pending, before = len(g.pending), _board_rows(g)
+        k = g.land_pending()
+        g.check_no_fit()
+        self.trace("timed_landing", side=p.index, pending_before=pending, rows=k, received=g.received,
+                   board_before=before, board_after=_board_rows(g), end_reason=g.end_reason)
+        if g.phase != "over":
+            p.send({"t": "landed", "rows": k, "timed": True})
+        self.changed(p)
+
+    def tick_timers(self, t: float) -> None:
+        """Rule 4 (timed landing) and rule 14 (lock limit) on the match clock ``t``. A player who is away is frozen."""
+        for p in self.players():
+            g = p.game
+            if self.phase != "playing":
+                return
+            if g is None or g.phase == "over" or p.dropped_at is not None:
+                continue
+            if g.lock is not None:                              # the landing timer is held while a lock is open
+                self.sync_timers(p, t)
+                if t >= p.lock_at:
+                    self.lock_timeout(p)                        # a landing that is due follows on the next tick
+            elif g.pending:
+                self.sync_timers(p, t)
+                if t >= p.land_at:
+                    self.timed_landing(p)
 
     def deliver(self, p: Player, res: dict) -> None:
         """Tell the sender what it sent / cancelled and queue the lines on the opponent."""
@@ -832,6 +925,7 @@ class Match:
                 p.send({"t": "incoming", "lines": 1, "from_topic": topic, "overtime": True})
                 self.push_state(p)
                 p.opp_dirty = True
+        self.tick_timers(t)
         # bots
         for p in self.players():
             if p.bot and self.phase == "playing":

@@ -807,6 +807,10 @@ def replay_pvp(seed: int, level: str, events: Any) -> dict:
     * ``{"t":"lock","debugger":bool,"parts":[{"correct","hint","topic","template"}, ...]}``: the pending lock
       was resolved (a Debugger must be flagged exactly when one is owned, as in Rescue)
     * ``{"t":"bugfix","bug":id,"correct":bool}``: a bug line was tapped and its Debug puzzle answered
+    * ``{"t":"land"}``: the landing timer ran out with no lock open: every pending row lands (``land_pending``), then
+      the no-fit check runs (``pvp.py`` ``LAND_DELAY_S``)
+    * ``{"t":"lock_timeout","parts":[...]}``: the lock limit ran out: like ``lock`` but the last part is a wrong answer
+      and no Debugger is spent (``pvp.py`` ``LOCK_LIMIT_S``)
     * ``{"t":"end","reason":"resign"|"quit"}``: the player left (the game may also end by itself:
       ``topped_out`` or ``nofit``)
     * ``{"t":"grant","items":{"undo":2,...}}``: test fixture only (items are slow to earn); never sent by a server
@@ -850,6 +854,19 @@ def replay_pvp(seed: int, level: str, events: Any) -> dict:
                 raise Rejected("bad_move")
             g.pvp_resolve_lock(use, [{"correct": bool(p["correct"]), "hint": p.get("hint", 0), "topic": p["topic"],
                                       "template_id": p.get("template")} for p in parts])
+        elif t == "lock_timeout":
+            if g.phase != "locked" or not g.lock:
+                raise Rejected("no_lock")
+            parts = m.get("parts")
+            if not isinstance(parts, list) or not parts or bool(parts[-1]["correct"]):
+                raise Rejected("bad_move")
+            g.pvp_resolve_lock(False, [{"correct": bool(p["correct"]), "hint": p.get("hint", 0), "topic": p["topic"],
+                                        "template_id": p.get("template")} for p in parts])
+        elif t == "land":
+            if g.phase != "play" or not g.pending:
+                raise Rejected("illegal_phase")
+            g.land_pending()
+            g.check_no_fit()
         elif t == "undo":
             if g.phase != "locked":
                 raise Rejected("illegal_phase")

@@ -363,7 +363,7 @@ function playPvp(seed, level, index) {
     landedOverBugs: 0, toppedOut: 0, pushedOff: 0, nofit: 0, nofitOnPlace: 0, nofitOnLock: 0, nofitOnWrong: 0, resign: 0, quit: 0,
     locks: 0, lockFail: 0, boss: 0, sends: 0, linesSent: 0, cancels: 0, rowsCancelled: 0, fullyCancelled: 0,
     sendBonus: 0, undo: 0, undoWithPending: 0, undoQueuedDuring: 0, bugfix: 0, bugfixWrong: 0, bomb: 0, shuffle: 0,
-    debugger: 0, hinted: 0, maxPending: 0, lockedWithPending: 0,
+    debugger: 0, hinted: 0, maxPending: 0, lockedWithPending: 0, lockTimeout: 0, timedLand: 0,
   };
   let lockCount = 0;
   let landedTotal = 0; // rows reported by place() as landed (also the ones that topped the player out)
@@ -402,7 +402,8 @@ function playPvp(seed, level, index) {
   function runLock() {
     const L = s.lock;
     const useDbg = s.items.debugger > 0;
-    if (useDbg) s.items.debugger--;
+    const timedOut = ch() < 0.07; // the lock limit ran out: a wrong answer, no Debugger is spent
+    if (useDbg && !timedOut) s.items.debugger--;
     const free = Game.freeHintLevel(s, useDbg);
     const parts = L.boss ? 2 : 1;
     const base = Game.baseFor(L);
@@ -420,12 +421,22 @@ function playPvp(seed, level, index) {
         break;
       }
     }
-    const ev = { t: 'lock', parts: done };
-    if (useDbg) {
-      ev.debugger = true;
-      st.debugger++;
+    if (timedOut && !failed) {
+      done.pop(); // the last puzzle was still open when the limit ran out
+      failed = { correct: false, hint: 0, topic: L.topic, template: `${L.topic}_bug` };
+      done.push(failed);
     }
-    events.push(ev);
+    if (timedOut) {
+      events.push({ t: 'lock_timeout', parts: done });
+      st.lockTimeout++;
+    } else {
+      const ev = { t: 'lock', parts: done };
+      if (useDbg) {
+        ev.debugger = true;
+        st.debugger++;
+      }
+      events.push(ev);
+    }
     if (!failed) {
       const r = Game.applyCorrect(s, { base, maxHint, free, lines: L.count });
       Game.finishLock(s);
@@ -540,6 +551,16 @@ function playPvp(seed, level, index) {
       break;
     }
     inject();
+    if (s.phase === 'play' && s.pending.length && ch() < 0.1) {
+      // the landing timer ran out (pvp.py tick_timers): everything lands, then the no-fit check
+      landedTotal += Game.landPending(s);
+      Game.checkNoFit(s);
+      events.push({ t: 'land' });
+      st.timedLand++;
+      fromLock = false;
+      if (s.phase === 'over') st.nofitOnPlace++;
+      continue;
+    }
     if (s.phase === 'locked') {
       if (s.items.undo > 0 && s.snapshot && ch() < 0.5) {
         const had = s.pending.length;

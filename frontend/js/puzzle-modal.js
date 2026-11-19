@@ -40,7 +40,8 @@ function enterKey(label, onclick, { id, disabled = false, cls = '' } = {}) {
  */
 export function openPuzzle(opts) {
   const { puzzle, topic, title, boss = null, tag = null, maxAttempts = 1, free = 0, penalties = true,
-    awardText, startHint = 0, onResult = null, track = true, standalone = false, intro = '', introSource = 'canned', closeLabel = 'Về báo cáo' } = opts;
+    awardText, startHint = 0, onResult = null, track = true, standalone = false, intro = '', introSource = 'canned', closeLabel = 'Về báo cáo', clock = null, closeOn = null } = opts;
+  // clock: { get: () => seconds left, total } (PvP lock limit only; solo modes pass nothing). closeOn: a promise that closes the panel when it settles.
   const root = document.getElementById('modal-root');
   const app = document.getElementById('app');
   const gameScreen = document.getElementById('screen-game');
@@ -89,6 +90,40 @@ export function openPuzzle(opts) {
     const edge = el('div', { class: 'pz-edge', 'aria-hidden': 'true' });
     const panel = el('div', { class: 'pz-panel editor', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId, tabindex: '-1' },
       el('div', { class: 'pz-grab', 'aria-hidden': 'true' }, el('i')), barHolder, body, edge);
+    // ---- lock clock (PvP): a 3px bar draining left to right on the top edge + a seconds chip in the header ----
+    const clockChip = clock ? el('span', { class: 'pz-clock-chip', 'data-s': 'ok' }) : null;
+    const clockBar = clock ? el('div', { class: 'pz-clock', 'aria-hidden': 'true', 'data-s': 'ok' }, el('i')) : null;
+    let clockTimer = 0;
+    let clockAnchor = null; // { left, at }: where the bar animation was started
+    let clockShown = -1;
+    function clockTick() {
+      if (!clock || st.closing) return;
+      const left = Math.max(0, clock.get());
+      const lvl = left > 10 ? 'ok' : left > 5 ? 'warn' : 'crit';
+      const whole = Math.ceil(left);
+      if (whole !== clockShown) {
+        clockShown = whole;
+        clockChip.textContent = whole + ' s';
+        clockChip.setAttribute('aria-label', `Còn ${whole} giây`);
+      }
+      if (clockChip.dataset.s !== lvl) { clockChip.dataset.s = lvl; clockBar.dataset.s = lvl; }
+      const bar = clockBar.firstChild;
+      if (reducedMotion()) {
+        bar.style.transform = 'scaleX(' + Math.min(1, left / clock.total) + ')';
+        return;
+      }
+      const now = performance.now();
+      const drift = clockAnchor ? Math.abs(left - (clockAnchor.left - (now - clockAnchor.at) / 1000)) : 99;
+      if (drift > 0.4) { // (re)start the linear drain from the time left now; a new server state can reseed it
+        clockAnchor = { left, at: now };
+        bar.style.animation = 'none';
+        void bar.offsetWidth;
+        bar.style.animation = '';
+        bar.style.setProperty('--clock-dur', clock.total + 's');
+        bar.style.setProperty('--clock-delay', -(clock.total - left) + 's');
+      }
+    }
+    if (clockBar) panel.append(clockBar);
     const scrim = el('div', { class: 'pz-scrim' });
     const layer = el('div', { class: 'pz-layer t-' + topic + (standalone ? ' standalone' : '') }, scrim, panel);
 
@@ -346,6 +381,7 @@ export function openPuzzle(opts) {
     function finish() {
       if (st.closing) return;
       st.closing = true;
+      clearInterval(clockTimer);
       window.removeEventListener('resize', dock);
       layer.style.pointerEvents = 'none';
       panel.style.pointerEvents = 'none';
@@ -353,7 +389,7 @@ export function openPuzzle(opts) {
       gameScreen.classList.remove('dim');
       document.body.classList.remove('modal-open');
       // resolve immediately so the next animation (clear / crash) starts the moment "Tiếp tục" is pressed
-      resolve({ correct: !!st.correct, maxHint: maxHint(), response: st.response, answer: st.wrongAnswer || null });
+      resolve({ correct: !!st.correct, maxHint: maxHint(), response: st.response, answer: st.wrongAnswer || null, timedOut: !!st.timedOut });
       const out = desktop() ? [{ transform: 'none', opacity: 1 }, { transform: 'translateX(12px)', opacity: 0 }] : [{ transform: 'translateY(0)' }, { transform: 'translateY(100%)' }];
       anim(scrim, [{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: EASE.out, fill: 'forwards' });
       anim(panel, out, { duration: 180, easing: EASE.out, fill: 'forwards' }).finished.then(() => layer.remove());
@@ -362,7 +398,9 @@ export function openPuzzle(opts) {
     // ---- render ----
     function render() {
       const keepScroll = body.scrollTop;
-      barHolder.replaceChildren(titleBar({ file: FILE_NAMES[topic] || 'main.py', meta, check: st.phase === 'result' && st.correct }));
+      const bar = titleBar({ file: FILE_NAMES[topic] || 'main.py', meta, check: st.phase === 'result' && st.correct });
+      if (clockChip) bar.querySelector('.ed-meta').after(clockChip);
+      barHolder.replaceChildren(bar);
       body.textContent = '';
       body.append(el('h2', { id: titleId, class: 'pz-title cm', text: `# ${title} · ${TYPE_LABEL[puzzle.type]}` }), el('p', { class: 'prompt', text: puzzle.prompt }));
       if (intro) body.append(tutorNote({ text: intro, source: introSource, cls: 'explain' }));
@@ -495,5 +533,10 @@ export function openPuzzle(opts) {
         : [{ transform: 'translateY(100%)' }, { transform: 'translateY(0)' }],
       { duration: desktop() ? 260 : 340, easing: desktop() ? EASE.out : EASE.drawer, fill: 'backwards' });
     if (reducedMotion()) panel.style.opacity = '1';
+    if (clock) {
+      clockTick();
+      clockTimer = setInterval(clockTick, 250);
+    }
+    if (closeOn) closeOn.then(() => { st.timedOut = true; finish(); });
   });
 }

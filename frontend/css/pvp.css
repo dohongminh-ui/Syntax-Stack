@@ -238,3 +238,24 @@
   .board .coach-frame { animation: none; }
   .coach-bubble { transition: none; }
 }
+
+/* ---------------- landing fuse (timed landing of pending lines) + lock chip ---------------- */
+/* a 4px strip in the gap between the meter and the board; drains top-down over the time left (scaleY from the bottom) */
+.pm-fuse { position: absolute; top: 0; bottom: 0; left: calc(100% + 2px); width: 4px; border-radius: 2px; background: var(--plate); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6); overflow: hidden; pointer-events: none; }
+.pm-fuse[hidden] { display: none; }
+.pm-fuse i {
+  display: block; width: 100%; height: 100%; background: var(--mustard); transform-origin: bottom center;
+  animation: pm-fuse-drain var(--fuse-dur, 4s) linear var(--fuse-delay, 0s) forwards, pm-fuse-hot 1ms linear var(--fuse-hot, 2.5s) forwards;
+}
+@keyframes pm-fuse-drain { from { transform: scaleY(1); } to { transform: scaleY(0); } }
+@keyframes pm-fuse-hot { to { background: var(--crash); } }
+.pm-fuse.is-hot i { background: var(--crash); }
+.pm-fuse.is-held { opacity: 0.4; }
+.pm-fuse.is-held i { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .pm-fuse i { animation: none; } }
+
+.lock-chip { display: inline-block; margin-left: 10px; padding: 4px 6px; border-radius: 4px; background: var(--plate); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5); color: var(--ok); font: 700 12px/1 var(--f-mono); font-variant-numeric: tabular-nums; vertical-align: middle; }
+.lock-chip[hidden] { display: none; }
+.lock-chip[data-s="warn"] { color: var(--mustard); }
+.lock-chip[data-s="crit"] { color: var(--crash); animation: pz-clock-pulse 1s ease-in-out infinite alternate; }
+@media (prefers-reduced-motion: reduce) { .lock-chip[data-s="crit"] { animation: none; } }
