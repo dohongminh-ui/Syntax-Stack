@@ -340,7 +340,8 @@ only credential.
 ## POST /api/puzzle/{id}/answer (extended)
 The body gains optional `room: str` and `player_token: str`. When both are valid (open room, token
 belongs to that room) and the id is a bank puzzle (not `c-`), the server also records
-`{room, player, puzzle_id, template_id, topic, type, correct, mistake_key, ts}`. `mistake_key` is the chosen
+`{room, player, puzzle_id, template_id, topic, type, correct, mistake_key, ts, tier}` (`tier` of the bank puzzle,
+1 to 3: it bounds the leaderboard score, see `progress`). `mistake_key` is the chosen
 option's named mistake if it has one, else the result's `error_group`, else `null` (correct answers).
 Parsons use the `error_group`. An invalid room or token is ignored silently: the response is identical and
 nothing is logged. A failed or malformed check (422) is never logged, and logging can never fail the
@@ -349,8 +350,17 @@ attempt (not on a second `reveal` call for the same attempt).
 
 ## POST /api/rooms/{code}/progress
 `{ "player_token", "score": int 0..10000000, "status": "playing"|"crash"|"nofit", "bugs_fixed": int 0..1000000 }`
--> `204`. Client-reported and used only for the leaderboard. 403 for an unknown token; a closed room
-ignores it (204).
+-> `204`. Used only for the leaderboard, and the server caps what it stores: `score` is stored as
+`min(score, ceiling)`, where the ceiling is the most a Code Rescue run could score given the correct answers the
+server logged for that player, and `bugs_fixed` as `min(bugs_fixed, those correct answers)`. Nothing is rejected
+and the response never changes: an honest score is stored as sent, an impossible one is lowered to the ceiling.
+The ceiling is `64 + 217 * n1 + 519 * n2 + 927 * n3`, where `n1`, `n2`, `n3` are the player's correct answers to
+distinct tier 1, 2 and 3 puzzles (a puzzle answered again counts once; see `rooms.score_ceiling` for the
+derivation: the 8x8 board bounds the placement points, the lock and bug-fix rewards need an answer each). A new
+player with nothing verified can show at most 64. It is an upper bound, not a replay: exact scores are what
+ranked runs and races verify. The score is the run being played now, not a total over runs, and the browser
+must report Rescue games only (a Practice game clears rows for free and has no such bound). 403 for an unknown
+token; a closed room ignores it (204). Syntax Rows sends nothing to a room.
 
 ## GET /api/rooms/{code}/summary   (header `X-Teacher-Key`; 403 if wrong or missing)
 ```json
@@ -406,11 +416,11 @@ Full contract and rules: [`ranked-and-race.md`](ranked-and-race.md). Summary of 
 
 | Endpoint | Body / query | Response |
 | --- | --- | --- |
-| `POST /api/runs` | `{kind: "ranked"\|"race", level?, nickname, device_id, race?}` | `{run_id, run_token, seed, level, kind, race?}`. 404 unknown race, 410 race expired or full (30 runs), 422 bad nickname / device id / missing level or race code, 429 over 30 runs per hour per client IP |
-| `POST /api/runs/{run_id}/finish` | `{run_token, moves: [...], client_score?}` (up to 3000 moves; body limit 192 KB) | `{status: "verified", score, locks, mistakes, bugs_fixed, best_streak, duration_s, rank, race?}` or `{status: "rejected", reason}`. 403 bad token, 404 unknown, 409 already finished, 410 older than 3 hours |
+| `POST /api/runs` | `{kind: "ranked"\|"race", level?, nickname, device_id, race?}` | `{run_id, run_token, seed, level, kind, race?, practice?}`. 404 unknown race, 410 race expired or full (30 players), 409 5 practice runs already used in this race, 422 bad nickname / device id / missing level or race code, 429 over 30 runs per hour per client IP |
+| `POST /api/runs/{run_id}/finish` | `{run_token, moves: [...], client_score?}` (up to 3000 moves; body limit 192 KB) | `{status: "verified", score, locks, mistakes, bugs_fixed, best_streak, duration_s, rank, practice?, race?}` or `{status: "rejected", reason}`. 403 bad token, 404 unknown, 409 already finished, 410 older than 3 hours |
 | `GET /api/leaderboard` | `level`, `period=day\|week\|all` (default `all`), `device_id?` | `{level, period, entries: [{rank, nickname, score, locks, at}], you: {rank, score} \| null}` (top 50, ranked runs only, Asia/Ho_Chi_Minh day / week) |
-| `POST /api/races` | `{level, nickname, device_id}` | `{code, seed, level, url}`; 10 races per hour per client IP |
-| `GET /api/races/{code}` | `device_id?` | `{code, level, created_by, created_at, expires_at, results: [{rank, nickname, score, locks, mistakes, duration_s, finished_at, you?}], playing}`; `you` only with a valid `device_id` |
+| `POST /api/races` | `{level, nickname, device_id}` | `{code, level, url}` (no seed: it is only returned when a run starts); 10 races per hour per client IP |
+| `GET /api/races/{code}` | `device_id?` | `{code, level, created_by, created_at, expires_at, results: [{rank, nickname, score, locks, mistakes, duration_s, finished_at, you?}], playing, practice_runs}`; results are each device's first (official) run only (`docs/ranked-and-race.md` 5.1); `you` only with a valid `device_id` |
 
 Extended existing endpoints (all fields optional; invalid values are ignored and never change the response):
 

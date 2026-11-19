@@ -43,9 +43,10 @@ bug-line lifetime, no focus topic).
 
 ### `POST /api/runs`
 Body `{kind: "ranked"|"race", level: "beginner"|"intermediate"|"advanced", nickname, device_id, race?: "<code>"}`.
-For `race`, `level` and `seed` come from the race. → `200 {run_id, run_token, seed, level, kind, race?}`.
-`run_token` is 32 hex, stored hashed. 404 unknown race, 410 race expired/full (30 runs), 422 bad
-nickname/device id, 429 more than 30 runs per hour per client IP.
+For `race`, `level` and `seed` come from the race. → `200 {run_id, run_token, seed, level, kind, race?, practice?}`.
+`practice` is only present on race runs: `true` when this device already started a run in this race (section 5.1).
+`run_token` is 32 hex, stored hashed. 404 unknown race, 410 race expired or full (30 players), 409 the device has
+used its 5 practice runs in this race, 422 bad nickname/device id, 429 more than 30 runs per hour per client IP.
 
 ### During the run
 The existing endpoints accept optional `run_id` + `run_token` (body for POST, query for GET). With a
@@ -84,13 +85,16 @@ moves after the end) makes the run invalid. While no piece fits and Last Commit 
 moves are `last_commit` and `end nofit`. Last Commit's topic is drawn from the game RNG, so the client asks
 for it with `kind: "last_commit"`, `tier: 3` and the topic `Game.lastCommitTopic` returned.
 
-→ `200 {status: "verified", score, locks, mistakes, bugs_fixed, best_streak, duration_s, rank: {day, week, all} | null, race?: {...same as GET race, with "you" marked}}`
+→ `200 {status: "verified", score, locks, mistakes, bugs_fixed, best_streak, duration_s, rank: {day, week, all} | null, practice?, race?: {...same as GET race, with "you" marked, plus practice}}`
 or `200 {status: "rejected", reason}` (stored, never ranked). 409 already finished, 403 bad token, 404 unknown
 run, 410 run older than 3 hours, 413 body over 192 KB (the one endpoint with a bigger limit than the usual
 64 KB), 422 malformed body. `duration_s` is server time from create to finish (seconds, 1 decimal).
 
 - `locks` = locks cleared with a correct answer. `mistakes` = wrong answers given (lock, Debug and Last
   Commit puzzles), the number the end screen shows; it is not the 0/1 warning state.
+- `practice` and `race.practice` (race runs only) are `true` for a practice run (section 5.1) and `false` for the
+  device's official run. A practice run is verified like any other and its score is returned, but it is never
+  part of `race.results`.
 - `rank` is `null` for race runs and for ranked runs with score 0; otherwise the position of this device's
   best verified ranked run in each period (it can be better than this run).
 - `reason` codes (stable strings): `bad_level`, `too_many_moves`, `bad_move`, `moves_after_end`,
@@ -109,17 +113,42 @@ Day/week boundaries in Asia/Ho_Chi_Minh (UTC+7); week starts Monday.
 
 ## 5. Races
 
-- `POST /api/races` `{level, nickname, device_id}` → `{code, seed, level, url}` (`code`: 5 chars
+- `POST /api/races` `{level, nickname, device_id}` → `{code, level, url}` (`code`: 5 chars
   from the classroom alphabet; `url` = `<public base>/?race=<code>`, built like the classroom join URL).
-  10 races per hour per client.
-- `GET /api/races/{code}?device_id=<optional>` → `{code, level, created_by, created_at, expires_at, results: [{rank, nickname, score, locks, mistakes, duration_s, finished_at, you?}], playing: n}`. Timestamps are Unix seconds. Verified race runs only, best per device, ranked by score then shorter duration. With a valid `device_id` every result row carries `you` (`true` only for that device's row; nicknames are not unique); without one the field is omitted. `playing` = race runs started in the last 3 hours and not finished. Expires 7 days after creation (404 unknown, 410 expired); 30 runs max.
+  10 races per hour per client. The `seed` is **not** returned (nor by `GET /api/races/{code}`): it is chosen
+  and kept by the server and only comes back in `POST /api/runs` when a run starts, so nobody, the creator
+  included, can study the deal before playing.
+- `GET /api/races/{code}?device_id=<optional>` → `{code, level, created_by, created_at, expires_at, results: [{rank, nickname, score, locks, mistakes, duration_s, finished_at, you?}], playing: n, practice_runs: n}`. Timestamps are Unix seconds. `results` lists **official runs only** (section 5.1), verified, one per device, ranked by score then shorter duration. With a valid `device_id` every result row carries `you` (`true` only for that device's row; nicknames are not unique); without one the field is omitted. `playing` = race runs started in the last 3 hours and not finished (official and practice). `practice_runs` = how many practice runs have been started in the race (informational). Expires 7 days after creation (404 unknown, 410 expired); 30 players (devices) max.
 - Race runs never appear on the ranked leaderboard (the seed is shared, so it is not a fair ranked game).
+
+### 5.1 Official run and practice runs
+
+Everyone in a race plays the same seed, so a second attempt would be played with full knowledge of every
+piece and puzzle. Therefore **only a device's first race run counts**:
+
+- The *official* run is the first run a device started in the race (by creation time). If it finishes
+  `verified`, it is that device's result on the board. If it is never finished (abandoned, older than 3 hours so
+  it can no longer be sent) or comes back `rejected`, the device simply has no result: later runs do not take
+  its place.
+- Every later run by the same device in the same race is *practice*. It is still dealt, checked and replayed
+  like any run, and the finish response returns its score with `practice: true`, but it never appears in or
+  changes `results`. The creator of a race is a player like any other: a practice before sharing the link burns
+  their official run.
+- Caps: 30 **devices** per race (`410` for a 31st device; a known device is never refused for this) and 5
+  practice runs per device per race (`409`, "You have used all 5 practice runs in this race."), so a race holds
+  at most 30 x 6 runs.
+- Known limit: `device_id` is chosen by the client, so a determined cheater can still use a fresh device id for
+  every attempt. This rule removes the easy replay advantage (retry the same race on the same device until the
+  score is good); it is not identity protection. A player whose official run was lost by accident (the page was
+  closed mid-run) gets practice runs only; they keep their score from the finish response but are not on the board.
 
 ## 6. Storage
 
 `ranked.sqlite` next to `SYNTAX_STACK_CUSTOM_DB` (on the Docker volume), override with
 `SYNTAX_STACK_RANKED_DB`. Abandoned runs (no finish after 3 hours) are purged lazily (on the next run or
-race created); finished runs are kept 90 days, race data (race and its runs) 7 days.
+race created); finished runs are kept 90 days, race data (race and its runs) 7 days. The exception: an abandoned *race* run
+is not purged with the others, it stays until its race expires, because it is the device's official run (purging it
+would let the device start over with a fresh one).
 
 ## 7. Limits of the trust model
 

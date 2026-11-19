@@ -46,7 +46,8 @@ PVP_ELO_K = 32
 MISAKI_LEVELS = 4                     # the Misaki ladder (docs/pvp.md section 5.2)
 MISAKI_KEEP_S = 365 * 24 * 3600       # a device's ladder progress is forgotten after a year without a match
 RACE_TTL_S = 7 * 24 * 3600
-MAX_RACE_RUNS = 30
+MAX_RACE_RUNS = 30           # official runs = devices in one race
+MAX_PRACTICE_RUNS = 5        # practice runs (every run after a device's first) per device per race
 LEADERBOARD_SIZE = 50
 MAX_SERVED_PER_RUN = 2000    # puzzles recorded per run (a legal game needs far fewer)
 HISTORY_IDS = 500            # same window the browser sends as exclude_ids
@@ -197,7 +198,11 @@ def _connect() -> sqlite3.Connection:
 def _purge(con: sqlite3.Connection) -> None:
     """Lazy clean-up on writes: abandoned runs, old finished runs, expired races with their runs."""
     now = _now()
-    con.execute("DELETE FROM runs WHERE status = 'open' AND created_at < ?", (now - RUN_TTL_S,))
+    # An abandoned race run is kept until its race expires: it is the device's "first run" (its official one), so
+    # purging it would let the device start over with a fresh official run.
+    con.execute("DELETE FROM served WHERE run_id IN (SELECT id FROM runs WHERE status = 'open' AND created_at < ?)",
+                (now - RUN_TTL_S,))
+    con.execute("DELETE FROM runs WHERE status = 'open' AND race IS NULL AND created_at < ?", (now - RUN_TTL_S,))
     con.execute("DELETE FROM runs WHERE status != 'open' AND finished_at < ?", (now - KEEP_FINISHED_S,))
     con.execute("DELETE FROM runs WHERE race IN (SELECT code FROM races WHERE expires_at < ?)", (now,))
     con.execute("DELETE FROM races WHERE expires_at < ?", (now,))
@@ -240,7 +245,7 @@ def create_race(level: str, nickname: str, device_id: str, client: Optional[str]
     nickname, _ = _clean_identity(nickname, device_id)
     _race_limiter.take(client)
     now = _now()
-    seed = secrets.randbits(32)
+    seed = secrets.randbits(32)  # kept on the server: the seed is only handed out when a run starts
     with closing(_connect()) as con, _db_lock:
         _purge(con)
         for _ in range(20):
@@ -255,16 +260,17 @@ def create_race(level: str, nickname: str, device_id: str, client: Optional[str]
             raise RankedError(tr("Không tạo được cuộc đua, hãy thử lại.",
                       "Could not create the race, please try again."), 503)
         con.commit()
-    return {"code": code, "seed": seed, "level": level}
+    return {"code": code, "level": level}
 
 
 def _race_results(con: sqlite3.Connection, code: str, device_hash: Optional[str] = None) -> list[dict]:
+    """Official runs only: the first run each device started in the race, when it finished verified."""
     rows = con.execute(
-        """WITH best AS (
-               SELECT *, ROW_NUMBER() OVER (PARTITION BY device_hash
-                                            ORDER BY score DESC, duration_s ASC, id ASC) AS rn
-               FROM runs WHERE race = ? AND kind = 'race' AND status = 'verified')
-           SELECT nickname, device_hash, score, locks, mistakes, duration_s, finished_at FROM best WHERE rn = 1
+        """WITH first AS (
+               SELECT *, ROW_NUMBER() OVER (PARTITION BY device_hash ORDER BY created_at ASC, rowid ASC) AS rn
+               FROM runs WHERE race = ? AND kind = 'race')
+           SELECT nickname, device_hash, score, locks, mistakes, duration_s, finished_at FROM first
+           WHERE rn = 1 AND status = 'verified'
            ORDER BY score DESC, duration_s ASC, id ASC""", (code,)).fetchall()
     out = []
     for i, r in enumerate(rows, 1):
@@ -276,13 +282,23 @@ def _race_results(con: sqlite3.Connection, code: str, device_hash: Optional[str]
     return out
 
 
+def _is_practice(con: sqlite3.Connection, run: sqlite3.Row) -> bool:
+    """True when this race run is not the first one its device started in the race."""
+    first = con.execute("SELECT id FROM runs WHERE race = ? AND device_hash = ? ORDER BY created_at ASC, rowid ASC "
+                        "LIMIT 1", (run["race"], run["device_hash"])).fetchone()
+    return first is not None and first["id"] != run["id"]
+
+
 def _race_view(con: sqlite3.Connection, race: sqlite3.Row, device_hash: Optional[str] = None) -> dict:
     playing = con.execute(
         "SELECT COUNT(*) FROM runs WHERE race = ? AND status = 'open' AND created_at >= ?",
         (race["code"], _now() - RUN_TTL_S)).fetchone()[0]
+    total, devices = con.execute("SELECT COUNT(*), COUNT(DISTINCT device_hash) FROM runs WHERE race = ?",
+                                 (race["code"],)).fetchone()
     return {"code": race["code"], "level": race["level"], "created_by": race["created_by"],
             "created_at": int(race["created_at"]), "expires_at": int(race["expires_at"]),
-            "results": _race_results(con, race["code"], device_hash), "playing": playing}
+            "results": _race_results(con, race["code"], device_hash), "playing": playing,
+            "practice_runs": total - devices}
 
 
 def race_info(code: str, device_id: Optional[str] = None) -> dict:
@@ -313,15 +329,24 @@ def create_run(kind: str, level: Optional[str], nickname: str, device_id: str, r
     run_id, token = secrets.token_hex(8), secrets.token_hex(16)
     now = _now()
     with closing(_connect()) as con, _db_lock:
-        race_code = None
+        race_code, practice = None, False
         if kind == "race":
             row = _load_race(con, race)  # before the purge, so an expired race answers 410, not 404
             _purge(con)
             race_code, level, seed = row["code"], row["level"], row["seed"]
-            taken = con.execute("SELECT COUNT(*) FROM runs WHERE race = ?", (race_code,)).fetchone()[0]
-            if taken >= MAX_RACE_RUNS:
-                raise RankedError(tr(f"Cuộc đua đã đủ {MAX_RACE_RUNS} lượt chơi.",
-                      f"The race is full ({MAX_RACE_RUNS} runs)."), 410)
+            # Only a device's first run in a race counts (official); every later one is practice.
+            mine = con.execute("SELECT COUNT(*) FROM runs WHERE race = ? AND device_hash = ?",
+                               (race_code, device_hash)).fetchone()[0]
+            practice = mine > 0
+            if not practice:
+                devices = con.execute("SELECT COUNT(DISTINCT device_hash) FROM runs WHERE race = ?",
+                                      (race_code,)).fetchone()[0]
+                if devices >= MAX_RACE_RUNS:
+                    raise RankedError(tr(f"Cuộc đua đã đủ {MAX_RACE_RUNS} người chơi.",
+                      f"The race is full ({MAX_RACE_RUNS} players)."), 410)
+            elif mine - 1 >= MAX_PRACTICE_RUNS:
+                raise RankedError(tr(f"Bạn đã chơi lại đủ {MAX_PRACTICE_RUNS} lượt trong cuộc đua này.",
+                      f"You have used all {MAX_PRACTICE_RUNS} practice runs in this race."), 409)
         else:
             _purge(con)
             seed = secrets.randbits(32)
@@ -332,6 +357,7 @@ def create_run(kind: str, level: Optional[str], nickname: str, device_id: str, r
     out = {"run_id": run_id, "run_token": token, "seed": seed, "level": level, "kind": kind}
     if race_code:
         out["race"] = race_code
+        out["practice"] = practice
     return out
 
 
@@ -488,8 +514,10 @@ def finish_run(run_id: str, token: str, moves: list, client_score: Optional[int]
                 out["rank"] = {p: (v["rank"] if v else None) for p, v in ranks.items()}
         else:
             race = con.execute("SELECT * FROM races WHERE code = ?", (run["race"],)).fetchone()
+            practice = _is_practice(con, run)
+            out["practice"] = practice
             if race is not None:
-                out["race"] = _race_view(con, race, run["device_hash"])
+                out["race"] = {**_race_view(con, race, run["device_hash"]), "practice": practice}
         return out
 
 

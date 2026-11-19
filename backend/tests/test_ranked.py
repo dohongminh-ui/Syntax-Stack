@@ -165,7 +165,7 @@ def test_next_hint_and_answer_are_recorded_for_a_valid_run(client):
 def test_a_race_puzzle_sequence_is_the_same_for_every_player(client):
     race = make_race(client)
     runs = [start(client, kind="race", level=None, race=race["code"]) for _ in range(2)]
-    assert runs[0]["seed"] == runs[1]["seed"] == race["seed"] and runs[0]["level"] == race["level"]
+    assert runs[0]["seed"] == runs[1]["seed"] and runs[0]["level"] == race["level"]
     requests = [("loops", 1, "rescue", None), ("loops", 1, "rescue", None), ("variables", 2, "rescue", None),
                 ("conditions", 3, "last_commit", None), ("loops", 1, "rescue", None)]
     seen = []
@@ -376,13 +376,15 @@ def test_best_run_is_chosen_within_the_period(client):
 def test_create_race_and_read_it(client):
     host = device()
     race = make_race(client, level="intermediate", nickname="Gấu Sáng 19", dev=host)
-    assert set(race) == {"code", "seed", "level", "url"}
-    assert len(race["code"]) == 5 and set(race["code"]) <= CODE_CHARS and 0 <= race["seed"] < 2**32
+    assert set(race) == {"code", "level", "url"}        # no seed: the deal is only revealed when a run starts
+    assert len(race["code"]) == 5 and set(race["code"]) <= CODE_CHARS
     assert race["url"] == f"http://testserver/?race={race['code']}"
     info = client.get(f"/api/races/{race['code'].lower()}").json()
-    assert set(info) == {"code", "level", "created_by", "created_at", "expires_at", "results", "playing"}
+    assert set(info) == {"code", "level", "created_by", "created_at", "expires_at", "results", "playing",
+                         "practice_runs"}
     assert info["code"] == race["code"] and info["level"] == "intermediate" and info["created_by"] == "Gấu Sáng 19"
     assert info["expires_at"] - info["created_at"] == 7 * 24 * 3600 and info["results"] == [] and info["playing"] == 0
+    assert info["practice_runs"] == 0
     proxied = client.post("/api/races", json={"level": "beginner", "nickname": GEN, "device_id": device()},
                           headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "sextax.example.com"}).json()
     assert proxied["url"] == f"https://sextax.example.com/?race={proxied['code']}"
@@ -403,18 +405,25 @@ def test_race_validation_and_rate_limit(client):
 def test_race_runs_take_level_and_seed_from_the_race(client):
     race = make_race(client, level="advanced")
     run = start(client, kind="race", level="beginner", race=race["code"])   # a level sent by the client is ignored
-    assert run["level"] == "advanced" and run["seed"] == race["seed"] and run["race"] == race["code"]
-    assert run["kind"] == "race"
+    assert run["level"] == "advanced" and 0 <= run["seed"] < 2**32 and run["race"] == race["code"]
+    assert run["kind"] == "race" and run["practice"] is False
+    with closing(ranked._connect()) as con:      # the run got the race's own seed
+        assert con.execute("SELECT seed FROM races WHERE code = ?", (race["code"],)).fetchone()["seed"] == run["seed"]
     assert start(client, kind="race", level=None, race="ZZZZZ", expect=404)
     assert client.get(f"/api/races/{race['code']}").json()["playing"] == 1
 
 
-def test_race_is_full_after_30_runs_and_expires(client):
+def test_race_is_full_after_30_devices_and_expires(client):
     race = make_race(client)
-    for _ in range(ranked.MAX_RACE_RUNS):
+    first = device()
+    start(client, kind="race", level=None, race=race["code"], dev=first)
+    for _ in range(ranked.MAX_RACE_RUNS - 1):
         start(client, kind="race", level=None, race=race["code"], dev=device())
         ranked.reset_rate_limits()
-    assert start(client, kind="race", level=None, race=race["code"], expect=410)
+    assert start(client, kind="race", level=None, race=race["code"], expect=410)   # a 31st device is refused
+    # a device that is already in the race is not "new": it can still play (as practice)
+    again = start(client, kind="race", level=None, race=race["code"], dev=first)
+    assert again["practice"] is True
     with closing(ranked._connect()) as con:
         con.execute("UPDATE races SET expires_at = ?", (time.time() - 1,))
         con.commit()
@@ -427,10 +436,11 @@ def test_race_results_rank_by_score_then_duration_and_mark_your_row(client):
     me, other = device(), device()
     put_run(kind="race", race=race["code"], score=500, dev=other, nickname="Same", duration=50)
     put_run(kind="race", race=race["code"], score=500, dev=me, nickname="Same", duration=40)   # same nickname!
-    put_run(kind="race", race=race["code"], score=300, dev=me, nickname="Same", duration=10)   # not its best
+    put_run(kind="race", race=race["code"], score=9000, dev=me, nickname="Same", duration=10)  # later run = practice
     put_run(kind="race", race=race["code"], score=900, dev=device(), nickname="Top", duration=99)
     put_run(kind="race", race=race["code"], score=9999, dev=device(), nickname="Rej", status="rejected")
     info = client.get(f"/api/races/{race['code']}").json()
+    assert info["practice_runs"] == 1
     assert [(r["rank"], r["nickname"], r["score"], r["duration_s"]) for r in info["results"]] \
         == [(1, "Top", 900, 99.0), (2, "Same", 500, 40.0), (3, "Same", 500, 50.0)]
     assert all("you" not in r for r in info["results"])
@@ -452,7 +462,79 @@ def test_finishing_a_race_run_returns_the_race_and_skips_the_leaderboard(client)
     assert res["race"]["code"] == race["code"]
     assert [(r["nickname"], r["score"]) for r in res["race"]["results"]] == [("Thỏ Nhanh 20", bot.g.score)]
     assert res["race"]["results"][0]["you"] is True and res["race"]["playing"] == 0
+    assert res["practice"] is False and res["race"]["practice"] is False and res["race"]["practice_runs"] == 0
     assert client.get("/api/leaderboard", params={"level": "beginner"}).json()["entries"] == []
+
+
+def test_only_the_first_run_of_a_device_counts_later_runs_are_practice(client):
+    race = make_race(client, level="advanced")
+    dev, rival = device(), device()
+    first = start(client, kind="race", level=None, race=race["code"], dev=dev, nickname="Thỏ Nhanh 20")
+    assert first["practice"] is False
+    # the second run is started (and played) before the first one finishes: it is still practice
+    second = start(client, kind="race", level=None, race=race["code"], dev=dev, nickname="Thỏ Nhanh 20")
+    assert second["practice"] is True and second["seed"] == first["seed"]
+    _, _, res2 = play_and_finish(client, second, hint_level=0, max_moves=40)     # no hints: a better score
+    assert res2["status"] == "verified" and res2["practice"] is True and res2["race"]["practice"] is True
+    assert res2["race"]["results"] == [] and res2["race"]["practice_runs"] == 1  # a practice run is not on the board
+    _, _, res1 = play_and_finish(client, first, hint_level=3, max_moves=40)      # all hints: a worse score
+    assert res1["practice"] is False and res1["race"]["practice"] is False
+    assert res2["score"] > res1["score"]
+    # the board shows the first run, although the practice run scored more
+    board = client.get(f"/api/races/{race['code']}", params={"device_id": dev}).json()
+    assert [(r["score"], r["you"]) for r in board["results"]] == [(res1["score"], True)]
+    assert board["practice_runs"] == 1 and board["playing"] == 0
+    # a third run, again better: still nothing changes
+    third = start(client, kind="race", level=None, race=race["code"], dev=dev, nickname="Thỏ Nhanh 20")
+    _, _, res3 = play_and_finish(client, third, hint_level=0, max_moves=40)
+    assert res3["practice"] is True and [r["score"] for r in res3["race"]["results"]] == [res1["score"]]
+    # another device's official run ranks normally, and the practice runs never leak onto the leaderboard
+    other = start(client, kind="race", level=None, race=race["code"], dev=rival, nickname="Cú Tím 21")
+    _, _, reso = play_and_finish(client, other, hint_level=0, max_moves=40)
+    assert reso["practice"] is False
+    assert [r["score"] for r in reso["race"]["results"]] == sorted([reso["score"], res1["score"]], reverse=True)
+    assert client.get("/api/leaderboard", params={"level": "advanced"}).json()["entries"] == []
+
+
+def test_abandoned_first_run_leaves_the_device_without_an_official_result(client):
+    race = make_race(client)
+    dev = device()
+    start(client, kind="race", level=None, race=race["code"], dev=dev)           # started, never finished
+    with closing(ranked._connect()) as con:                                       # ... and now older than 3 hours
+        con.execute("UPDATE runs SET created_at = ?", (time.time() - ranked.RUN_TTL_S - 60,))
+        con.commit()
+    second = start(client, kind="race", level=None, race=race["code"], dev=dev)  # also purges: the first must stay
+    assert second["practice"] is True
+    _, _, res = play_and_finish(client, second, max_moves=40)
+    assert res["status"] == "verified" and res["practice"] is True
+    assert res["race"]["results"] == [] and res["race"]["playing"] == 0 and res["race"]["practice_runs"] == 1
+    board = client.get(f"/api/races/{race['code']}", params={"device_id": dev}).json()
+    assert board["results"] == []
+
+
+def test_rejected_first_run_is_not_replaced_by_a_later_run(client):
+    race = make_race(client)
+    dev = device()
+    first = start(client, kind="race", level=None, race=race["code"], dev=dev)
+    r = client.post(f"/api/runs/{first['run_id']}/finish", json={"run_token": first["run_token"], "moves": [{"t": "bogus"}]})
+    assert r.json()["status"] == "rejected"
+    second = start(client, kind="race", level=None, race=race["code"], dev=dev)
+    _, _, res = play_and_finish(client, second, max_moves=40)
+    assert res["status"] == "verified" and res["practice"] is True and res["race"]["results"] == []
+
+
+def test_practice_runs_are_capped_per_device_per_race(client):
+    race = make_race(client)
+    dev = device()
+    for i in range(1 + ranked.MAX_PRACTICE_RUNS):
+        run = start(client, kind="race", level=None, race=race["code"], dev=dev)
+        assert run["practice"] is (i > 0)
+        ranked.reset_rate_limits()
+    assert start(client, kind="race", level=None, race=race["code"], dev=dev, expect=409)
+    assert client.get(f"/api/races/{race['code']}").json()["practice_runs"] == ranked.MAX_PRACTICE_RUNS
+    # the cap is per device and per race: someone else, or another race, is not affected
+    assert start(client, kind="race", level=None, race=race["code"], dev=device())["practice"] is False
+    assert start(client, kind="race", level=None, race=make_race(client)["code"], dev=dev)["practice"] is False
 
 
 def test_ranked_rank_counts_better_devices(client):

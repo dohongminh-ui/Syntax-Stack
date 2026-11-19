@@ -67,15 +67,18 @@ export async function createRun(body) {
   if (body.kind === 'race' && !body.race) throw fail(422, 'Thiếu mã trận');
   let level = body.level;
   let seed = Math.floor(Math.random() * 4294967296);
+  let practice = false;
   if (body.kind === 'race') {
     const r = raceFor(body.race);
     level = r.level;
     seed = r.seed;
     r.playing++;
+    practice = (r.starters ||= new Set()).has(body.nickname); // the real server keys this on the device id; first run counts
+    r.starters.add(body.nickname);
   }
   const id = 'mock-run-' + (runs.size + 1);
-  runs.set(id, { kind: body.kind, level, race: body.race || null, nickname: body.nickname, started: Date.now() });
-  return { run_id: id, run_token: 'mock-token-' + id, seed, level, kind: body.kind, ...(body.race ? { race: body.race } : {}) };
+  runs.set(id, { kind: body.kind, level, race: body.race || null, nickname: body.nickname, started: Date.now(), practice });
+  return { run_id: id, run_token: 'mock-token-' + id, seed, level, kind: body.kind, ...(body.race ? { race: body.race, practice } : {}) };
 }
 
 export async function finishRun(id, body) {
@@ -108,8 +111,9 @@ export async function finishRun(id, body) {
   } else {
     const r = raceFor(run.race);
     r.playing = Math.max(0, r.playing - 1);
-    r.results.push({ nickname: run.nickname, score, locks, mistakes: result.mistakes, duration_s: result.duration_s, finished_at: new Date().toISOString() });
-    result.race = raceView(r);
+    if (!run.practice) r.results.push({ nickname: run.nickname, score, locks, mistakes: result.mistakes, duration_s: result.duration_s, finished_at: new Date().toISOString() });
+    result.practice = run.practice;
+    result.race = { ...raceView(r), practice: run.practice };
   }
   return result;
 }
@@ -149,7 +153,7 @@ export async function createRace(body) {
   const code = Array.from({ length: 5 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
   const now = Date.now();
   races.set(code, { code, level: body.level, seed: hash(code), created_by: body.nickname, created_at: new Date(now).toISOString(), expires_at: new Date(now + 7 * 86400000).toISOString(), playing: 0, results: [] });
-  return { code, seed: hash(code), level: body.level, url: `${location.origin}/?race=${code}` };
+  return { code, level: body.level, url: `${location.origin}/?race=${code}` };
 }
 
 export async function getRace(code) {

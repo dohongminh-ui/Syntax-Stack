@@ -101,6 +101,11 @@ export function resultsTable(results, mine = null) {
     el('table', { class: 'rt' }, el('caption', { class: 'sr-only', text: 'Kết quả trận, xếp theo điểm rồi đến thời gian' }), el('thead', {}, head), el('tbody', {}, ...rows)));
 }
 
+/** Shown instead of a rank when the finished run was not the device's first in the race (the server says so with `practice: true`). */
+export function practiceNote() {
+  return el('p', { class: 'rk-note rt-practice', role: 'status', text: 'Lượt chơi lại: chỉ lượt đầu tiên được tính trên bảng.' });
+}
+
 export function syncNode() {
   return el('span', { class: 'tp-sync', role: 'status' }, el('i', { class: 'led on', style: { '--c': 'var(--ok)' } }), el('span', { text: 'cập nhật mỗi 3 giây' }));
 }
@@ -121,6 +126,7 @@ export function watchRace({ code, host, status = null, mine = () => null, active
   let stopped = false;
   let data = initial;
   let key = '';
+  let practice = !!initial?.practice; // sticky: only the finish response carries it, the 3 s polls do not
   const api_ = {
     stop() {
       stopped = true;
@@ -128,14 +134,15 @@ export function watchRace({ code, host, status = null, mine = () => null, active
     },
     push(d) {
       data = d;
+      if (d?.practice === true) practice = true;
       api_.repaint();
     },
     repaint() {
       if (!data || stopped) return;
-      const k = JSON.stringify([data.results, mine()]);
+      const k = JSON.stringify([data.results, mine(), practice]);
       if (k === key) return;
       key = k;
-      host.replaceChildren(resultsTable(data.results, mine()));
+      host.replaceChildren(...(practice ? [practiceNote()] : []), resultsTable(data.results, mine()));
     },
     get data() {
       return data;
