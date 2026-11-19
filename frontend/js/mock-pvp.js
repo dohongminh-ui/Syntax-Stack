@@ -213,7 +213,7 @@ function placeFor(s, i, r, c) {
   else {
     landed = res.landed !== undefined ? res.landed : s.phase === 'over' ? 0 : landPending(s);
     if (s.phase !== 'over') s.phase = 'play';
-    else if (!s.endReason) s.endReason = 'topped_out';
+    else if (!s.endReason) s.endReason = 'nofit';
   }
   if (s.phase !== 'over' && !s.lock && !Game.anyFit(s)) {
     s.phase = 'over';
@@ -487,7 +487,7 @@ class Sim {
     if (qs().get('pvpdrop') === '1') this.after(15000, () => this.dropMine());
     if (qs().get('pvpoppdrop') === '1' && this.kind !== 'bot') this.after(20000, () => this.dropOpp());
     const mkend = qs().get('mkend');
-    if (this.misaki && (mkend === 'win' || mkend === 'lose')) this.after(20000, () => this.finish(mkend === 'win' ? 'you' : 'opponent', mkend === 'win' ? 'nofit' : 'topped_out'));
+    if (this.misaki && (mkend === 'win' || mkend === 'lose')) this.after(20000, () => this.finish(mkend === 'win' ? 'you' : 'opponent', 'nofit'));
     if (this.training && qs().get('mkcoach') === '1') {
       const kinds = Object.keys(COACH);
       let k = 0;

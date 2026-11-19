@@ -60,14 +60,15 @@ def test_pvp_golden_games_cover_the_rules(traces):
     assert total["lockedWithPending"] >= 50                      # locks resolved with rows waiting
     assert total["cancels"] >= 50 and total["fullyCancelled"] >= 20             # cancelling, also all of it
     assert total["sends"] >= 200 and total["sendBonus"] >= 50                   # sending, with the streak bonus
-    assert total["toppedOut"] >= 50                                             # topping out on landing
+    assert total["toppedOut"] == 0                                              # landing never ends a game
+    assert total["pushedOff"] >= 50                                             # ... but destroys blocks
     assert total["nofitOnPlace"] >= 10 and total["nofitOnLock"] >= 1 and total["nofitOnWrong"] >= 1
     assert total["resign"] >= 1 and total["quit"] >= 1
     assert total["undo"] >= 20 and total["undoWithPending"] >= 3 and total["undoQueuedDuring"] >= 1
     assert total["bugfix"] >= 100 and total["bugfixWrong"] >= 10                # wrong Debug answers never crash
     assert total["lockFail"] >= 50                                              # wrong lock answers never crash
     assert total["bomb"] >= 50 and total["shuffle"] >= 50 and total["debugger"] >= 50 and total["hinted"] >= 50
-    assert {t["final"]["end_reason"] for t in traces} >= {"topped_out", "nofit", "resign", "quit"}
+    assert {t["final"]["end_reason"] for t in traces} >= {"nofit", "resign", "quit"}
     assert "crash" not in {t["final"]["end_reason"] for t in traces}
     assert sum(t["final"]["landed"] for t in traces) >= 800 and sum(t["final"]["cancelled"] for t in traces) >= 100
 
@@ -178,25 +179,29 @@ def test_a_placement_that_makes_a_lock_keeps_the_rows_pending_until_after_the_lo
     assert res["lock"] is None and res["landed"] == 1 and g.pending == []
 
 
-def test_landing_shifts_everything_up_and_a_blocked_top_row_means_topped_out():
+def test_landing_destroys_blocks_pushed_off_the_top_but_never_ends_the_game():
     g = pvp()
-    g.grid[0][3] = cell("loops")                          # a block in the top row cannot move up
+    g.grid[0][3] = cell("loops")                          # a block in the top row is pushed off
+    g.grid[1][4] = cell("loops")
     g.queue_incoming(entries("loops"))
-    before = [row[:] for row in g.grid]
     assert g.land_pending() == 1
-    assert g.phase == "over" and g.end_reason == "topped_out" and g.pending == []
-    assert g.grid == before                               # a top-out leaves the grid as it was
-    h = pvp()
-    h.grid[1][3] = cell("loops")
-    h.queue_incoming(entries("loops", "loops"))
-    assert h.land_pending() == 2 and h.phase == "over"    # row 1 + 2 rows = above the top
+    assert g.phase == "play" and g.end_reason is None and g.pending == []
+    assert g.grid[0][4] is not None and sum(1 for row in g.grid[:7] for x in row if x) == 1
     k = pvp()
     k.grid[2][3] = cell("loops")
     k.queue_incoming(entries("loops", "loops"))
     assert k.land_pending() == 2 and k.phase == "play" and k.grid[0][3] is not None
+    # a bug line pushed off the top is gone, together with its cells
+    b = pvp()
+    b.queue_incoming(entries("loops"))
+    b.land_pending()
+    b.queue_incoming(entries(*["functions"] * 8))
+    assert b.land_pending() == 8 and [x["topic"] for x in b.bug_lines] == ["functions"] * 8
     flood = pvp()
-    flood.queue_incoming(entries(*["loops"] * 9))
-    assert flood.land_pending() == 9 and flood.phase == "over"    # more than the board holds
+    flood.queue_incoming(entries(*(["loops"] + ["functions"] * 8)))
+    assert flood.land_pending() == 9 and flood.phase == "play"     # the oldest row is pushed off as well
+    assert len(flood.bug_lines) == 8 and all(x["bug"] for row in flood.grid for x in row)
+    assert flood.check_no_fit() and flood.end_reason == "nofit"     # a full board: no piece fits, that loses
 
 
 def test_landing_moves_existing_bug_lines_with_their_cells():

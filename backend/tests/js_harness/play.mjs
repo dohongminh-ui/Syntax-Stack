@@ -360,7 +360,7 @@ function playPvp(seed, level, index) {
   const events = [];
   const st = {
     incoming: 0, rowsQueued: 0, queuedDuringLock: 0, landings: 0, rowsLanded: 0, landedAfterLock: 0, bigLanding: 0,
-    landedOverBugs: 0, toppedOut: 0, nofit: 0, nofitOnPlace: 0, nofitOnLock: 0, nofitOnWrong: 0, resign: 0, quit: 0,
+    landedOverBugs: 0, toppedOut: 0, pushedOff: 0, nofit: 0, nofitOnPlace: 0, nofitOnLock: 0, nofitOnWrong: 0, resign: 0, quit: 0,
     locks: 0, lockFail: 0, boss: 0, sends: 0, linesSent: 0, cancels: 0, rowsCancelled: 0, fullyCancelled: 0,
     sendBonus: 0, undo: 0, undoWithPending: 0, undoQueuedDuring: 0, bugfix: 0, bugfixWrong: 0, bomb: 0, shuffle: 0,
     debugger: 0, hinted: 0, maxPending: 0, lockedWithPending: 0,
@@ -568,7 +568,12 @@ function playPvp(seed, level, index) {
     }
     const mv = pickPlacement(legalMoves());
     const bugsBefore = s.bugLines.length;
+    const topK = Math.min(s.pending.length, 8);
+    const filled = new Set(s.tray[mv.i].cells.map(([dr, dc]) => (mv.r + dr) * 8 + mv.c + dc));
+    let atTop = false;
+    for (let r = 0; r < topK && !atTop; r++) for (let c = 0; c < 8; c++) if (s.grid[r][c] || filled.has(r * 8 + c)) atTop = true;
     const res = Game.place(s, mv.i, mv.r, mv.c);
+    if (res.landed > 0 && atTop) st.pushedOff++;
     events.push({ t: 'place', i: mv.i, r: mv.r, c: mv.c });
     if (res.lock) s.phase = 'locked';
     landedTotal += res.landed;

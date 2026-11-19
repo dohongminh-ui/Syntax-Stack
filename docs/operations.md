@@ -334,8 +334,8 @@ Read them with `docker compose logs --since 30m game | grep 'pvp '`. Group recor
 - `stale_place`: a move rejected because its received count predates an incoming attack.
 - `end`: winner's side, reason, both boards and each side's sent/received/score counters.
 
-A single incoming row can cause a top-out if a block (including the piece just placed) occupies the
-top row. Empty space elsewhere does not prevent this. Overtime contributes incoming rows even if the
+Incoming rows destroy any block pushed above the top row; that is never fatal. A player loses only
+when no tray piece fits. Overtime contributes incoming rows even if the
 opponent sent none.
 
 To autoplay locally, from `backend/` run:

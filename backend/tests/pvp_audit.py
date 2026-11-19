@@ -42,9 +42,9 @@ def audit(events: list[dict]) -> dict:
                 board[r][c] = "#"
             placed = ["".join(row) for row in board]
             k = e["rows"]
-            top_out = k > 8 or any(cell != "." for row in placed[:k] for cell in row)
-            assert (e["end_reason"] == "topped_out") == top_out, e
-            expected = placed if top_out else placed[k:] + ["BBBBBBBB"] * k
+            n = min(k, 8)  # blocks pushed above row 0 are destroyed; landing never ends the game
+            assert e["end_reason"] is None or e["end_reason"] == "nofit", e
+            expected = placed[n:] + ["BBBBBBBB"] * n
             assert e["board_after"] == expected, e
             landings[e["side"]] = e
     end = next(e for e in events if e["event"] == "end")
@@ -52,11 +52,7 @@ def audit(events: list[dict]) -> dict:
         assert player["received"] == incoming[player["side"]], end
         assert player["sent"] == opponent_rows[player["side"]], end
     result = {"seed": end["seed"], "reason": end["reason"], "elapsed_s": end["elapsed_s"]}
-    if end["reason"] == "topped_out":
-        landing = landings[1 - end["winner"]]
-        assert landing["end_reason"] == "topped_out", end
-        result.update(rows=landing["rows"], received=landing["received"],
-                      occupied_before=sum(cell != "." for row in landing["board_before"] for cell in row))
+    assert end["reason"] != "topped_out", end
     return result
 
 
@@ -88,12 +84,9 @@ def main():
     finally:
         logger.removeHandler(capture)
         logger.setLevel(original_level)
-    one_line = [r for r in results if r.get("rows") == 1]
     print(json.dumps({"games": len(results), "violations": 0,
                       "end_reasons": dict(Counter(r["reason"] for r in results)),
-                      "one_line_topouts": len(one_line),
-                      "one_total_received_topouts": sum(r["received"] == 1 for r in one_line),
-                      "examples": one_line[:5]}, indent=2))
+                      }, indent=2))
 
 
 if __name__ == "__main__":

@@ -352,10 +352,12 @@ def test_unseen_incoming_rows_do_not_turn_an_in_flight_move_into_a_loss(tc, bot,
     assert a.state["received"] == seen + 1 and len(a.state["pending"]) == 1
     assert a.state["grid"][7][0] is None and a.state["tray"][0] is not None
     assert a.state["phase"] == "play" and m.phase == "playing"
-    # Once the attack is visible, ordinary top-out rules still apply to the same move.
+    # Once the attack is visible the same move lands it: the top-row block is destroyed, the game goes on.
     a.send(t="place", i=0, r=7, c=0, received=a.state["received"])
-    end = a.until("end")
-    assert end["winner"] == "opponent" and end["reason"] == "topped_out"
+    a.until("landed")
+    a.until("state")
+    assert a.state["phase"] == "play" and m.phase == "playing"
+    assert a.state["grid"][0][7] is None and a.state["grid"][6][0] is not None
 
 
 @pytest.mark.parametrize("top_row", [True, False])
@@ -370,10 +372,9 @@ def test_single_line_landing_logs_the_exact_board_and_attack_source(duo, caplog,
         m.deliver(p.opponent, {"send": 1, "cancelled": 0, "topic": "loops", "template_id": "loops_bug"})
     a.until("state")
     a.send(t="place", i=0, r=7, c=0, received=a.state["received"])
-    a.until("end" if top_row else "landed")
-    # The sender and receiver both use a single authoritative landing, including a fatal one.
-    if not top_row:
-        a.until("state")
+    a.until("landed")
+    # The sender and receiver both use a single authoritative landing, also one that destroys a block.
+    a.until("state")
     events = [json.loads(rec.getMessage().removeprefix("pvp ")) for rec in caplog.records
               if rec.name == "uvicorn.error.pvp"]
     incoming = next(e for e in events if e["event"] == "incoming")
@@ -386,10 +387,9 @@ def test_single_line_landing_logs_the_exact_board_and_attack_source(duo, caplog,
     assert sum(row.count("#") for row in landing["board_before"]) == 1
     if top_row:
         assert landing["board_before"][0] == ".......#"
-        assert landing["board_after"][0] == ".......#" and landing["board_after"][7] == "#......."
-        assert landing["end_reason"] == "topped_out"
-        end = next(e for e in events if e["event"] == "end")
-        assert end["winner"] == p.opponent.index and end["reason"] == "topped_out"
+        assert landing["board_after"][0] == "........" and landing["board_after"][6] == "#......."
+        assert landing["board_after"][7] == "BBBBBBBB" and landing["end_reason"] is None
+        assert not any(e["event"] == "end" for e in events) and m.phase == "playing"
     else:
         assert landing["end_reason"] is None and landing["board_after"][7] == "BBBBBBBB"
         assert landing["board_after"][1] == ".......#" and landing["board_after"][6] == "#......."

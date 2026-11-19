@@ -30,9 +30,9 @@ lockstep by the golden test (§7). Everything not listed works as in `mode: 'res
    placement that creates a lock keeps them pending until that lock is resolved (answer, or undo), then
    they land on the next placement that does not create a lock. Lines that arrive while a lock is open
    are queued behind the older ones.
-5. **Landing** k rows: every existing cell moves up k rows (existing bug lines move with their cells). If
-   any non-empty cell would move above row 0 (or k is more than 8), you **top out** and lose; the grid is
-   then left as it was. Otherwise the bottom k rows are filled with ERR bug cells: each row is a full row of
+5. **Landing** k rows: every existing cell moves up k rows (existing bug lines move with their cells). Any
+   cell pushed above row 0 is **destroyed** (a bug line pushed off goes with it). This is never fatal: you
+   lose only when no piece fits (rule 6). With more than 8 rows the oldest are pushed off too. The bottom k rows are filled with ERR bug cells: each row is a full row of
    bug cells and its own bug line (`bugLines` entry, new ids in queue order) with the sender's topic and
    template, so it can be tapped and fixed with a Debug puzzle like any bug line. The oldest row ends up
    on top of the new block, the newest in row 7. A lock in progress is impossible at this moment (see 4).
@@ -63,14 +63,14 @@ lockstep by the golden test (§7). Everything not listed works as in `mode: 'res
 
 - `newGame({ mode: 'pvp', level, rng })` → state gains `pending: []` (incoming rows, oldest first),
   `sent: 0`, `received: 0`.
-- `place(s, i, r, c)` → in pvp also returns `landed` (rows that landed, 0 if none) and sets
-  `s.phase = 'over'`, `s.endReason = 'topped_out'` when landing tops you out.
+- `place(s, i, r, c)` → in pvp also returns `landed` (rows that landed, 0 if none) (landing
+  destroys cells pushed above row 0 but never ends the game; a following no-fit check may).
 - `applyCorrect(s, {...})` → in pvp also returns `send` (lines actually sent after cancelling) and
   `cancelled` (own pending rows cancelled). The caller (server) delivers `send` to the opponent.
 - `queueIncoming(s, entries)` appends `{topic, templateId}` rows to `s.pending`; `s.received += n`;
   returns n (0 outside pvp or when the game is over).
 - `landPending(s)` lands every pending row (called by `place`); returns the number of rows, also when
-  they topped you out. `PVP_SEND` is the send table.
+  the game ended. `PVP_SEND` is the send table.
 - `applyWrong`, `fixBug`, `applyDebugWrong` follow rule 1 / 6 in pvp (never crash).
 - No-fit detection: `checkNoFit(s)` (returns true when it ended the game) runs by itself, in pvp only, at the
   end of `place` (when no lock was made, after landing), `finishLock`, `applyWrong`, `fixBug` and `shuffle`:
@@ -167,7 +167,7 @@ Server → client:
 | `opponent` | `{grid, score, pending, lock: bool, phase, connected}` | opponent's board, at most 4× per second; `pending` is a **number** of rows |
 | `sent` | `lines, cancelled` | you sent / cancelled lines (for the animation); only when either is above 0 |
 | `incoming` | `lines, from_topic, overtime?` | lines added to your pending queue (`overtime: true` for the overtime lines) |
-| `landed` | `rows` | your pending lines just landed (not sent when they topped you out) |
+| `landed` | `rows` | your pending lines just landed (not sent when the game ended) |
 | `opponent_status` | `connected, grace_s` | opponent dropped (`grace_s` 20) / is back (0) |
 | `end` | `winner: "you"\|"opponent"\|"draw", reason, you: {score, sent, received, locks}, opponent: {score, sent, received, locks, nickname, bot}, rating?: {before, after}` | match over (the last `opponent` and `state` are sent just before it) |
 | `rematch_status` | `you, opponent, expired?` | private duels after `end`, see below |
@@ -203,7 +203,7 @@ match on the same sockets: fresh seed, new `match_id` / `match_token`, a new `st
 `rematch_status {you: false, opponent: false, expired: true}` and the sockets are closed. Quick-match
 rematch is a new search (the sockets are closed after `end`; `rematch` is `no_rematch` while playing).
 
-`reason`: `topped_out`, `nofit`, `resign`, `disconnect`, `both_disconnected` (draw), `server_restart`.
+`reason`: `nofit`, `topped_out` (old rule, no longer produced), `resign`, `disconnect`, `both_disconnected` (draw), `server_restart`.
 
 ## 4. Disconnects (UX)
 
@@ -250,8 +250,7 @@ board with:
   above because completing lines is the only way a board clears.
 The simulation uses the engine's rules, mirrored on 64-bit integers and checked against `rescue_engine`
 in `tests/test_misaki.py`: a full row or column of normal blocks is a lock; the first placement of the plan
-that makes no lock lands the pending rows (a non-empty cell pushed above row 0 is a top-out and the plan is
-dropped). She plays the first placement of the best plan, then re-plans after every placement (the
+that makes no lock lands the pending rows (each block pushed above row 0 costs `W_LOST`). She plays the first placement of the best plan, then re-plans after every placement (the
 opponent's lines may have landed). Measured: about 2-8 ms per decision at beam 32 on a typical mid-game
 board (max about 15 ms in the benchmark; target < 50 ms). The weights were tuned by hand against simulated
 matches; nothing is trained and nothing is remembered between matches.

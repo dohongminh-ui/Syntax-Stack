@@ -490,7 +490,7 @@ class Match:
         if o is not None:
             o.opp_dirty = True
         if p.game.phase == "over" and self.phase == "playing":
-            self.finish(1 - p.index, p.game.end_reason or "topped_out")
+            self.finish(1 - p.index, p.game.end_reason or "nofit")
         elif p.coach is not None:
             self.coach_look(p)
 

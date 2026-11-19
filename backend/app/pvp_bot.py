@@ -133,13 +133,12 @@ def lock_lines(normal: int) -> tuple[int, int]:
     return lines, clear
 
 
-def land(occ: int, normal: int, k: int) -> Optional[tuple[int, int]]:
-    """``land_pending`` for k rows: the new ``(occ, normal)``, or None when that tops the player out."""
-    if k > SIZE or occ & TOP[k]:
-        return None
+def land(occ: int, normal: int, k: int) -> tuple[int, int, int]:
+    """``land_pending`` for k rows: the new ``(occ, normal, lost)``; ``lost`` blocks were pushed off the top."""
+    k = min(k, SIZE)
     if k == 0:
-        return occ, normal
-    return (occ >> (SIZE * k)) | BOTTOM[k], normal >> (SIZE * k)
+        return occ, normal, 0
+    return (occ >> (SIZE * k)) | BOTTOM[k], normal >> (SIZE * k), (occ & TOP[k]).bit_count()
 
 
 # --------------------------------------------------------------------------- the evaluation function
@@ -150,10 +149,11 @@ W_HOLE = 2.0           # an empty cell with a block above it in its column
 W_POCKET = 6.0         # an empty cell closed in on all four sides (only a single block fits: "covered")
 W_HEIGHT = 0.5         # aggregate column height (counted from the bottom: landing bug rows push blocks up)
 W_BUMP = 1.5           # differences between the heights of neighbouring columns
-W_DANGER = 40.0        # a block in the top `pending` rows: it would be pushed off the board
+W_DANGER = 12.0        # a block in the top `pending` rows: it would be pushed off the board (= W_LOST)
 W_PROGRESS = 4.2       # rows and columns on their way to a lock (squared fill, bug-free lines only)
 W_MOBILITY = 60.0      # how many of the 13 shapes (weighted by how often they are dealt) still fit somewhere
 W_UNPLACED = 30.0      # a tray piece of the plan that fits nowhere any more
+W_LOST = 12.0          # a block pushed off the top by landing bug rows (destroyed: wasted space and a lost lock)
 TOPPED_OUT = -1e6
 
 _PROGRESS = tuple((n / SIZE) ** 2 for n in range(SIZE + 1))
@@ -290,12 +290,8 @@ def search(occ: int, normal: int, tray: list, pending: int, beam: int, accuracy:
                         n2 &= ~clear
                         reward += LINE_REWARD[min(lines, 4)] * accuracy
                     elif p2:
-                        landed = land(o2, n2, p2)
-                        if landed is None:                  # topped out: never a plan unless nothing else exists
-                            if fallback is None:
-                                fallback = st if st.first else _State(st.occ, st.normal, p2, 0, (i, r, c), 0, 0.0, 1)
-                            continue
-                        o2, n2 = landed
+                        o2, n2, lost = land(o2, n2, p2)
+                        reward -= W_LOST * lost             # blocks pushed off the top are gone (not fatal)
                         p2 = 0
                     expanded = True
                     key = (o2, n2, used, p2)

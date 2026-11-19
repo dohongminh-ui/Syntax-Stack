@@ -76,15 +76,14 @@ def test_lock_lines_and_land_mirror_the_engine():
         assert lines == (lock["count"] if lock else 0)
         assert bits_to_set(clear) == (set(lock["cells"]) if lock else set())
         # landing k rows
-        k = rng.randint(1, 4)
+        k = rng.choice((1, 2, 3, 4, 9))
         g.pending = [{"topic": "loops", "template_id": "loops_bug"}] * k
-        want = pvp_bot.land(occ, normal, k)
+        o2, n2, lost = pvp_bot.land(occ, normal, k)
+        assert lost == sum(1 for r in range(min(k, 8)) for c in range(8) if g.grid[r][c])
         g.land_pending()
-        if want is None:
-            assert g.phase == "over" and g.end_reason == "topped_out"
-        else:
-            assert g.phase != "over"
-            assert pvp_bot.board_bits(g.grid) == want
+        assert g.phase != "over"                                  # pushed-off blocks are lost, never fatal
+        assert pvp_bot.board_bits(g.grid) == (o2, n2)
+        assert all(0 <= r < 8 for b in g.bug_lines for r, _ in b["cells"])
 
 
 # --------------------------------------------------------------------------- the search
@@ -118,7 +117,7 @@ def test_search_plans_are_legal_on_many_boards_and_none_when_nothing_fits():
     assert pvp_bot.search(occ, normal, g.tray, 0, 32) is None
 
 
-def test_search_avoids_a_top_out_when_it_can():
+def test_search_avoids_losing_a_block_when_it_can():
     g = E.RescueGame(3, "intermediate", "pvp")
     g.grid[0][0] = {"topic": "loops", "bug": False, "bug_id": None}      # a block in the top row
     for c in range(1, 8):
@@ -126,8 +125,14 @@ def test_search_avoids_a_top_out_when_it_can():
     g.tray = [E.Piece("dot", ((0, 0),), "loops"), E.Piece("dot", ((0, 0),), "loops"), None]
     occ, normal = pvp_bot.board_bits(g.grid)
     # one pending row would push (0, 0) off the board unless the placement makes a lock (which keeps it pending)
+    for beam in (1, 4):
+        plan = pvp_bot.search(occ, normal, g.tray, 1, beam)
+        assert not plan.topped and g.can_place(g.tray[plan.i], plan.r, plan.c)
+    # with nothing to clear she still plays on: losing a block is never treated as losing the game
+    g.grid[7][1] = None
+    occ, normal = pvp_bot.board_bits(g.grid)
     plan = pvp_bot.search(occ, normal, g.tray, 1, 4)
-    assert not plan.topped and plan.lines == 1 and (plan.r, plan.c) == (7, 0)
+    assert plan is not None and not plan.topped and plan.score > -1e5
 
 
 def test_decision_time_stays_small_at_beam_32():

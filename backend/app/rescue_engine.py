@@ -491,24 +491,24 @@ class RescueGame:
         return len(entries)
 
     def land_pending(self) -> int:
-        """``Game.landPending``: every pending row lands at once. Returns the number of rows (also when that tops
-        the player out: the grid is then left as it was and ``end_reason`` is ``topped_out``)."""
+        """``Game.landPending``: every pending row lands at once. Blocks pushed above row 0 are destroyed (not
+        fatal); more than 8 rows push the oldest off too. Returns the number of rows that arrived."""
         k = len(self.pending)
         if not k:
             return 0
-        rows, self.pending = self.pending, []
+        rows, self.pending = self.pending[max(0, k - SIZE):], []
+        n = len(rows)
         self.landed_total += k
-        if k > SIZE or any(self.grid[r][c] for r in range(k) for c in range(SIZE)):
-            self.phase = "over"
-            self.end_reason = "topped_out"
-            self.refresh_status()
-            return k
-        for r in range(SIZE - k):
-            self.grid[r] = self.grid[r + k]
+        for r in range(SIZE - n):
+            self.grid[r] = self.grid[r + n]
+        kept = []
         for b in self.bug_lines:
-            b["cells"] = [(r - k, c) for r, c in b["cells"]]
+            b["cells"] = [(r - n, c) for r, c in b["cells"]]
+            if all(r >= 0 for r, _ in b["cells"]):
+                kept.append(b)
+        self.bug_lines = kept
         for i, e in enumerate(rows):
-            row = SIZE - k + i  # oldest row on top: it was pushed up by the newer ones
+            row = SIZE - n + i  # oldest row on top: it was pushed up by the newer ones
             bug_id = self.next_bug_id
             self.next_bug_id += 1
             self.grid[row] = [{"topic": e["topic"], "bug": True, "bug_id": bug_id} for _ in range(SIZE)]

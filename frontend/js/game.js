@@ -162,25 +162,21 @@ export function queueIncoming(s, entries) {
 }
 
 // pvp: all pending rows land at once. Every cell moves up k rows, the bottom k rows become bug lines (oldest on
-// top). A non-empty cell that would leave the board tops you out (grid left as it was, endReason 'topped_out').
-// Returns k, the number of rows (also when it topped you out).
+// top). Blocks pushed above row 0 are destroyed (not fatal: you lose only when no piece fits). More than 8 rows
+// at once: the oldest are pushed off too. Returns k, the number of rows that arrived.
 export function landPending(s) {
   const k = s.pending.length;
   if (!k) return 0;
-  const rows = s.pending;
+  const rows = s.pending.slice(Math.max(0, k - SIZE));
+  const n = rows.length;
   s.pending = [];
-  let out = k > SIZE;
-  for (let r = 0; r < Math.min(k, SIZE) && !out; r++) if (s.grid[r].some(Boolean)) out = true;
-  if (out) {
-    s.phase = 'over';
-    s.endReason = 'topped_out';
-    refreshStatus(s);
-    return k;
-  }
-  for (let r = 0; r < SIZE - k; r++) s.grid[r] = s.grid[r + k];
-  for (const b of s.bugLines) b.cells = b.cells.map(([r, c]) => [r - k, c]);
+  for (let r = 0; r < SIZE - n; r++) s.grid[r] = s.grid[r + n];
+  s.bugLines = s.bugLines.filter((b) => {
+    b.cells = b.cells.map(([r, c]) => [r - n, c]);
+    return b.cells.every(([r]) => r >= 0);
+  });
   rows.forEach((e, i) => {
-    const row = SIZE - k + i;
+    const row = SIZE - n + i;
     const id = s.nextBugId++;
     s.grid[row] = Array.from({ length: SIZE }, () => ({ topic: e.topic, bug: true, bugId: id }));
     s.bugLines.push({

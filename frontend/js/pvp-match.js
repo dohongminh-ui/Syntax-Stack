@@ -34,13 +34,13 @@ const SEND_TABLE = [0, 1, 2, 3, 4];
 const REASON = {
   win: {
     topped_out: 'Các dòng lỗi đã đẩy khối của đối thủ ra khỏi đỉnh bàn.',
-    nofit: 'Đối thủ không còn khối nào đặt vừa bàn.',
+    nofit: 'Bàn của đối thủ đã đầy: không còn khối nào đặt vừa.',
     resign: 'Đối thủ đã bỏ cuộc.',
     disconnect: 'Đối thủ mất kết nối quá 20 giây.',
   },
   lose: {
     topped_out: 'Các dòng lỗi đã đẩy khối của bạn ra khỏi đỉnh bàn.',
-    nofit: 'Không còn khối nào của bạn đặt vừa bàn.',
+    nofit: 'Bàn của bạn đã đầy: không còn khối nào đặt vừa.',
     resign: 'Bạn đã bỏ cuộc.',
     disconnect: 'Bạn mất kết nối quá 20 giây.',
   },
@@ -897,7 +897,7 @@ export class PvpMatch {
     const meter = $('pvp-meter');
     meter.classList.toggle('danger', danger);
     meter.setAttribute('role', 'img');
-    meter.setAttribute('aria-label', n ? `Dòng lỗi đang chờ: ${n}${danger ? '. Cảnh báo: khối có thể bị đẩy ra khỏi bàn' : ''}` : 'Không có dòng lỗi đang chờ');
+    meter.setAttribute('aria-label', n ? `Dòng lỗi đang chờ: ${n}${danger ? '. Cảnh báo: khối ở vùng đỏ sẽ bị mất' : ''}` : 'Không có dòng lỗi đang chờ');
   }
 
   paintOpp() {
@@ -1250,7 +1250,7 @@ export class PvpMatch {
     if (this.server && !this.frozen) this.view = this.cloneView(this.server);
     this.paint();
     if (msg.rating && msg.rating.after != null) setRating(msg.rating.after);
-    if (outcome === 'lose' && msg.reason === 'topped_out') await this.board.animateCrash();
+    if (outcome === 'lose' && (msg.reason === 'nofit' || msg.reason === 'topped_out')) await this.board.animateCrash();
     else await wait(outcome === 'unknown' ? 0 : 650);
     sfx(outcome === 'win' ? 'win' : outcome === 'lose' ? 'lose' : 'chime');
     this.showEnd(msg, outcome);
