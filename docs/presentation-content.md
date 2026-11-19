@@ -4,7 +4,7 @@ Slide-by-slide content for `Stack.pdf`, matched one-to-one with the speaking scr
 `docs/presentation-script.md` (v3.4). The talk is **10 minutes including a 3:20 live demo** (hard stop 3:45), so the
 deck is 16 slides and the slides carry headlines, not paragraphs: the speakers carry the depth.
 Each slide lists the **on-slide text**, a **visual**, and where the media comes from. Language: English,
-like the template; the game itself is in Vietnamese. v2 of this file is in git history.
+like the template; the game has a VI | EN switch, and the deck and demo use English. v2 of this file is in git history.
 
 **Theme: AI in studying.** Misaki is central: the student makes an attempt, gets a contextual
 explanation, applies it and practises. The teacher dashboard supports this story. Pasted-code
@@ -25,7 +25,7 @@ generation is optional Q&A material; it is verified program generation, not lang
 - **Demo slide (11)**: Misaki explains a wrong prediction, the student corrects it, Misaki supports a
   practice move, then the teacher sees the class's mistakes. It carries the fallback recording.
 - **New features shown:** live classroom with teacher dashboard, puzzles from pasted code (runs in a
-  sandbox), skill map, AI explanation of wrong predictions, AI end-of-run debrief, "Đọc code" bonus.
+  sandbox), skill map, AI explanation of wrong predictions, AI end-of-run debrief, "Read the code" bonus.
 - **Business slide:** the classroom package is **built**, not "an idea, not validated".
 - **Numbers updated:** 559 playable puzzles (706 generated forms with debug-only variants); tests
   "more than 400" (421 on 18 Nov; recount the day before).
@@ -41,19 +41,19 @@ generation is optional Q&A material; it is verified program generation, not lang
 ## Screenshots to capture (new)
 
 Capture at 1920×1080 for desktop shots and 390×844 for phone shots. Use **real** data, not mock
-mode, for anything on the business or demo slide (mock screens are labelled "mô phỏng" on screen).
+mode, for anything on the business or demo slide (mock screens are labelled "simulated" on screen).
 
 | File (suggested, in `frontend/_screens/v5/`) | How to get it |
 | --- | --- |
 | `classroom-dashboard-desktop.png` | Open a room, have 3–4 people answer ~15 puzzles with a few deliberate mistakes, wait for the heatmap to fill, capture the teacher screen. |
-| `classroom-join-phone.png` | `/?room=<code>` on a phone in a random-names room: the "Tên của bạn: …" moment after tapping "Vào phòng". |
-| `leaderboard-phone.png` | `Bảng xếp hạng` after a few real ranked runs (not mock: mock is labelled "dữ liệu mẫu"). |
-| `custom-result-desktop.png` | `Tạo câu đố từ code` → paste the demo program → capture the four puzzle cards. |
-| `skills-map-phone.png` | Play a few Rescue runs first so the map has all four mastery levels, then `Bản đồ kỹ năng`. |
-| `predict-why-ai-phone.png` | Syntax Rows level 3, `range(2)`, predict 0 1 2, Run, tap "Vì sao?" with the tutor on: the "MISAKI · GIA SƯ AI" card. |
-| `misaki-ladder-phone.png` | `Đối kháng 1v1` → "Đấu với Misaki" after beating level 1, so one level shows unlocked and two locked. |
-| `misaki-coach-phone.png` | A training match ("Luyện tập cùng Misaki") with her coach bubble visible and a "Gợi ý nước đi" suggestion outlined on the board. |
-| `end-debrief-ai-phone.png` | Lose a Rescue run with 2 mistakes, capture the "Tổng kết" block. |
+| `classroom-join-phone.png` | `/?room=<code>` on a phone in a random-names room: the "Your name: …" moment after tapping "Join room". |
+| `leaderboard-phone.png` | `Leaderboard` after a few real ranked runs (not mock: mock is labelled "sample data"). |
+| `custom-result-desktop.png` | `Make puzzles from code` → paste the demo program → capture the four puzzle cards. |
+| `skills-map-phone.png` | Play a few Rescue runs first so the map has all four mastery levels, then `Skill Map`. |
+| `predict-why-ai-phone.png` | Syntax Rows level 3, `range(2)`, predict 0 1 2, Run, tap "Why?" with the tutor on: the "MISAKI · AI TUTOR" card. |
+| `misaki-ladder-phone.png` | `1v1 Duel` → "Play against Misaki" after beating level 1, so one level shows unlocked and two locked. |
+| `misaki-coach-phone.png` | A training match ("Practice with Misaki") with her coach bubble visible and a "Suggest a move" suggestion outlined on the board. |
+| `end-debrief-ai-phone.png` | Lose a Rescue run with 2 mistakes, capture the "Summary" block. |
 | `demo-fallback.mp4` | 20-second recording: real AI explanation, student correction passing, and a real Misaki training suggestion. |
 
 Unchanged screens can still come from `frontend/_screens/v3/` and `v4/`.

@@ -20,23 +20,25 @@ section's word count matches its time; don't add to it on the day.
 ## Before you walk on (checklist)
 
 - [ ] Laptop and both phones on **one phone hotspot**, not the venue Wi-Fi.
-- [ ] Laptop tab 1: from home press **Ctrl+Alt+3**. This opens the real r3 practice board, "Đếm đến ba",
+- [ ] **Everything in English:** on the laptop and both phones, tap **EN** at the top right of the home
+      screen (or open the site with `?lang=en`). It is remembered per browser; check each device once.
+- [ ] Laptop tab 1: from home press **Ctrl+Alt+3**. This opens the real r3 practice board, "Count to three",
       with `range(2)` and `print(i)` placed and prediction expanded. Leave it **unrun** and prediction empty.
-- [ ] Tab 2: from home press **Ctrl+Alt+4**. Misaki level 1 and **Luyện tập cùng Misaki** are selected.
-      Use **Chọn tên** to save a generated nickname before presenting. Leave the menu open; **do not start
+- [ ] Tab 2: from home press **Ctrl+Alt+4**. Misaki level 1 and **Practice with Misaki** are selected.
+      Use **Choose a name** to save a generated nickname before presenting. Leave the menu open; **do not start
       the match until this demo segment**, so it cannot finish while the tutor is on screen.
-- [ ] Tab 3: from home press **Ctrl+Alt+1**, then **Mở phòng**. Have the real classroom already open
-      with **Tên người chơi: Ngẫu nhiên** (the default), browser in fullscreen, on the projector. Note
+- [ ] Tab 3: from home press **Ctrl+Alt+1**, then **Open room**. Have the real classroom already open
+      with **Player names: Random** (the default), browser in fullscreen, on the projector. Note
       the room code.
 - [ ] Cuong's and Lam's phones: **already joined the room**, game started, sitting on a board where a row
-      is about to fill with **coral (loops)** blocks. Each phone gets a random name (e.g. "Cáo Nhanh 17"):
+      is about to fill with **coral (loops)** blocks. Each phone gets a random name (e.g. "Quick Fox 17"):
       **write both names down** so Minh can point at the right row.
 - [ ] Because the room uses random names, a judge who scans the QR cannot put anything rude on the
-      projector. If something unexpected shows anyway, the row's **"Ẩn"** button removes it.
+      projector. If something unexpected shows anyway, the row's **"Hide"** button removes it.
 - [ ] Use the browser's **Ctrl+1 / Ctrl+2 / Ctrl+3** to switch tabs on stage. The app's Ctrl+Alt shortcuts
       only work from home and outside text fields. No judge-demo menu, mock data or fake scores.
-- [ ] Rehearse the exact wrong prediction and **Vì sao?** on the production tutor; check that the
-      **MISAKI · GIA SƯ AI** card appears. A hand-written fallback does not demonstrate the language model.
+- [ ] Rehearse the exact wrong prediction and **Why?** on the production tutor; check that the
+      **MISAKI · AI TUTOR** card appears. A hand-written fallback does not demonstrate the language model.
       Keep a clearly labelled recording of a real AI response; allow at most **8 seconds** of visible waiting.
 - [ ] Rehearse the correction: return `range(2)` to the tray, place `range(3)` in the same position,
       then run again. This is the learning payoff, not just an AI reply.
@@ -47,10 +49,10 @@ section's word count matches its time; don't add to it on the day.
 Pasted-code program for Q&A (not in the timed demo):
 
 ```python
-tong = 0
+total = 0
 for i in range(1, 5):
-    tong = tong + i
-print(tong)
+    total = total + i
+print(total)
 ```
 
 ## Slide changes from v2 (for Stack.pdf)
@@ -161,20 +163,20 @@ topic.
 | Clock | Action | Evidence to point at |
 | --- | --- | --- |
 | 0:00–0:15 | Tab 1: bring Misaki back beside the prepared r3 exercise. | A specific student task, not an open-ended chatbot. |
-| 0:15–1:35 | Predict `0`, `1`, `2`, run, tap **Vì sao?**, then replace `range(2)` with `range(3)` and run again. | Checked mismatch → labelled AI explanation → the student's correction passes. |
-| 1:35–2:35 | Ctrl+2: start the prepared level-1 training match; after countdown tap **Gợi ý nước đi** and place one suggested piece. | Misaki as an opponent, a legal highlighted suggestion and its reason. |
+| 0:15–1:35 | Predict `0`, `1`, `2`, run, tap **Why?**, then replace `range(2)` with `range(3)` and run again. | Checked mismatch → labelled AI explanation → the student's correction passes. |
+| 1:35–2:35 | Ctrl+2: start the prepared level-1 training match; after countdown tap **Suggest a move** and place one suggested piece. | Misaki as an opponent, a legal highlighted suggestion and its reason. |
 | 2:35–3:10 | Ctrl+3: Lam answers the prepared classroom puzzle wrong. | Teacher sees the actual named mistake; briefly invite QR joins without waiting. |
 | 3:10–3:20 | Connect the three beats. | AI explanation, guided practice and a teacher who can still see the class. |
 
 **Misaki, the tutor.** Lam introduced **Misaki**; let's see her at work. I predict this loop prints 0, 1, 2.
-*(Run.)* It prints 0, 1. The validator has checked the mismatch. I ask **Vì sao?**.
+*(Run.)* It prints 0, 1. The validator has checked the mismatch. I ask **Why?**.
 *(Point at the AI card.)* Misaki explains using my prediction and the program's execution trace:
 `range(2)` stops before 2. She has the context of my actual attempt.
 *(Replace the range tile and run.)* I make the correction myself. Now it passes.
 **The explanation leads to another attempt**, not just an answer to copy.
 
 **Misaki, the practice partner.** *(Ctrl+2, start training, wait for countdown.)* Here Misaki is also
-an AI opponent. In training I can ask **Gợi ý nước đi**. *(Tap and point at the highlighted cells and reason;
+an AI opponent. In training I can ask **Suggest a move**. *(Tap and point at the highlighted cells and reason;
 place that piece.)* The suggestion helps me make a move while I stay in control.
 Her game moves and suggestions use **search**, not the tutor's language model; the event-coaching
 lines are authored. We use each technique for a different job.
