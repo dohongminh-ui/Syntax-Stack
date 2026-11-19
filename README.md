@@ -11,7 +11,7 @@ the BTEC Best Coder 2026 competition. Live: **https://syntax.screepai.moe**.
 - **Misaki**: one AI character with two jobs. As the **AI tutor** she explains a student's actual
   attempt using a language model (an optional n8n webhook), and the game falls back to authored text
   whenever the tutor is off or fails. As the **AI opponent** in 1v1 she plans her moves with a search
-  algorithm (four levels, plus a training mode where she coaches you). She is not trained on data.
+  algorithm (four levels, plus a training mode where she coaches you).
 - **Play together**: real-time 1v1 duels (against a friend or Misaki), a ranked leaderboard and friend
   races whose scores the server verifies by replaying the moves, and a **live classroom** where a
   teacher sees the class's weak topics and most common mistakes.
