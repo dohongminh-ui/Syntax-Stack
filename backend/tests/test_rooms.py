@@ -284,7 +284,8 @@ def test_clients_cannot_fake_results(client, all_rows):
     s = summary(client, room)
     assert s["totals"] == {"players": 1, "answers": 1, "correct": 0}
     assert s["top_mistakes"][0]["key"] == named["name"]
-    assert s["players"][0]["score"] == 9999 and s["players"][0]["answers"] == 1  # score is reported, answers are not
+    # the reported 9999 is capped at the empty-board ceiling (nothing was verified); answers are never client data
+    assert s["players"][0]["score"] == rooms.score_ceiling({}) and s["players"][0]["answers"] == 1
 
 
 def test_invalid_room_or_token_is_ignored_without_breaking_answer(client, all_rows):
@@ -382,16 +383,126 @@ def test_per_player_answer_cap(client, all_rows, monkeypatch):
 # --------------------------------------------------------------------------- progress / leaderboard
 
 
-def test_progress_updates_leaderboard_sorted_by_score(client):
+def post_progress(client, room, player, score, status="playing", bugs_fixed=0):
+    return client.post(f"/api/rooms/{room['code']}/progress", json={
+        "player_token": player["player_token"], "score": score, "status": status, "bugs_fixed": bugs_fixed})
+
+
+def solve(client, all_rows, room, player, n, tier=None, skip=0):
+    """``n`` distinct correct answers (the server logs them); returns the puzzle rows used."""
+    pool = [r for r in all_rows if not r["debug_only"] and (tier is None or r["tier"] == tier)][skip:skip + n]
+    assert len(pool) == n
+    for r in pool:
+        assert answer(client, r["id"], correct_body(r), room, player["player_token"]).json()["correct"] is True
+    return pool
+
+
+def stored(player):
+    """(score, bugs_fixed) as stored (the summary has no bugs_fixed)."""
+    con = rooms._connect()
+    try:
+        r = con.execute("SELECT score, bugs_fixed FROM players WHERE id = ?", (player["player_id"],)).fetchone()
+    finally:
+        con.close()
+    return r["score"], r["bugs_fixed"]
+
+
+def test_progress_updates_leaderboard_sorted_by_score(client, all_rows):
     room = make_room(client)
     a, b, c = (join(client, room["code"], n) for n in ("An", "Binh", "Chi"))
-    for p, score, status in ((a, 120, "playing"), (b, 900, "crash"), (c, 400, "nofit")):
-        r = client.post(f"/api/rooms/{room['code']}/progress", json={
-            "player_token": p["player_token"], "score": score, "status": status, "bugs_fixed": 2})
+    for p in (a, b, c):
+        solve(client, all_rows, room, p, 3, tier=1)         # three verified answers: ceiling 64 + 3 * 217 = 715
+    for p, score, status in ((a, 120, "playing"), (b, 700, "crash"), (c, 400, "nofit")):
+        r = post_progress(client, room, p, score, status, 2)
         assert r.status_code == 204 and r.content == b""
     board = summary(client, room)["players"]
     assert [(p["nickname"], p["score"], p["status"]) for p in board] == [
-        ("Binh", 900, "crash"), ("Chi", 400, "nofit"), ("An", 120, "playing")]
+        ("Binh", 700, "crash"), ("Chi", 400, "nofit"), ("An", 120, "playing")]
+
+
+def test_progress_is_capped_at_the_ceiling_of_the_verified_answers(client, all_rows):
+    room = make_room(client)
+    p = join(client, room["code"])
+    assert post_progress(client, room, p, 99999).status_code == 204     # nothing verified yet: one empty board
+    assert stored(p)[0] == 64 == rooms.score_ceiling({})
+    used = solve(client, all_rows, room, p, 2, tier=1) + solve(client, all_rows, room, p, 1, tier=3, skip=3)
+    ceiling = 64 + 2 * 217 + 927
+    assert rooms.score_ceiling(rooms.counted_correct([(r["id"], 1, r["tier"]) for r in used])) == ceiling
+    assert post_progress(client, room, p, 99999).status_code == 204
+    assert summary(client, room)["players"][0]["score"] == ceiling
+    assert post_progress(client, room, p, ceiling + 1).status_code == 204
+    assert stored(p)[0] == ceiling
+
+
+def test_an_honest_score_is_stored_unchanged(client, all_rows):
+    room = make_room(client)
+    p = join(client, room["code"])
+    solve(client, all_rows, room, p, 5, tier=1)
+    for score in (0, 1, 64, 300, 1149):                 # 64 + 5 * 217 = 1149 is the ceiling itself
+        assert post_progress(client, room, p, score).status_code == 204
+        assert summary(client, room)["players"][0]["score"] == score
+
+
+def test_wrong_and_repeated_answers_do_not_raise_the_ceiling(client, all_rows):
+    room = make_room(client)
+    p = join(client, room["code"])
+    fill = of_type(all_rows, "fill_blank")[0]
+    for _ in range(4):                                  # the same puzzle answered correctly again and again
+        assert answer(client, fill["id"], correct_body(fill), room, p["player_token"]).json()["correct"]
+    pred = of_type(all_rows, "predict_output")[0]
+    for _ in range(5):                                  # wrong answers earn nothing
+        answer(client, pred["id"], wrong_body(pred), room, p["player_token"])
+    post_progress(client, room, p, 10**6)
+    assert stored(p)[0] == rooms.score_ceiling({fill["tier"]: 1})
+
+
+def test_bugs_fixed_is_capped_by_the_verified_correct_answers(client, all_rows):
+    room = make_room(client)
+    p = join(client, room["code"])
+    post_progress(client, room, p, 50, bugs_fixed=40)
+    assert stored(p) == (50, 0)
+    solve(client, all_rows, room, p, 2)
+    post_progress(client, room, p, 50, bugs_fixed=40)
+    assert stored(p) == (50, 2)
+    post_progress(client, room, p, 50, bugs_fixed=1)
+    assert stored(p) == (50, 1)
+
+
+def test_record_progress_clamps_negative_values(client):
+    room = make_room(client)
+    p = join(client, room["code"])
+    rooms.record_progress(room["code"], p["player_token"], -5, "playing", -3)
+    assert stored(p) == (0, 0)
+
+
+def test_the_ceiling_is_per_player(client, all_rows):
+    room = make_room(client)
+    a, b = join(client, room["code"], "An"), join(client, room["code"], "Binh")
+    solve(client, all_rows, room, a, 4, tier=3)
+    post_progress(client, room, b, 99999)                # Binh verified nothing, whatever An did
+    post_progress(client, room, a, 99999)
+    assert stored(b)[0] == 64
+    assert stored(a)[0] == 64 + 4 * 927
+
+
+def test_answers_logged_before_tiers_were_stored_count_as_tier_3(client, tmp_path, monkeypatch):
+    old = tmp_path / "old-rooms.sqlite"
+    con = sqlite3.connect(old)
+    con.executescript(rooms._SCHEMA.replace(", tier INTEGER", ""))     # the answers table as it was before
+    con.close()
+    monkeypatch.setattr(rooms, "DB_PATH", old)
+    room = make_room(client)
+    p = join(client, room["code"])
+    con = rooms._connect()                                # the migration adds the column
+    try:
+        assert "tier" in [r["name"] for r in con.execute("PRAGMA table_info(answers)")]
+        con.execute("INSERT INTO answers (room, player_id, puzzle_id, template_id, topic, type, correct, ts) "
+                    "VALUES (?,?,?,?,?,?,1,0)", (room["code"], p["player_id"], "x", "t", "loops", "fill_blank"))
+        con.commit()
+    finally:
+        con.close()
+    post_progress(client, room, p, 10**6)
+    assert stored(p)[0] == 64 + 927
 
 
 @pytest.mark.parametrize("bad", [

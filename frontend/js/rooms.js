@@ -635,9 +635,10 @@ function flush() {
   api.roomProgress(s.code, { player_token: s.player_token, ...p }).catch(() => {});
 }
 
-/** G = the Code Rescue game state. Sends on change, at most every 2 s; the final state is sent at once. */
+/** G = the Code Rescue game state. Sends on change, at most every 2 s; the final state is sent at once.
+ *  Rescue games only: the server bounds the score by Rescue rules, and a Practice score must not overwrite it. */
 export function reportProgress(G, { force = false } = {}) {
-  if (!getStudent() || !G) return;
+  if (!getStudent() || !G || G.mode !== 'rescue') return;
   const over = G.phase === 'over';
   const snap = { score: G.score | 0, status: over ? (G.endReason === 'crash' ? 'crash' : 'nofit') : 'playing', bugs_fixed: G.bugsFixed | 0 };
   if (!force && JSON.stringify(snap) === rep.sentKey && !rep.pending) return;

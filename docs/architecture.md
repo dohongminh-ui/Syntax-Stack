@@ -263,7 +263,12 @@ A teacher opens a room (`POST /api/rooms`), students join with a nickname, and a
   request carries a valid `room` and `player_token`, records the result (`correct`, named mistake or error
   group) in one cheap insert wrapped in try/except: logging can never fail or slow the answer. Nothing the
   client says about correctness is ever stored; only the leaderboard (`score`, `status`, `bugs_fixed`) is
-  client-reported, and it is labelled that way.
+  client-reported, and the server caps it: `record_progress` stores `min(score, score_ceiling)`, a ceiling computed
+  from the correct answers it logged for that player (the answer log keeps the puzzle's tier), and caps `bugs_fixed`
+  by the same count. The ceiling comes from the Code Rescue rules (the 8x8 board bounds the placement points, each
+  lock or bug-fix reward needs a verified answer), is an upper bound for every legal game (a test plays about a
+  thousand against it) and never clips an honest score; it does not replay the game, that is what ranked runs do.
+  Syntax Rows has no room plumbing.
 - **Names.** A room's `names` mode is `random` (default) or `free`. In `random` mode every student gets a
   generated nickname (`"<animal> <adjective> <NN>"`, `backend/app/nicknames.py` with the friendly word lists in
   `backend/content/nickname_words.yaml`), so no student can type anything onto a projector and no real name is

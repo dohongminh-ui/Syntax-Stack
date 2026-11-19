@@ -3,7 +3,15 @@ and the teacher's dashboard shows what the class is getting wrong.
 
 Trust model: correctness and the named mistake are computed by the server when ``/api/puzzle/{id}/answer``
 checks an answer (``log_answer`` is called from there and nowhere else). The only client-reported data
-is the leaderboard (score / status / bugs fixed via ``progress``). Only nicknames are stored, in their
+is the leaderboard (score / status / bugs fixed via ``progress``), and even that is capped on the server:
+the board shows the in-game score the browser reports, but ``record_progress`` stores
+``min(reported score, score_ceiling(...))``, a ceiling derived from the correct answers the server itself
+logged for that player (``bugs_fixed`` is capped by the same count). An honest score is never clipped; a
+faked one cannot exceed what those verified answers could ever earn in Code Rescue (see ``score_ceiling``).
+It is a ceiling, not a replay: a cheater who really answered many puzzles can still post up to it, but 99999
+with a handful of answers is stored as the ceiling. Exact verification is what ranked runs and races do
+(``ranked.py``). Syntax Rows has no room plumbing (no room or token on its endpoints, and ``progress`` only
+means Code Rescue), so there is nothing to bound there. Only nicknames are stored, in their
 own SQLite file next to the custom-sets file (``rooms.sqlite``). A room expires 12 hours after its
 last student activity (create, join, answer, progress); expired rooms are purged lazily.
 """
@@ -11,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import os
 import re
 import secrets
@@ -25,7 +34,7 @@ from typing import Optional
 
 import yaml
 
-from . import bank, custom, nicknames
+from . import bank, custom, nicknames, rescue_engine
 from . import i18n
 from .i18n import tr
 
@@ -218,7 +227,7 @@ CREATE INDEX IF NOT EXISTS idx_players_room ON players (room);
 CREATE TABLE IF NOT EXISTS answers (
     id INTEGER PRIMARY KEY AUTOINCREMENT, room TEXT NOT NULL, player_id TEXT NOT NULL,
     puzzle_id TEXT NOT NULL, template_id TEXT NOT NULL, topic TEXT NOT NULL, type TEXT NOT NULL,
-    correct INTEGER NOT NULL, mistake_key TEXT, ts REAL NOT NULL);
+    correct INTEGER NOT NULL, mistake_key TEXT, ts REAL NOT NULL, tier INTEGER);
 CREATE INDEX IF NOT EXISTS idx_answers_room ON answers (room);
 """
 
@@ -235,6 +244,8 @@ def _connect() -> sqlite3.Connection:
             cols = [r["name"] for r in con.execute("PRAGMA table_info(rooms)")]
             if "names" not in cols:  # file from before generated nicknames: those rooms used free names
                 con.execute("ALTER TABLE rooms ADD COLUMN names TEXT NOT NULL DEFAULT 'free'")
+            if "tier" not in [r["name"] for r in con.execute("PRAGMA table_info(answers)")]:
+                con.execute("ALTER TABLE answers ADD COLUMN tier INTEGER")  # older rows stay NULL = counted as tier 3
             _ready.add(key)
     return con
 
@@ -417,9 +428,9 @@ def log_answer(room_code: str, token: str, puzzle: dict, option_id: Optional[str
             if total >= MAX_ANSWERS_PER_ROOM:
                 return
             con.execute("INSERT INTO answers (room, player_id, puzzle_id, template_id, topic, type, correct, "
-                        "mistake_key, ts) VALUES (?,?,?,?,?,?,?,?,?)",
+                        "mistake_key, ts, tier) VALUES (?,?,?,?,?,?,?,?,?,?)",
                         (code, player["id"], puzzle["id"], puzzle["template_id"], topic, ptype,
-                         1 if result["correct"] else 0, mistake, now))
+                         1 if result["correct"] else 0, mistake, now, puzzle.get("tier")))
             con.execute("UPDATE players SET last_seen = ? WHERE id = ?", (now, player["id"]))
             con.execute("UPDATE rooms SET last_activity = ? WHERE code = ?", (now, code))
             con.commit()
@@ -427,7 +438,92 @@ def log_answer(room_code: str, token: str, puzzle: dict, option_id: Optional[str
         return
 
 
+# --------------------------------------------------------------------------- score ceiling
+
+# The same puzzle can be served again in one run only after 500 others (the browser sends the last 500 seen ids,
+# main.js ``G.seenIds.slice(-500)``), so a player with R logged answers can honestly hold at most 1 + R // 500
+# correct answers to one puzzle. Anything beyond that is the answer endpoint being replayed, not play.
+REPEAT_WINDOW = 500
+BOARD_CELLS = rescue_engine.SIZE * rescue_engine.SIZE
+_BOMB_CELLS = 9    # a Bomb clears a 3x3 block...
+_BOMB_EVERY = 3    # ...and is earned at most once per 3 correct lock answers (the streak reaches 3)
+
+
+def _answer_ceiling() -> dict[int, int]:
+    """The most points one correct answer to a tier-t puzzle can add to a Code Rescue score, for t = 1, 2, 3.
+
+    Read from game.js / rescue_engine.py. A score is the sum of (a) the cells of every placed piece (1 point each)
+    and (b) rewards: a lock's ``base * hint factor * streak factor`` and 150 per fixed bug. Last Commit, items and
+    wrong answers give no points. Rewards need correct answers: a lock of t = 1, 2 or 3 lines is one answer to a
+    tier-t puzzle (Rescue puzzles are picked at exactly the lock's tier), a boss lock (4+ lines, base 700) is two
+    tier-3 answers, and a bug fix is one answer to a Debug puzzle (any tier). Best case for a reward: no hint (x1)
+    and a streak of 5+ (x2).
+
+    Placement points are bounded by the 8x8 board. It starts empty and holds at most 64 cells, so
+    ``cells placed <= 64 + cells cleared``. Cells leave the board only when a lock is answered (<= 8t cells for t
+    lines, <= 64 for a boss), a bug line is fixed (<= 64, a failed boss lock), a Bomb is used (<= 9, and at most
+    one per 3 correct answers, so 3 per answer) or Last Commit clears 3 rows (<= 24, tier-3 answer, once per run).
+    A wrong answer clears nothing in Rescue (the lock turns into a bug line). Undo restores an earlier state
+    (grid, tray and score together), so a history with undos is a history without them and can be ignored.
+
+    Per correct answer, tier 1 / 2 / 3:
+      lock      100*2 + 8 = 208,   250*2 + 16 = 516,   450*2 + 24 = 924
+      boss      (700*2 + 64) / 2 = 732 per tier-3 answer
+      bug fix   150 + 64 = 214 (any tier)
+    take the largest and add 3 for Bombs: 217, 519, 927."""
+    top = rescue_engine.streak_factor(5)
+    n = rescue_engine.SIZE
+    debug = rescue_engine.BUG_FIX_POINTS + n * n
+    out = {}
+    for tier in (1, 2, 3):
+        best = max(rescue_engine.BASE_POINTS[tier] * top + n * tier, debug)
+        if tier == 3:
+            best = max(best, math.ceil((rescue_engine.BASE_POINTS[4] * top + n * n) / 2))
+        out[tier] = int(best) + _BOMB_CELLS // _BOMB_EVERY
+    return out
+
+
+PER_ANSWER_CEILING = _answer_ceiling()
+
+
+def counted_correct(answers) -> dict[int, int]:
+    """The correct answers that count towards the ceiling, by puzzle tier.
+
+    ``answers``: the player's logged answers as ``(puzzle_id, correct, tier)``, right and wrong. A puzzle counts once
+    (plus the repeats ``REPEAT_WINDOW`` allows), so answering one puzzle again and again does not raise the ceiling.
+    An unknown tier (a row logged before tiers were stored) counts as tier 3, the loosest."""
+    answers = list(answers)
+    allowed = 1 + len(answers) // REPEAT_WINDOW
+    per_puzzle: dict[str, list[int]] = {}      # puzzle id -> [tier, correct answers so far]
+    for pid, correct, tier in answers:
+        if correct:
+            per_puzzle.setdefault(pid, [tier if tier in (1, 2, 3) else 3, 0])[1] += 1
+    out = {1: 0, 2: 0, 3: 0}
+    for tier, n in per_puzzle.values():
+        out[tier] += min(n, allowed)
+    return out
+
+
+def score_ceiling(correct_by_tier) -> int:
+    """The most a Code Rescue run can score, given the player's server-verified correct answers.
+
+    ``correct_by_tier``: ``{1: n1, 2: n2, 3: n3}`` (see ``counted_correct``). Returns
+    ``64 + sum(n_t * PER_ANSWER_CEILING[t])``: the 64 is one full board of placements, and every correct answer adds
+    at most the reward it can unlock plus the cells it can clear (``_answer_ceiling`` has the derivation). It is an
+    upper bound for every legal game and loose on purpose (every lock is the most lucrative one, no hints, a streak
+    of 5+); ``tests/test_rooms_ceiling.py`` plays hundreds of games against it.
+
+    Runs: the server cannot tell a player's runs apart (answers and progress carry no run id), but the board shows
+    the score of the run being played now. That run's correct answers are a subset of the player's lifetime ones
+    and the formula only grows with them, so the ceiling of the lifetime answers bounds every single run (the
+    constant 64 is part of each run's own bound, so it is not summed over runs). Practice mode is not covered: it
+    clears rows for free when stuck, so its score has no such bound; the browser must report Rescue games only."""
+    return BOARD_CELLS + sum(max(0, int(correct_by_tier.get(t, 0))) * v for t, v in PER_ANSWER_CEILING.items())
+
+
 def record_progress(code: str, token: str, score: int, status: str, bugs_fixed: int) -> None:
+    """Store the leaderboard line: ``min(score, score_ceiling)`` and ``bugs_fixed`` capped by the verified correct
+    answers (a bug fix needs one). Negative values become 0. ``status`` is validated by the request model."""
     with closing(_connect()) as con, _db_lock:
         room = _load_room(con, code)
         player = _find_player(con, room["code"], token)
@@ -435,6 +531,12 @@ def record_progress(code: str, token: str, score: int, status: str, bugs_fixed: 
             raise RoomError(tr("Mã người chơi không hợp lệ.", "That player token is not valid."), 403)
         if not room["open"]:
             return  # a closed room keeps its final board
+        facts = counted_correct(
+            (r["puzzle_id"], r["correct"], r["tier"]) for r in con.execute(
+                "SELECT puzzle_id, correct, tier FROM answers WHERE room = ? AND player_id = ?",
+                (room["code"], player["id"])))
+        score = max(0, min(int(score), score_ceiling(facts)))
+        bugs_fixed = max(0, min(int(bugs_fixed), sum(facts.values())))
         now = _now()
         con.execute("UPDATE players SET score = ?, status = ?, bugs_fixed = ?, last_seen = ? WHERE id = ?",
                     (score, status, bugs_fixed, now, player["id"]))
