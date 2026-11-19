@@ -42,6 +42,7 @@ MAX_ACTIONS_PER_S = 10           # real time; more are dropped
 OUTBOX_LIMIT = 512               # queued messages per connection before it is cut off
 COUNTDOWN_S = 3
 GRACE_S = 20
+AWAY_BUDGET_S = 30.0             # total time a human may spend disconnected during play, per match (all drops together)
 OVERTIME_AT_S = 240
 OVERTIME_EVERY_S = 20
 LAND_DELAY_S = 4.0               # incoming lines land by themselves this long after the queue went from empty to non-empty
@@ -208,6 +209,8 @@ class Player:
         self.game: Optional[E.RescueGame] = None
         self.rev = 0
         self.dropped_at: Optional[float] = None
+        self.grace: float = GRACE_S               # the grace of the current drop: min(GRACE_S, away budget left at the drop)
+        self.away_used = 0.0                      # match clock: time spent away in earlier drops this match (see AWAY_BUDGET_S)
         self.final: Optional[dict] = None
         self.land_at: Optional[float] = None      # match clock: when the pending rows land by themselves (docs rule 4)
         self.lock_at: Optional[float] = None      # match clock: when the open lock times out (docs rule 14)
@@ -236,6 +239,12 @@ class Player:
     def send(self, msg: dict) -> None:
         if self.conn is not None:
             self.conn.send(msg)
+
+    def away_left(self, t: Optional[float] = None) -> float:
+        """Seconds of the match's away budget (AWAY_BUDGET_S) still unspent, rounded to 0.1; a drop in progress counts."""
+        t = now() if t is None else t
+        used = self.away_used + (max(0.0, t - self.dropped_at) if self.dropped_at is not None else 0.0)
+        return round(max(0.0, AWAY_BUDGET_S - used), 1)
 
     @property
     def opponent(self) -> Optional["Player"]:
@@ -284,7 +293,7 @@ def state_view(p: Player) -> dict:
                       "templateId": _template_of(b["topic"], b["template_id"])} for b in g.bug_lines],
         "lock": lock, "phase": g.phase, "status": g.status, "bestStreak": g.best_streak,
         "sent": g.sent, "received": g.received, "endReason": g.end_reason,
-        "land_in": land_in, "lock_in": lock_in,
+        "land_in": land_in, "lock_in": lock_in, "away_left": p.away_left(t),
     }
 
 
@@ -405,6 +414,7 @@ class Match:
             back = p.dropped_at is not None
             if back and p.game is not None:                    # the timers stood still while the player was away
                 away = max(0.0, now() - p.dropped_at)
+                p.away_used += away
                 p.land_at = None if p.land_at is None else p.land_at + away
                 p.lock_at = None if p.lock_at is None else p.lock_at + away
             p.dropped_at = None
@@ -449,6 +459,7 @@ class Match:
         for p in self.players():
             p.token = secrets.token_hex(16)
             p.final, p.dropped_at, p.rev = None, None, 0
+            p.away_used = 0.0                                   # (start() resets it too)
             p.served, p.history, p.counts, p.open_debug = {}, [], {}, None
             p.reset_lock()
             p.land_at = p.lock_at = None
@@ -464,9 +475,13 @@ class Match:
             self.push_lobby()
         elif self.phase == "playing":
             p.dropped_at = now()
+            p.grace = max(0.0, min(float(GRACE_S), AWAY_BUDGET_S - p.away_used))
+            if p.grace <= 0:                                    # the away budget is spent: no grace, same path as an expired one
+                self.check_grace(p.dropped_at)
+                return
             o = p.opponent
             if o is not None:
-                o.send({"t": "opponent_status", "connected": False, "grace_s": GRACE_S})
+                o.send({"t": "opponent_status", "connected": False, "grace_s": round(p.grace, 1)})
                 o.opp_dirty = True
         elif self.rematch_until is not None and self.rematch[p.index]:
             self.rematch[p.index] = False                       # gone: the other player's wish can no longer be met
@@ -489,6 +504,7 @@ class Match:
         for p in self.players():
             p.game = E.RescueGame(self.seed, self.level, "pvp")
             p.land_at = p.lock_at = None
+            p.away_used = 0.0
             if p.bot:
                 chosen = p.misaki or pvp_bot.LEGACY_LEVEL[self.level]
                 p.brain = pvp_bot.BotBrain(self.seed, pvp_bot.effective_level(chosen, p.training), p.training,
@@ -934,16 +950,21 @@ class Match:
         for p in self.humans():
             if p.coach is not None and self.phase == "playing" and t - p.last_look >= COACH_LOOK_S:
                 self.coach_look(p)
-        # disconnect grace
-        if self.phase == "playing":
-            expired = [p for p in self.humans() if p.dropped_at is not None and t - p.dropped_at >= GRACE_S]
-            if expired:
-                if all(not p.connected for p in self.humans()):
-                    self.finish(None, "both_disconnected")
-                else:
-                    self.finish(1 - expired[0].index, "disconnect")
+        self.check_grace(t)
         if self.phase == "playing":
             self.push_opponents()
+
+    def check_grace(self, t: float) -> None:
+        """Disconnect grace: a player whose current drop has lasted its grace (``Player.grace``: at most GRACE_S and at most
+        what is left of their AWAY_BUDGET_S) loses; when the other human is gone too, the match is a draw."""
+        if self.phase != "playing":
+            return
+        expired = [p for p in self.humans() if p.dropped_at is not None and t - p.dropped_at >= p.grace]
+        if expired:
+            if all(not p.connected for p in self.humans()):
+                self.finish(None, "both_disconnected")
+            else:
+                self.finish(1 - expired[0].index, "disconnect")
 
     # ---- the bot (Misaki, docs/pvp.md section 5) ----
     def bot_act(self, p: Player, t: float) -> None:

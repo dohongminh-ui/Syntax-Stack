@@ -381,6 +381,14 @@ export class PvpMatch {
     this.timerAt = performance.now();
     this.landIn = Number.isFinite(msg.you.land_in) ? Math.max(0, msg.you.land_in) : null;
     this.lockIn = Number.isFinite(msg.you.lock_in) ? Math.max(0, msg.you.lock_in) : null;
+    // Away budget (docs/pvp.md §4): after a reconnect that used some of it, warn once it runs low.
+    const away = Number(msg.you.away_left);
+    if (Number.isFinite(away)) {
+      if (this.awayLeft != null && away < this.awayLeft - 0.5 && away <= 10) {
+        toast(`Bạn chỉ còn ${Math.max(0, Math.floor(away))} giây được phép mất kết nối trong trận này.`, 4000);
+      }
+      this.awayLeft = away;
+    }
     this.restartFuse();
     this.settle();
     for (const w of this.stateWaiters.splice(0)) w(rev);

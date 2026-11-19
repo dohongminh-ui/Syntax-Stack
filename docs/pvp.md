@@ -185,13 +185,13 @@ Server → client:
 | --- | --- | --- |
 | `lobby` | `you: {nickname, rating}, opponent: {nickname, bot, connected, rating} \| null, level, starts_in` | waiting / countdown. `opponent` is `null` until paired; `rating` is the Elo (1000 for a new device) and `null` for the bot; `starts_in` is `null` or 3, 2, 1, 0 |
 | `start` | `seed, level, match_id, match_token, at, elapsed` | 3-2-1 done, play. `at` = server Unix time of the start; `elapsed` = seconds since then (0, or more when re-sent on a reconnect: use it instead of `at` to avoid clock skew) |
-| `state` | `you: {grid, tray, score, streak, items, pending, bugLines, lock, phase, status, bestStreak, sent, received, endReason, land_in, lock_in}`, `rev` | your full state after **every** change, including every change to your pending queue (incoming, cancel, landing, overtime, undo) (`rev` increases per player; `start`/new round restarts it). `land_in`: seconds until the timed landing (float, rounded to 0.1), `null` when nothing is pending; still reported while an open lock holds the timer (then it can be 0 or negative). `lock_in`: seconds left on the lock limit (float, 0.1), `null` without a lock. Seconds remaining, not absolute times: the state is pushed on changes only, so the client counts down locally between pushes |
+| `state` | `you: {grid, tray, score, streak, items, pending, bugLines, lock, phase, status, bestStreak, sent, received, endReason, land_in, lock_in, away_left}`, `rev` | your full state after **every** change, including every change to your pending queue (incoming, cancel, landing, overtime, undo) (`rev` increases per player; `start`/new round restarts it). `land_in`: seconds until the timed landing (float, rounded to 0.1), `null` when nothing is pending; still reported while an open lock holds the timer (then it can be 0 or negative). `lock_in`: seconds left on the lock limit (float, 0.1), `null` without a lock. Seconds remaining, not absolute times: the state is pushed on changes only, so the client counts down locally between pushes. `away_left`: seconds of the match's away budget left (float, 0.1; 30.0 at the start, section 4) |
 | `opponent` | `{grid, score, pending, lock: bool, phase, connected}` | opponent's board, at most 4× per second; `pending` is a **number** of rows |
 | `sent` | `lines, cancelled` | you sent / cancelled lines (for the animation); only when either is above 0 |
 | `incoming` | `lines, from_topic, overtime?` | lines added to your pending queue (`overtime: true` for the overtime lines) |
 | `landed` | `rows, timed?` | your pending lines just landed (not sent when the game ended). `timed: true` when the landing timer made them land (no placement of yours); absent after a placement. Sent just before the `state` that shows the landing |
 | `lock_timeout` | | your lock ran out of time and became a bug line (rule 14); sent just before the `state` that shows it. A puzzle open for that lock is stale |
-| `opponent_status` | `connected, grace_s` | opponent dropped (`grace_s` 20) / is back (0) |
+| `opponent_status` | `connected, grace_s` | opponent dropped (`grace_s`: the grace of this drop, 20 or less when their away budget is nearly spent, section 4) / is back (0) |
 | `end` | `winner: "you"\|"opponent"\|"draw", reason, you: {score, sent, received, locks}, opponent: {score, sent, received, locks, nickname, bot}, rating?: {before, after}` | match over (the last `opponent` and `state` are sent just before it) |
 | `rematch_status` | `you, opponent, expired?` | private duels after `end`, see below |
 | `error` | `code, message` | rejected action (e.g. illegal place: the client re-renders from the `state` that follows) |
@@ -230,7 +230,7 @@ rematch is a new search (the sockets are closed after `end`; `rematch` is `no_re
 
 ## 4. Disconnects (UX)
 
-- A dropped socket starts a **20-second grace**. The opponent sees an overlay "Đối thủ mất kết nối…
+- A dropped socket starts a **grace of at most 20 s** (see the away budget below). The opponent sees an overlay "Đối thủ mất kết nối…
   15 s" and their own board keeps working. The dropped player's board is frozen (no pending lines land
   on it while away).
 - Reconnecting with the same ticket within the grace resumes exactly: the server re-sends `start` (same
@@ -243,6 +243,13 @@ rematch is a new search (the sockets are closed after `end`; `rematch` is `no_re
   (`both_disconnected`: checked when the first grace runs out while the other is still gone). Lines the
   opponent sends keep queueing on a dropped player's board; nothing lands until they place again. Their landing
   timer and lock limit stand still while away (the deadlines move back by the time away).
+- **Away budget.** Each human has `AWAY_BUDGET_S` = 30 s of disconnected time per match, all drops together, so
+  dropping and rejoining can not pause a game for ever. Only time away during play counts (not the lobby or the
+  countdown). A drop's grace is `min(20, budget left)` and `opponent_status.grace_s` carries that value, so the
+  opponent's overlay counts down the right time. A reconnect subtracts the time spent away from the budget. A
+  drop with the budget already spent loses at once (`reason: disconnect`; if the other player is gone too, the
+  both-dropped draw rule applies). `state.you.away_left` reports what is left (0.1 s). A new round of a private
+  duel (rematch) resets it. The bot has no budget.
 - Closing the tab or tapping back = resign after a confirm dialog.
 - A server restart (deploy) ends live matches with `server_restart` (winner `draw`); no rating change.
   uvicorn closes the sockets (close code 1012) before the app can send anything on a SIGTERM, so in
