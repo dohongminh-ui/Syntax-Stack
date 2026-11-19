@@ -128,6 +128,9 @@ reorder lines, or find the bug.
 **Syntax Rows** trains writing: you build a program from code tiles and press Run, with unlimited
 retries and distractor tiles to keep you honest.
 
+**Misaki is in both.** In Syntax Rows she explains a wrong output prediction and answers your own
+explanation of the code. In Code Rescue she sums up your run and names the topic you missed most.
+
 ↳ Cut if short on time: The four puzzle types come from research. Parsons problems, reordering lines,
 give the same learning gains as writing code from scratch in less time (Ericson and colleagues).
 

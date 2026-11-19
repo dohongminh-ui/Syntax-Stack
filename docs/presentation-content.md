@@ -163,6 +163,7 @@ Learn Python by stacking real code
 | Row clears when… | You solve a code puzzle | Your program runs correctly |
 | Mistakes | One mistake = warning, two = crash | Unlimited retries |
 | Trains | Reading & recognising code | Writing code |
+| Misaki | Sums up your run, names the topic you missed most | Explains a wrong prediction, answers your explanation |
 
 - 4 topics: Variables · Conditions · Loops · Functions
 - 4 puzzle types: Fill the blank · Predict output · Reorder lines (Parsons) · Find the bug
