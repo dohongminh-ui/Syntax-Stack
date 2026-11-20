@@ -156,18 +156,22 @@ Mood to model mapping:
 
 | mood | expression | motion |
 | --- | --- | --- |
-| neutral | none | idle |
-| happy | none | raise hand |
-| excited | none | raise hand |
-| thinking | none | finger up |
-| worried | sweat | idle |
-| sad | tears | idle |
-| shy | `><` | idle |
+| neutral | relaxed face | idle |
+| happy | closed-mouth smile | hand on chest |
+| excited | open smile | hand on chest |
+| thinking | raised brow, slack-open mouth, white circle eyes | finger up |
+| worried | concerned mouth and brow, sweat | idle |
+| sad | lowered mouth corners, raised inner brows, tears | idle |
+| shy | small smile, squeezed eyes | idle |
+| dizzy | parted lips, white circle eyes | idle |
+
+The face sliders blend into each new mood. The stage clears the outgoing arm switch and joint angles
+when it changes gestures. While Misaki waits for a reply or writes a puzzle, the loading icon appears
+over her thinking face. With reduced motion enabled, the face changes immediately and the arms stay idle.
 
 The blush and heart-eye expressions are not used: on the tall form they read as flirtatious, which is
 wrong for a character talking to students. Replies the model wrote are labelled "MISAKI · AI". Authored
 lines (the greeting, the offline rules, the safety reply) are labelled "MISAKI".
-| dizzy | spiral eyes | idle |
 
 **Body type.** The model has a body-type parameter, `Clothes2` (default 0, 体型1 0.4, 体型2 1.0). The
 chibi form is the default. A "Dáng" switch on the stage (Chibi / Thường) changes it and the choice is

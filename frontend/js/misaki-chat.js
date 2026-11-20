@@ -205,7 +205,7 @@ async function send(raw) {
   ui.input.focus({ preventScroll: true });
   setBusy(true);
   const wait = typing('Misaki đang nghĩ');
-  setMood('thinking');
+  setMood('loading');
   let reply;
   try {
     reply = await api.misakiChat({ messages: payload(), context: { level: nav.level(), weak_topics: store.weakTopics(TOPICS, 4) } });
@@ -237,7 +237,7 @@ async function makePuzzle(a, key) {
   setBusy(true);
   key.disabled = true;
   const wait = typing('Misaki đang viết câu đố…');
-  setMood('thinking');
+  setMood('loading');
   let res = null;
   let status = 0;
   try {
@@ -363,6 +363,6 @@ export function openMisakiChat() {
   msgs = msgs || load() || [greeting()];
   renderAll();
   setBusy(busy);
-  setMood([...msgs].reverse().find((m) => m.role === 'misaki')?.mood);
+  setMood(busy ? 'loading' : [...msgs].reverse().find((m) => m.role === 'misaki')?.mood);
   $('mk-title').focus({ preventScroll: true });
 }

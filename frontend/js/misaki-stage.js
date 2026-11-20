@@ -13,18 +13,27 @@ const vendor = (file) => new URL('../vendor/' + file, import.meta.url).href;
 // Live2D's official URL: the CSP allows exactly this file (backend/app/main.py). It is not vendored (Live2D's licence).
 const CORE_URL = 'https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js';
 
-// mood -> what the model does (docs/misaki-chat.md section 6). `motion` is a model3.json motion group that holds a pose.
-const MOODS = {
-  neutral: { expressions: [], motion: null },
-  // No blush or heart eyes: in the tall form they read as flirtatious, wrong for a tutor talking to students.
-  happy: { expressions: [], motion: 'Raise' },
-  excited: { expressions: [], motion: 'Raise' },
-  thinking: { expressions: [], motion: 'Finger' },
-  worried: { expressions: ['sweat'], motion: null },
-  sad: { expressions: ['tears'], motion: null },
-  shy: { expressions: ['xx'], motion: null },
-  dizzy: { expressions: ['spiral'], motion: null },
+const THINKING_FACE = {
+  ParamBrowLY: 0.35, ParamBrowRY: 0.08, ParamMouthForm: -0.12, ParamMouthOpenY: 0.52, key3: 1,
 };
+// Face sliders and effect toggles from the DeepSeek-chan rig. Motions only pose the arms.
+const MOODS = {
+  neutral: { face: {} },
+  happy: { face: { ParamMouthForm: 0.45, EyeSmile: 0.25 }, motion: 'Raise' },
+  excited: { face: { ParamMouthForm: 0.75, ParamMouthOpenY: 0.28, EyeSmile: 0.5 }, motion: 'Raise' },
+  thinking: { face: THINKING_FACE, motion: 'Finger' },
+  loading: { face: { ...THINKING_FACE, key8: 1 }, motion: 'Finger' },
+  worried: { face: { BrowInnerUp: 0.3, ParamMouthForm: -0.25, key13: 1 } }, // sweat
+  sad: { face: { BrowInnerUp: 0.45, ParamMouthForm: -0.4, key2: 1 } }, // tears
+  shy: { face: { ParamMouthForm: 0.2, key5: 1 } }, // squeezed eyes
+  dizzy: { face: { ParamMouthOpenY: 0.15, key3: 1 } }, // white circle eyes
+};
+const FACE_PARAMS = [...new Set(Object.values(MOODS).flatMap(({ face }) => Object.keys(face)))];
+const ARM_PARAMS = {
+  Raise: ['Movement2', 'Param59', 'Param60', 'Param61', 'Param62'],
+  Finger: ['Movement3', 'Param36', 'Param39', 'Param40', 'Param41', 'Param42', 'Param43'],
+};
+const FACE_MS = 200;
 const HOLD_MS = 2600; // how long the raised hand / pointing finger stays before the "back" clip plays
 
 // Parts of the model the bundled Cubism framework cannot draw. They need per-drawable multiply/screen colours
@@ -124,7 +133,7 @@ export function mountStage(host, { isPhone = () => innerWidth < 900, bodySwitch 
   let mood = 'neutral';
   let live = null; // set once the model is up
   api.setMood = (m) => {
-    mood = MOODS[m] ? m : 'neutral';
+    mood = Object.hasOwn(MOODS, m) ? m : 'neutral';
     live?.apply(mood);
   };
   const set = (mode) => {
@@ -245,9 +254,35 @@ async function buildModel(PIXI, host, isPhone, getMood, bodySwitch) {
   // of it clipped at 0, so it is replaced by a full 0..1 cycle.
   im.breath?.setParameters?.([]);
   const core = im.coreModel;
+  const motionManager = im.motionManager;
+  const sliders = FACE_PARAMS.map((id) => ({ id, index: core.getParameterIndex(id), from: 0, value: 0 }));
+  const arms = Object.entries(ARM_PARAMS).map(([name, ids]) => [name, ids.map((id) => core.getParameterIndex(id))]);
+  let face = MOODS.neutral.face;
+  let faceStarted = 0;
+  let gesture = null; // owns one arm switch through its hold and return clip
+  let holdTimer = 0;
+  let returning = false;
+  motionManager.on('motionStart', (name) => { returning = name === `${gesture}Back`; });
+  motionManager.on('motionFinish', () => {
+    if (returning) gesture = null;
+    returning = false;
+  });
   im.on('afterMotionUpdate', () => {
-    const t = performance.now() / 1000;
+    const now = performance.now();
+    const t = now / 1000;
     const calm = reducedMotion() ? 0 : 1; // reduced motion: breathing only, no sway
+    // Cubism saves motion parameters here. Restore the unused arm's switch and joint angles together.
+    for (const [name, indices] of arms) {
+      if (calm && gesture === name) continue;
+      for (const index of indices) core.setParameterValueByIndex(index, 0);
+    }
+    // Set the face before physics so the eye, brow and cheek deformers respond to the sliders.
+    const progress = calm ? Math.min(1, (now - faceStarted) / FACE_MS) : 1;
+    const blend = 1 - (1 - progress) ** 3;
+    for (const slider of sliders) {
+      slider.value = lerp(slider.from, face[slider.id] ?? 0, blend);
+      core.setParameterValueByIndex(slider.index, slider.value);
+    }
     const fc = im.focusController;
     // belt and braces: never let a bad gaze value lock the pose (see the pointer handler)
     if (![fc.x, fc.y, fc.vx, fc.vy, fc.targetX, fc.targetY].every(Number.isFinite)) {
@@ -320,39 +355,49 @@ async function buildModel(PIXI, host, isPhone, getMood, bodySwitch) {
   window.addEventListener('pointermove', onMove, { passive: true });
   document.documentElement.addEventListener('mouseleave', () => im.focusController.focus(0, 0));
 
-  // expressions and gestures
-  const em = im.motionManager.expressionManager;
-  let held = null; // the motion group whose pose is being held
-  let holdTimer = 0;
-  let blush = 0;
-  im.on('beforeModelUpdate', () => {
-    if (blush) im.coreModel.addParameterValueById('key7', blush);
-  });
-
+  const stopGesture = () => {
+    if (gesture) motionManager.stopAllMotions();
+    gesture = null;
+    returning = false;
+  };
   const release = () => {
     clearTimeout(holdTimer);
-    if (!held) return;
-    const back = held + 'Back';
-    held = null;
-    model.motion(back, 0, MotionPriority.FORCE).catch(() => {});
+    holdTimer = 0;
+    if (!gesture) return;
+    const [armSwitch] = ARM_PARAMS[gesture];
+    // A return clip starts in the raised pose. Skip it if a fast reply arrived before the arm switched.
+    if (core.getParameterValueById(armSwitch) < 0.5) {
+      stopGesture();
+      return;
+    }
+    model.motion(`${gesture}Back`, 0, MotionPriority.FORCE).catch(() => {});
   };
 
   const apply = (name) => {
     const m = MOODS[name] || MOODS.neutral;
-    const expr = m.expressions[0];
-    if (expr) em?.setExpression(expr);
-    else em?.resetExpression();
-    blush = m.blush ? 1 : 0;
-    if (reducedMotion()) return; // reduced motion: expressions only, idle loop keeps running
-    clearTimeout(holdTimer);
-    if (m.motion) {
-      // the same pose is already held: keep it (restarting the clip would swap the arms again), only hold it longer
-      if (held !== m.motion) model.motion(m.motion, 0, MotionPriority.FORCE).catch(() => {});
-      held = m.motion;
-      holdTimer = setTimeout(release, HOLD_MS);
-    } else {
-      release();
+    if (face !== m.face) {
+      for (const slider of sliders) slider.from = slider.value;
+      face = m.face;
+      faceStarted = performance.now();
     }
+    if (reducedMotion()) {
+      clearTimeout(holdTimer);
+      holdTimer = 0;
+      stopGesture();
+      return;
+    }
+    if (!m.motion) {
+      if (holdTimer) release();
+      return;
+    }
+    if (gesture !== m.motion || !holdTimer) {
+      // Stop the old clip or reservation before a new gesture takes over the shared rig.
+      stopGesture();
+      gesture = m.motion;
+      model.motion(gesture, 0, MotionPriority.FORCE).catch(() => {});
+    }
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(release, HOLD_MS);
   };
 
   return {
