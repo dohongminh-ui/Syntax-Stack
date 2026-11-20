@@ -158,11 +158,11 @@ export function saveSkillsSeen(levels) {
 
 const MISAKI_LANGUAGE_KEY = 'syntaxstack.misaki.language';
 
-export function loadMisakiLanguage() {
+export function loadMisakiVoiceLanguage() {
   try { return localStorage.getItem(MISAKI_LANGUAGE_KEY); } catch { return null; }
 }
 
-export function saveMisakiLanguage(language) {
+export function saveMisakiVoiceLanguage(language) {
   try { localStorage.setItem(MISAKI_LANGUAGE_KEY, language); } catch { /* keep the choice in memory */ }
 }
 

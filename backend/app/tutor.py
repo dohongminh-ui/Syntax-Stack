@@ -189,8 +189,7 @@ def _run(task: str, context: dict, fallback: Any, client: Optional[str], lang: O
     ``ask(url, payload)`` makes the call and returns the validated reply (a string or a dict); it raises
     ``ValueError`` & co. for a bad reply. Returns ``(reply, "ai")`` or ``(fallback, "canned")``."""
     global _calls, _ai
-    if lang != "ja" or task not in (tutor_prompts.CHAT_TASK, "misaki_puzzle"):
-        lang = i18n.resolve(lang)
+    lang = i18n.resolve(lang)
     who = client_key(client)
     started = time.monotonic()
     kind = provider()

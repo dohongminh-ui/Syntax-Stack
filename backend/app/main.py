@@ -214,7 +214,7 @@ class MisakiChatRequest(BaseModel):
     messages: list[MisakiMessage] = Field(min_length=1, max_length=12)
     context: Optional[MisakiContext] = None
     voice: bool = False
-    language: Optional[Literal["vi", "en", "ja"]] = None
+    voice_language: Optional[Literal["vi", "en", "ja"]] = None
 
     @model_validator(mode="after")
     def _last_is_user(self):
@@ -231,7 +231,6 @@ class MisakiPuzzleRequest(BaseModel):
     topic: Topic
     idea: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     level: Level = "intermediate"
-    language: Optional[Literal["vi", "en", "ja"]] = None
 
 
 class PuzzleSubmission(BaseModel):
@@ -573,14 +572,12 @@ def custom_get(set_id: str, level: Level = "intermediate"):
 @app.post("/api/misaki/chat")
 def misaki_chat(req: MisakiChatRequest, request: Request):
     """A reply from Misaki: ``{text, source: ai|canned|safety, mood, action}``. Nothing is stored or logged."""
-    token = i18n.set_lang(req.language if req.language in i18n.LANGS else i18n.cur())
-    try:
-        reply = misaki.chat([m.model_dump() for m in req.messages],
-                            req.context.model_dump() if req.context else None, _client_ip(request),
-                            language=req.language)
-    finally:
-        i18n.reset(token)
-    if req.voice and reply["source"] != "safety" and (voice := misaki_voice.issue(reply["text"])):
+    translation = req.voice_language if req.voice and req.voice_language != i18n.cur() else None
+    reply = misaki.chat([m.model_dump() for m in req.messages],
+                        req.context.model_dump() if req.context else None, _client_ip(request),
+                        voice_language=translation)
+    spoken = reply.pop("speech_text", None) if translation else reply["text"]
+    if req.voice and spoken and reply["source"] != "safety" and (voice := misaki_voice.issue(spoken)):
         reply["voice"] = voice
     return reply
 
@@ -599,7 +596,7 @@ def misaki_speech(req: MisakiVoiceRequest, request: Request):
 @app.post("/api/misaki/puzzle")
 def misaki_puzzle(req: MisakiPuzzleRequest, request: Request):
     """A custom puzzle set that Misaki wrote (or an authored one): ``{set, source: ai|canned, note}``."""
-    return misaki.make_puzzle(req.topic, req.idea, req.level, _client_ip(request), language=req.language)
+    return misaki.make_puzzle(req.topic, req.idea, req.level, _client_ip(request))
 
 
 # --------------------------------------------------------------------------- live classroom

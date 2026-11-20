@@ -42,8 +42,8 @@ Request:
 
 - `messages`: 1 to 12 items, the last one has `role: "user"`. `role` is `user` or `misaki`, and `text`
   is 1 to 500 characters. The client keeps the history; the server stores nothing.
-- `language`: optional `"vi"`, `"en"`, or `"ja"`. The choice in the chat header controls Misaki's replies
-  and is saved in the browser. Without a choice, the chat uses the game's language.
+- `voice_language`: optional `"vi"`, `"en"`, or `"ja"` with `voice: true`. The voice selector in the chat
+  header is saved in the browser. Written replies always use the game's language (`X-Lang`).
 - `context` is optional and is a hint only. `level` is a `Level` and `weak_topics` holds 0 to 4 topics.
   It comes from the learner's own local mistake history.
 - `context.puzzle_review`, when present, contains `set_id` and up to eight recent submissions to the last
@@ -86,7 +86,7 @@ starts the activity. The tool call supplies the action, and the app supplies the
 ### `POST /api/misaki/puzzle`
 
 Request: `{"topic": "loops", "idea": "range bắt đầu từ 1", "level": "beginner"}`. `idea` is 0 to 200
-characters. The optional `language` field selects the language of Misaki's note.
+characters.
 
 1. If the tutor is configured, ask the AI task `misaki_puzzle` for `{"code", "note"}`. `code` is a Python
    program of at most 15 lines, in the custom-puzzle subset, on `topic`.
@@ -124,6 +124,10 @@ carries an expiring playback ticket for `POST /api/misaki/voice`, which returns 
 sends Misaki's reply to Gemini 3.8 Flash-Lite TTS, which speaks Vietnamese, English, and Japanese with
 the Leda voice. On a provider rate limit, speech falls back to Gemini 3.8 Flash TTS with Leda.
 Voice calls share the tutor's quotas.
+
+When the voice language differs from the game's language, the same chat tool call supplies a spoken
+translation. The browser prepares playback before revealing the bubble and shows the text after at most
+five extra seconds if audio is still loading. Muted or unavailable speech leaves the written reply visible.
 
 The browser estimates vowel shapes from the speech audio and blends the rig's mouth opening, form,
 pucker and funnel during playback. The current expression takes over when playback ends. Sending

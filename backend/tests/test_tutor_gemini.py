@@ -293,9 +293,9 @@ def test_n8n_flow_appends_the_same_english_line():
     assert "(body.lang === 'en' ? langEn : '')" in js
 
 
-def test_japanese_prompt_matches_the_n8n_flow():
+def test_speech_translation_prompt_matches_the_n8n_flow():
     js = next(n for n in json.loads(N8N_JSON.read_text(encoding="utf-8"))["nodes"] if n["name"] == "Build tutor request")["parameters"]["jsCode"]
-    assert "const langJa = " + json.dumps(tutor_prompts.LANG_JA, ensure_ascii=False) + ";" in js
-    for task in (tutor_prompts.CHAT_TASK, "misaki_puzzle"):
-        request = tutor_prompts.build_request({"task": task, "lang": "ja", "context": {}}, tutor_prompts.DEFAULT_MODEL)
-        assert request["systemInstruction"]["parts"][0]["text"].endswith(tutor_prompts.LANG_JA)
+    assert "const speechTranslation = " + json.dumps(tutor_prompts.SPEECH_TRANSLATION, ensure_ascii=False) + ";" in js
+    body = {"task": tutor_prompts.CHAT_TASK, "lang": "en", "context": {"voice_language": "ja"}}
+    request = tutor_prompts.build_request(body, tutor_prompts.DEFAULT_MODEL)
+    assert request["systemInstruction"]["parts"][0]["text"].endswith(tutor_prompts.LANG_EN + tutor_prompts.SPEECH_TRANSLATION)

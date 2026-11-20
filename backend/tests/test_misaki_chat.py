@@ -240,31 +240,31 @@ def test_safety_reply_does_not_offer_voice(client, ai):
     assert not ai.calls
 
 
-@pytest.mark.parametrize("language,text", [
-    ("vi", "Vòng lặp chạy từng bước một."),
-    ("en", "A loop runs one step at a time."),
-    ("ja", "ループは一つずつ処理するよ。"),
+@pytest.mark.parametrize("site,voice_language,text,spoken", [
+    ("en", "vi", "A loop runs one step at a time.", "Vòng lặp chạy từng bước một."),
+    ("vi", "en", "Vòng lặp chạy từng bước một.", "A loop runs one step at a time."),
+    ("en", "ja", "A loop runs one step at a time.", "ループは一つずつ処理するよ。"),
 ])
-def test_chat_language_switch_controls_the_reply_and_voice_transcript(client, ai, language, text):
+def test_voice_language_changes_only_the_playback_transcript(client, ai, site, voice_language, text, spoken):
     from app import misaki_voice
 
-    ai.reply["misaki_chat"] = {"text": text, "mood": "happy", "action": None}
-    headers = {"X-Lang": "vi" if language == "en" else "en"}
-    reply = client.post(CHAT, json={**say("Explain loops"), "language": language, "voice": True}, headers=headers).json()
-    assert ai.calls[-1]["lang"] == language
+    ai.reply["misaki_chat"] = {"text": text, "speech_text": spoken, "mood": "happy", "action": None}
+    request = {**say("Explain loops"), "voice_language": voice_language, "voice": True}
+    reply = client.post(CHAT, json=request, headers={"X-Lang": site}).json()
+    assert ai.calls[-1]["lang"] == site
+    assert ai.calls[-1]["context"]["voice_language"] == voice_language
     assert reply["source"] == "ai" and reply["text"] == text
-    assert misaki_voice.read_ticket(reply["voice"]["ticket"]) == text
+    assert "speech_text" not in reply
+    assert misaki_voice.read_ticket(reply["voice"]["ticket"]) == spoken
 
 
-def test_japanese_chat_fallback_and_puzzle_note(client, ai):
+def test_missing_translation_keeps_the_written_reply(client, ai):
     ai.reply["misaki_chat"] = {"text": "Let's practice Python!", "mood": "happy", "action": None}
-    reply = client.post(CHAT, json={**say("こんにちは"), "language": "ja"}).json()
-    assert reply["source"] == "canned" and "こんにちは" in reply["text"]
-    assert client.post(CHAT, json={**say("hi"), "language": "jp"}).status_code == 422
-
-    puzzle = client.post(PUZZLE, json={"topic": "loops", "language": "ja"}).json()
-    assert ai.calls[-1]["lang"] == "ja"
-    assert "プログラム" in puzzle["note"] and puzzle["set"]["puzzles"]
+    reply = client.post(CHAT, json={**say("Hi"), "voice": True, "voice_language": "ja"},
+                        headers={"X-Lang": "en"}).json()
+    assert reply["source"] == "ai" and reply["text"] == "Let's practice Python!"
+    assert "voice" not in reply
+    assert client.post(CHAT, json={**say("hi"), "voice_language": "jp"}).status_code == 422
 
 
 def test_button_decision_comes_from_the_tool_even_when_text_is_identical(client, ai):
