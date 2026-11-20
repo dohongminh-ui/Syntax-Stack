@@ -17,6 +17,7 @@ Clients are identified by a hash of their IP that is kept in memory only and for
 """
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import json
@@ -24,6 +25,7 @@ import logging
 import os
 import time
 from collections import OrderedDict
+from contextlib import contextmanager
 from datetime import date
 from threading import BoundedSemaphore, Lock
 from typing import Any, Callable, Optional
@@ -169,7 +171,7 @@ def reset() -> None:
 
 
 def _finish(task: str, started: float, outcome: str, value: Any, fallback: Any) -> tuple[Any, str]:
-    global _fallback
+    global _ai, _fallback
     ms = round((time.monotonic() - started) * 1000)
     if outcome.startswith("canned"):
         with _lock:
@@ -178,8 +180,37 @@ def _finish(task: str, started: float, outcome: str, value: Any, fallback: Any) 
         value, source = fallback, "canned"
     else:
         source = "ai"
+        if outcome == "ai":
+            with _lock:
+                _ai += 1
     logger.info("tutor task=%s outcome=%s latency_ms=%d", task, outcome, ms)
     return value, source
+
+
+@contextmanager
+def _call_slot(client: Optional[str]):
+    global _calls
+    if not _slots.acquire(blocking=False):
+        yield "canned:busy"
+        return
+    try:
+        who = client_key(client)
+        limit, per_client = daily_limit(), client_limit()
+        with _lock:
+            _roll_day()
+            used = _per_client.get(who, 0) if who else 0
+            if _calls >= limit:
+                over = "canned:limit"
+            elif who and (used >= per_client
+                          or (who not in _per_client and len(_per_client) >= MAX_TRACKED_CLIENTS)):
+                over = "canned:client_limit"
+            else:
+                over, _calls = "", _calls + 1
+                if who:
+                    _per_client[who] = used + 1
+        yield over
+    finally:
+        _slots.release()
 
 
 def _run(task: str, context: dict, fallback: Any, client: Optional[str], lang: Optional[str],
@@ -188,9 +219,7 @@ def _run(task: str, context: dict, fallback: Any, client: Optional[str], lang: O
 
     ``ask(url, payload)`` makes the call and returns the validated reply (a string or a dict); it raises
     ``ValueError`` & co. for a bad reply. Returns ``(reply, "ai")`` or ``(fallback, "canned")``."""
-    global _calls, _ai
     lang = i18n.resolve(lang)
-    who = client_key(client)
     started = time.monotonic()
     kind = provider()
     if kind is None:
@@ -210,22 +239,7 @@ def _run(task: str, context: dict, fallback: Any, client: Optional[str], lang: O
             _cache.move_to_end(key)
     if hit is not None:
         return _finish(task, started, "cached", copy.deepcopy(hit), fallback)
-    if not _slots.acquire(blocking=False):
-        return _finish(task, started, "canned:busy", None, fallback)
-    try:
-        per_client = client_limit()
-        with _lock:
-            _roll_day()
-            used = _per_client.get(who, 0) if who else 0
-            if _calls >= limit:
-                over = "canned:limit"
-            elif who and (used >= per_client
-                          or (who not in _per_client and len(_per_client) >= MAX_TRACKED_CLIENTS)):
-                over = "canned:client_limit"
-            else:
-                over, _calls = "", _calls + 1
-                if who:
-                    _per_client[who] = used + 1
+    with _call_slot(client) as over:
         if over:
             return _finish(task, started, over, None, fallback)
         try:
@@ -233,16 +247,61 @@ def _run(task: str, context: dict, fallback: Any, client: Optional[str], lang: O
         except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError) as exc:
             logger.warning("Tutor unavailable (%s)", type(exc).__name__)
             return _finish(task, started, "canned:error", None, fallback)
-        with _lock:
-            _ai += 1
-            if cache:
+        if cache:
+            with _lock:
                 _cache[key] = copy.deepcopy(reply)
                 _cache.move_to_end(key)
                 while len(_cache) > CACHE_SIZE:
                     _cache.popitem(last=False)
         return _finish(task, started, "ai", reply, fallback)
-    finally:
-        _slots.release()
+
+
+async def stream_voice(text: str, client: Optional[str], *, max_bytes: int):
+    """Relay Gemini's 24 kHz mono PCM audio within the same tutor quota and concurrency limit."""
+    started = time.monotonic()
+    count = 0
+    with _call_slot(client) as over:
+        if over:
+            _finish(tutor_prompts.VOICE_TASK, started, over, None, None)
+            return
+        outcome = "canned:error"
+        try:
+            async with httpx.AsyncClient(timeout=12, trust_env=False) as session:
+                for fallback in (False, True):
+                    body = tutor_prompts.build_voice_request({"context": {"text": text, "fallback": fallback}})
+                    body.update(stream=True, response_format={"type": "audio", "mime_type": "audio/l16", "sample_rate": 24000})
+                    async with session.stream("POST", tutor_prompts.VOICE_ENDPOINT, json=body,
+                                              headers={"x-goog-api-key": os.environ["SYNTAX_STACK_GEMINI_API_KEY"]}) as response:
+                        if response.status_code == 429 and not fallback:
+                            continue
+                        response.raise_for_status()
+                        async for line in response.aiter_lines():
+                            if not line.startswith("data: {"):
+                                continue
+                            event = json.loads(line[6:])
+                            if event.get("event_type") == "interaction.completed" and count:
+                                outcome = "ai"
+                                return
+                            delta = event.get("delta", {})
+                            if event.get("event_type") != "step.delta" or delta.get("type") != "audio":
+                                continue
+                            encoded = delta["data"]
+                            mime = delta.get("mime_type", "audio/l16").lower()
+                            if mime.split(";", 1)[0] != "audio/l16" or len(encoded) > 4 * ((max_bytes + 2) // 3):
+                                raise ValueError("Invalid speech stream format")
+                            pcm = base64.b64decode(encoded, validate=True)
+                            if count + len(pcm) > max_bytes or len(pcm) % 2:
+                                raise ValueError("Invalid speech stream length")
+                            if pcm:
+                                count += len(pcm)
+                                yield pcm
+                        raise ValueError("Incomplete speech stream")
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            logger.warning("Tutor voice stream unavailable (%s)", type(exc).__name__)
+            if count:
+                raise RuntimeError("Incomplete Misaki voice stream") from None
+        finally:
+            _finish(tutor_prompts.VOICE_TASK, started, outcome, None, None)
 
 
 def feedback(task: str, context: dict, fallback: str, client: Optional[str] = None,

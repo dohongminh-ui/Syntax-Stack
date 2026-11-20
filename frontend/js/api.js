@@ -15,8 +15,10 @@ async function mock() {
 const TIMEOUT_MS = 15000;
 const TUTOR_TIMEOUT_MS = 45000;
 
-async function request(method, url, body, { timeout = TIMEOUT_MS, headers = null, raw = false, binary = false } = {}) {
+async function request(method, url, body, { timeout = TIMEOUT_MS, headers = null, raw = false, response = false, signal } = {}) {
   const ctrl = new AbortController();
+  if (signal?.aborted) ctrl.abort();
+  else signal?.addEventListener('abort', () => ctrl.abort(), { once: true });
   const timer = setTimeout(() => ctrl.abort(), timeout);
   let res;
   try {
@@ -44,7 +46,7 @@ async function request(method, url, body, { timeout = TIMEOUT_MS, headers = null
     throw err;
   }
   if (raw || res.status === 204) return null;
-  if (binary) return res.arrayBuffer();
+  if (response) return res;
   return res.json();
 }
 
@@ -199,8 +201,8 @@ export async function misakiChat(body) {
   return request('POST', '/api/misaki/chat', body, { timeout: TUTOR_TIMEOUT_MS });
 }
 
-export function misakiVoice(ticket) {
-  return request('POST', '/api/misaki/voice', { ticket }, { timeout: TUTOR_TIMEOUT_MS, binary: true });
+export function misakiVoice(ticket, signal) {
+  return request('POST', '/api/misaki/voice', { ticket, stream: true }, { timeout: TUTOR_TIMEOUT_MS, response: true, signal });
 }
 
 /** body: { topic, idea, level } -> { set, source: 'ai'|'canned', note }. `set` has the custom-set shape. 429 = rate limited. */

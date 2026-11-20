@@ -12,7 +12,7 @@ services:
     environment:
       SYNTAX_STACK_TUTOR_URL: http://127.0.0.1:5678/webhook/syntax-stack-tutor
       SYNTAX_STACK_TUTOR_TOKEN: ${SYNTAX_STACK_TUTOR_TOKEN:-}
-      # Direct Gemini when n8n is not set up (n8n wins when both are configured)
+      # Direct Gemini for voice streaming and as the tutor provider when n8n is unavailable.
       SYNTAX_STACK_GEMINI_API_KEY: ${SYNTAX_STACK_GEMINI_API_KEY:-}
       SYNTAX_STACK_GEMINI_MODEL: ${SYNTAX_STACK_GEMINI_MODEL:-}
       # Asset version stamped on CSS/JS URLs; deploy/update.sh sets it to the git commit.

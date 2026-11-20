@@ -120,13 +120,15 @@ says so in her own words on the client.
 
 Misaki reads new chat replies aloud after the learner sends a message. The sound button in the
 game header mutes her, and the speaker button on a reply stops or replays that clip. The chat response
-carries an expiring playback ticket for `POST /api/misaki/voice`, which returns WAV audio. The server
+carries an expiring playback ticket for `POST /api/misaki/voice`. With `stream: true` and a server-side
+`SYNTAX_STACK_GEMINI_API_KEY`, the endpoint streams 24 kHz mono PCM. Other requests return a WAV. The server
 sends Misaki's reply to Gemini 3.8 Flash-Lite TTS, which speaks Vietnamese, English, and Japanese with
 the Leda voice. On a provider rate limit, speech falls back to Gemini 3.8 Flash TTS with Leda.
 Voice calls share the tutor's quotas.
 
 When the voice language differs from the game's language, the same chat tool call supplies a spoken
-translation. The browser reveals the reply when playback starts. If audio fails or has not started
+translation. The browser buffers about 300 ms of streamed audio before starting playback and revealing the reply.
+If audio fails or has not started
 after 15 seconds, it shows the reply and cancels autoplay. Muted speech also leaves the text visible.
 While audio plays, the current phrase is highlighted using estimated timing from the clip and transcript.
 

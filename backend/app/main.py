@@ -13,8 +13,9 @@ from typing import Annotated, Any, Literal, Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, WebSocket
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
@@ -225,6 +226,7 @@ class MisakiChatRequest(BaseModel):
 
 class MisakiVoiceRequest(BaseModel):
     ticket: str = Field(min_length=1, max_length=4096)
+    stream: bool = False
 
 
 class MisakiPuzzleRequest(BaseModel):
@@ -583,11 +585,27 @@ def misaki_chat(req: MisakiChatRequest, request: Request):
 
 
 @app.post("/api/misaki/voice")
-def misaki_speech(req: MisakiVoiceRequest, request: Request):
+async def misaki_speech(req: MisakiVoiceRequest, request: Request):
     text = misaki_voice.read_ticket(req.ticket)
     if not text:
         raise HTTPException(403, "Giọng nói này không còn khả dụng.")
-    wav = misaki_voice.synthesize(text, _client_ip(request))
+    client = _client_ip(request)
+    if req.stream and os.getenv("SYNTAX_STACK_GEMINI_API_KEY", "").strip():
+        audio = tutor.stream_voice(text, client, max_bytes=misaki_voice.MAX_WAV_BYTES)
+        first = await anext(audio, None)
+        if first is not None:
+            async def chunks():
+                try:
+                    yield first
+                    async for chunk in audio:
+                        yield chunk
+                finally:
+                    await audio.aclose()
+
+            return StreamingResponse(chunks(), media_type="application/octet-stream",
+                                     headers={"Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no"})
+        raise HTTPException(503, "Giọng nói của Misaki chưa sẵn sàng. Bạn thử lại sau nhé.")
+    wav = await run_in_threadpool(misaki_voice.synthesize, text, client)
     if not wav:
         raise HTTPException(503, "Giọng nói của Misaki chưa sẵn sàng. Bạn thử lại sau nhé.")
     return Response(wav, media_type="audio/wav", headers={"Cache-Control": "no-store"})

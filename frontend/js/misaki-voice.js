@@ -1,4 +1,5 @@
 import { misakiVoice } from './api.js';
+import { readVoiceStream } from './misaki-pcm.js';
 import { createVisemeSampler } from './misaki-visemes.js';
 import { isMuted, prepareAudio } from './sound.js';
 
@@ -11,48 +12,83 @@ export function createVoicePlayer(setSampler) {
 
   function stop() {
     if (!playing) return;
-    const { source, analyser, onState } = playing;
+    const { abort, sources, analyser, onState } = playing;
     playing = null;
-    if (source) {
+    abort.abort();
+    for (const source of sources) {
       source.onended = null;
       source.stop();
       source.disconnect();
     }
-    analyser?.disconnect();
+    analyser.disconnect();
     setSampler(null);
     onState(false);
   }
 
-  async function play(ticket, onState, onStart) {
+  async function play(ticket, onState, onStart, onClip) {
     if (isMuted() || !voiceSupported) return;
     stop();
     const context = prepareAudio();
     if (!context) return;
-    const current = { ticket, onState };
+    const analyser = context.createAnalyser();
+    analyser.connect(context.destination);
+    const current = { ticket, onState, analyser, abort: new AbortController(), sources: new Set() };
     playing = current;
     onState(true);
-    try {
-      if (context.state !== 'running') await context.resume();
-      if (playing !== current) return;
-      const buffer = clip?.ticket === ticket ? clip.buffer
-        : await context.decodeAudioData(await misakiVoice(ticket));
-      if (playing !== current) return;
-      clip = { ticket, buffer };
+    const timeline = [];
+    let next = 0;
+    let duration = 0;
+    let finished = false;
 
-      const analyser = context.createAnalyser();
-      current.analyser = analyser;
+    function elapsed() {
+      const now = context.currentTime;
+      const block = timeline.findLast(({ at }) => at <= now);
+      return block ? block.offset + Math.min(now - block.at, block.duration) : 0;
+    }
+
+    function enqueue(buffer, streamed) {
+      if (playing !== current) return;
       const source = context.createBufferSource();
       source.buffer = buffer;
       source.connect(analyser);
-      analyser.connect(context.destination);
+      const first = timeline.length === 0;
+      const now = context.currentTime;
+      const at = next >= now && !first ? next : now + (first ? 0.015 : 0.08);
+      next = at + buffer.duration;
+      timeline.push({ at, offset: duration, duration: buffer.duration });
+      duration += buffer.duration;
       source.onended = () => {
-        if (playing === current) stop();
+        current.sources.delete(source);
+        source.disconnect();
+        if (playing === current && finished && !current.sources.size) stop();
       };
-      setSampler(createVisemeSampler(analyser, context.sampleRate));
-      const startedAt = context.currentTime;
-      source.start(startedAt);
-      current.source = source;
-      onStart(buffer, () => context.currentTime - startedAt);
+      source.start(at);
+      current.sources.add(source);
+      if (first) {
+        setSampler(createVisemeSampler(analyser, context.sampleRate));
+        onStart(streamed ? null : buffer, elapsed);
+      }
+    }
+
+    try {
+      if (context.state !== 'running') await context.resume();
+      if (playing !== current) return;
+      if (clip?.ticket === ticket) {
+        enqueue(clip.buffer, false);
+      } else {
+        const response = await misakiVoice(ticket, current.abort.signal);
+        if (playing !== current) return;
+        const streamed = response.headers.get('content-type')?.startsWith('application/octet-stream');
+        const buffer = streamed
+          ? await readVoiceStream(response, context, (part) => enqueue(part, true), () => next <= context.currentTime)
+          : await context.decodeAudioData(await response.arrayBuffer());
+        if (playing !== current) return;
+        clip = { ticket, buffer };
+        if (streamed) onClip(buffer);
+        else enqueue(buffer, false);
+      }
+      finished = true;
+      if (!current.sources.size) stop();
     } catch (error) {
       if (playing !== current) return;
       stop();
@@ -60,9 +96,9 @@ export function createVoicePlayer(setSampler) {
     }
   }
 
-  async function toggle(ticket, onState, onStart) {
+  async function toggle(ticket, onState, onStart, onClip) {
     if (playing?.ticket === ticket) stop();
-    else await play(ticket, onState, onStart);
+    else await play(ticket, onState, onStart, onClip);
   }
 
   return { play, toggle, stop };

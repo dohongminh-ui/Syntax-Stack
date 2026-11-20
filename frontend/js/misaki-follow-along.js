@@ -92,6 +92,7 @@ export function createFollowAlong(text, transcript) {
 
   let frame;
   let active = -1;
+  let times;
   function highlight(index) {
     if (index === active) return;
     spans[active]?.classList.remove('is-speaking');
@@ -102,8 +103,20 @@ export function createFollowAlong(text, transcript) {
     cancelAnimationFrame(frame);
     highlight(-1);
   }
+  function align(buffer) {
+    times = phraseTimes(buffer, weights);
+  }
   function start(buffer, elapsed) {
-    const times = phraseTimes(buffer, weights);
+    if (buffer) align(buffer);
+    else {
+      const rate = /[\u3040-\u30ff]/.test(transcript) ? 8 : 15;
+      let offset = 0;
+      times = weights.map((value) => {
+        const time = offset;
+        offset += value / rate;
+        return time;
+      });
+    }
     function update() {
       const time = elapsed();
       highlight(times.findLastIndex((boundary) => boundary <= time));
@@ -111,5 +124,5 @@ export function createFollowAlong(text, transcript) {
     }
     update();
   }
-  return { spans, start, stop };
+  return { spans, start, stop, align };
 }

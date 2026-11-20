@@ -5,7 +5,7 @@ import re
 import httpx
 import pytest
 
-from app import custom, misaki, rows, tutor
+from app import custom, misaki, misaki_voice, rows, tutor
 
 CHAT = "/api/misaki/chat"
 PUZZLE = "/api/misaki/puzzle"
@@ -21,6 +21,7 @@ def _isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(custom, "_db_path_cache", None)
     monkeypatch.delenv("SYNTAX_STACK_TUTOR_URL", raising=False)
     monkeypatch.delenv("SYNTAX_STACK_TUTOR_TOKEN", raising=False)
+    monkeypatch.delenv("SYNTAX_STACK_GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("SYNTAX_STACK_TUTOR_DAILY_LIMIT", raising=False)
     monkeypatch.delenv("SYNTAX_STACK_TUTOR_CLIENT_LIMIT", raising=False)
     custom.reset_rate_limits()
@@ -220,6 +221,7 @@ def test_voice_is_on_demand_and_requires_a_valid_ticket(client, ai, monkeypatch)
     assert response.status_code == 200 and response.content == clip
     assert response.headers["content-type"] == "audio/wav"
     assert ai.calls[-1]["context"] == {"text": "Try changing the stop in range(4)."}
+    assert client.post(endpoint, json={"ticket": ticket, "stream": True}).content == clip
 
     request_tutor = tutor.request_tutor
     attempts = []
@@ -234,6 +236,40 @@ def test_voice_is_on_demand_and_requires_a_valid_ticket(client, ai, monkeypatch)
                         {"text": "Try changing the stop in range(4).", "fallback": True}]
 
 
+def test_voice_stream_relays_pcm_and_uses_the_shared_quota(client, ai, monkeypatch):
+    monkeypatch.setenv("SYNTAX_STACK_GEMINI_API_KEY", "stream-test")
+    monkeypatch.setenv("SYNTAX_STACK_TUTOR_DAILY_LIMIT", "1")
+    requests = []
+    real_client = httpx.AsyncClient
+
+    def upstream(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        assert request.headers["x-goog-api-key"] == "stream-test"
+        if len(requests) == 1:
+            return httpx.Response(429)
+        events = [
+            {"event_type": "step.delta", "delta": {"type": "audio", "mime_type": "audio/l16", "data": "AAECAw=="}},
+            {"event_type": "interaction.completed"},
+        ]
+        return httpx.Response(200, text="".join(f"data: {json.dumps(e)}\n\n" for e in events))
+
+    monkeypatch.setattr(tutor.httpx, "AsyncClient",
+                        lambda **options: real_client(transport=httpx.MockTransport(upstream), **options))
+    ticket = misaki_voice.issue("Let's practice Python!")["ticket"]
+    body = {"ticket": ticket, "stream": True}
+    endpoint = "/api/misaki/voice"
+    assert client.post(endpoint, json={**body, "ticket": "invalid"}).status_code == 403
+    response = client.post(endpoint, json=body)
+    assert response.status_code == 200 and response.content == b"\0\1\2\3"
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert [r["model"] for r in requests] == ["gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts"]
+    assert all(r["stream"] and r["generation_config"]["speech_config"] == [{"voice": "Leda"}] for r in requests)
+    assert tutor.stats()["calls_today"] == 1 and tutor.stats()["ai_today"] == 1
+    assert client.post(endpoint, json=body).status_code == 503
+    assert len(requests) == 2 and not ai.calls
+
+
 def test_safety_reply_does_not_offer_voice(client, ai):
     response = client.post(CHAT, json={**say("I want to die"), "voice": True}).json()
     assert response["source"] == "safety" and "voice" not in response
@@ -246,8 +282,6 @@ def test_safety_reply_does_not_offer_voice(client, ai):
     ("en", "ja", "A loop runs one step at a time.", "ループは一つずつ処理するよ。"),
 ])
 def test_voice_language_changes_only_the_playback_transcript(client, ai, site, voice_language, text, spoken):
-    from app import misaki_voice
-
     ai.reply["misaki_chat"] = {"text": text, "speech_text": spoken, "mood": "happy", "action": None}
     request = {**say("Explain loops"), "voice_language": voice_language, "voice": True}
     reply = client.post(CHAT, json=request, headers={"X-Lang": site}).json()

@@ -196,14 +196,17 @@ function voiceKey({ voice, text }) {
   };
   setState(false);
   button.addEventListener('click', () => {
-    voicePlayer.toggle(voice.ticket, setState, follow.start)
+    voicePlayer.toggle(voice.ticket, setState, follow.start, follow.align)
       .catch(() => toast(t('Giọng Misaki chưa sẵn sàng. Hãy thử lại.')));
   });
   const play = () => new Promise((resolve) => {
     voicePlayer.play(voice.ticket, (active) => {
       setState(active);
       if (!active) resolve();
-    }, follow.start).then(resolve, resolve);
+    }, (buffer, elapsed) => {
+      follow.start(buffer, elapsed);
+      resolve();
+    }, follow.align).then(resolve, resolve);
   });
   return { button, play, spans: follow.spans };
 }
