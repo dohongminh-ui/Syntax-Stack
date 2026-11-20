@@ -248,8 +248,13 @@ async function buildModel(PIXI, host, isPhone, getMood, bodySwitch) {
   im.on('afterMotionUpdate', () => {
     const t = performance.now() / 1000;
     const calm = reducedMotion() ? 0 : 1; // reduced motion: breathing only, no sway
-    const fx = im.focusController.x;
-    const fy = im.focusController.y;
+    const fc = im.focusController;
+    // belt and braces: never let a bad gaze value lock the pose (see the pointer handler)
+    if (![fc.x, fc.y, fc.vx, fc.vy, fc.targetX, fc.targetY].every(Number.isFinite)) {
+      Object.assign(fc, { x: 0, y: 0, vx: 0, vy: 0, targetX: 0, targetY: 0 });
+    }
+    const fx = fc.x;
+    const fy = fc.y;
     const sway = (period, amp, phase = 0) => calm * amp * Math.sin((t / period + phase) * Math.PI * 2);
     core.setParameterValueById('AngleX', fx * 24 + sway(6.5, 3));
     core.setParameterValueById('AngleY', fy * 18 + sway(4.7, 2, 0.3));
@@ -298,6 +303,9 @@ async function buildModel(PIXI, host, isPhone, getMood, bodySwitch) {
       // Not model.focus(): it aims from the centre of the whole 3749 x 7697 canvas (her legs) and snaps to full
       // deflection. Aim from her eye line instead and scale with distance, so she glances rather than rolls her eyes.
       const r = canvas.getBoundingClientRect();
+      // Screen closed or panel hidden: the canvas is 0 x 0 and the maths below would divide by zero. A NaN target
+      // never recovers (the smoothing keeps it NaN) and freezes her head in place when the chat is reopened.
+      if (r.width < 2 || r.height < 2) return;
       const s = model.scale.x; // same model units as place()
       const eye = { x: model.x + baseW * s * lerp(FRAMING.tall.cx, FRAMING.chibi.cx, body.value),
         y: model.y + baseH * s * lerp(EYE_LINE.tall, EYE_LINE.chibi, body.value) };
