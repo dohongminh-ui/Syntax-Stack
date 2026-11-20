@@ -21,7 +21,7 @@ const EXAMPLES = [
 
 let nav = { show: () => {}, home: () => {}, level: () => 'beginner' };
 let ed = null; // editor nodes, built once so pasted code survives leaving and re-entering the screen
-let st = { view: null, set: null, done: new Set(), playing: false, busy: false, token: 0 };
+let st = { view: null, set: null, preset: null, done: new Set(), playing: false, busy: false, token: 0 };
 
 export function initCustom(n) {
   nav = { ...nav, ...n };
@@ -208,6 +208,11 @@ function renderResult(set, { shared = false } = {}) {
     out.push(el('div', { class: 'cu-list-head' },
       el('h2', { class: 'report-h', text: `${set.puzzles.length} câu đố` }),
       enterKey('Chơi lần lượt', playAll, { id: 'cu-all' })));
+    if (st.preset?.onReview) {
+      const review = enterKey('Ôn lại với Misaki', st.preset.onReview, { id: 'cu-misaki-review' });
+      review.hidden = true;
+      out.push(review);
+    }
     out.push(el('ol', { class: 'cu-list' }, set.puzzles.map((p) => cardNode(p, set))));
   } else {
     out.push(el('p', { class: 'cm', text: 'Chưa tạo được câu đố nào từ chương trình này. Hãy thử một chương trình khác.' }));
@@ -229,13 +234,20 @@ function playOne(p) {
 
 async function openOne(p, closeLabel) {
   if (st.playing) return { response: null };
+  const { set, preset } = st;
   st.playing = true;
   try {
     const res = await openPuzzle({
-      puzzle: p, topic: topicOf(st.set), title: 'Câu đố của bạn', tag: 'TỰ TẠO',
+      puzzle: p, topic: topicOf(set), title: 'Câu đố của bạn', tag: 'TỰ TẠO',
       maxAttempts: 3, penalties: false, standalone: true, closeLabel, track: false,
+      onAttempt: preset?.onAttempt ? (answer) => {
+        if (st.set !== set) return;
+        preset.onAttempt(p.id, answer);
+        const review = $('cu-misaki-review');
+        if (review) review.hidden = false;
+      } : null,
     });
-    if (res.correct) {
+    if (res.correct && st.set === set) {
       st.done.add(p.id);
       refreshCard(p.id);
     }
@@ -273,11 +285,12 @@ function frame(shared, preset = null) {
 
 /**
  * Opens the custom-puzzle screen. `shared`: the id of a set to load. `preset`: a set already in hand
- * ({ set, note, back, backLabel }), as made by "Chat with Misaki"; it plays like a shared set (the program stays hidden).
+ * ({ set, note, back, backLabel, onAttempt, onReview }), as made by "Chat with Misaki"; it plays like a shared set.
  */
 export function openCustom({ shared = null, preset = null } = {}) {
   st.token++;
   st.busy = false;
+  st.preset = preset;
   const editorSlot = $('cu-editor');
   const result = $('cu-result');
   if (preset) {

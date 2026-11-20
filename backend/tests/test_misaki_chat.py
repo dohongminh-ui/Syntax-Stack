@@ -584,8 +584,83 @@ def test_puzzle_set_is_playable_through_the_custom_endpoints(client):
     assert again.status_code == 200 and len(again.json()["puzzles"]) == len(s["puzzles"])
 
 
+def _prediction_answers(set_view):
+    prediction = next(p for p in set_view["puzzles"] if p["type"] == "predict_output")
+    options = custom.get_puzzle(prediction["id"])["data"]["options"]
+    correct = next(opt for opt in options if opt["correct"])
+    wrong = next(opt for opt in options if not opt["correct"])
+    return prediction, correct, wrong
+
+
+def _review_request(set_view, puzzle, *options):
+    return say("What did I get right or wrong in your puzzles?") | {"context": {"puzzle_review": {
+        "set_id": set_view["id"], "attempts": [{"puzzle_id": puzzle["id"], "option_id": opt["id"]} for opt in options],
+    }}}
+
+
+def test_chat_uses_checked_wrong_and_correct_attempts_from_misakis_puzzle(client, ai):
+    ai.reply["misaki_puzzle"] = {"code": misaki.AUTHORED["loops"][0], "note": "Try this loops puzzle."}
+    headers = {"X-Lang": "en"}
+    set_view = client.post(PUZZLE, json={"topic": "loops"}, headers=headers).json()["set"]
+    puzzle, correct, wrong = _prediction_answers(set_view)
+    ai.reply["misaki_chat"] = {"text": "You got it right on your second try.", "mood": "happy", "action": None}
+    body = _review_request(set_view, puzzle, wrong, correct)
+    body["context"]["puzzle_review"]["attempts"][0].update(correct=True, expected_output="invented")
+    response = client.post(CHAT, json=body, headers=headers)
+    assert response.json()["source"] == "ai"
+    first, second = ai.calls[-1]["context"]["puzzle_review"]
+    assert first["correct"] is False and first["choice"] == wrong["text"]
+    assert first["expected_output"] is None and first["actual_output"] is None and first["solution"] is None
+    assert second["correct"] is True and second["choice"] == correct["text"]
+    assert second["expected_output"] == set_view["expected_output"] and second["solution"]
+
+
+def test_review_without_ai_uses_the_players_choice_and_verified_output(client):
+    headers = {"X-Lang": "en"}
+    set_view = client.post(PUZZLE, json={"topic": "loops"}, headers=headers).json()["set"]
+    puzzle, correct, wrong = _prediction_answers(set_view)
+    body = client.post(CHAT, json=_review_request(set_view, puzzle, wrong, correct), headers=headers).json()
+    assert body["source"] == "canned" and body["action"] is None
+    assert "1 correct, 1 incorrect" in body["text"]
+    assert f"You predicted `{wrong['text']}`" in body["text"] and set_view["expected_output"].strip() in body["text"]
+
+
+def test_review_ignores_unrelated_sets_and_invalid_submissions(client, ai):
+    own = client.post("/api/custom/sets", json={"code": misaki.AUTHORED["loops"][0]}).json()
+    puzzle, correct, _ = _prediction_answers(own)
+    assert client.post(CHAT, json=_review_request(own, puzzle, correct)).json()["source"] == "canned"
+    assert not ai.calls
+
+    made = client.post(PUZZLE, json={"topic": "loops"}).json()["set"]
+    generated_puzzle, _, _ = _prediction_answers(made)
+    body = _review_request(made, generated_puzzle, {"id": "missing"})
+    body["context"]["puzzle_review"]["attempts"].append({"puzzle_id": puzzle["id"], "option_id": correct["id"]})
+    body["messages"][-1]["text"] = "Please review my last attempt."
+    body = client.post(CHAT, json=body, headers={"X-Lang": "en"}).json()
+    assert body["source"] == "canned" and "couldn't find a checked attempt" in body["text"]
+    assert [call["task"] for call in ai.calls] == ["misaki_puzzle"]
+
+
+def test_review_checks_the_players_parsons_order_in_the_sandbox(client, ai):
+    headers = {"X-Lang": "en"}
+    ai.reply["misaki_puzzle"] = {"code": misaki.AUTHORED["loops"][0], "note": "Try this loop puzzle."}
+    set_view = client.post(PUZZLE, json={"topic": "loops"}, headers=headers).json()["set"]
+    puzzle = next(p for p in set_view["puzzles"] if p["type"] == "parsons")
+    answer = custom.get_puzzle(puzzle["id"])["data"]["solution"]
+    wrong = [{**line, "indent": 0} for line in answer]
+    body = _review_request(set_view, puzzle)
+    body["context"]["puzzle_review"]["attempts"] = [
+        {"puzzle_id": puzzle["id"], "order": order} for order in (wrong, answer)
+    ]
+    ai.reply["misaki_chat"] = {"text": "You fixed the loop body's indentation.", "mood": "happy", "action": None}
+    assert client.post(CHAT, json=body, headers=headers).json()["source"] == "ai"
+    first, second = ai.calls[-1]["context"]["puzzle_review"]
+    assert not first["correct"] and first["solution"] is None
+    assert second["correct"] and "\n    total = total + i" in second["choice"]
+
+
 def test_puzzle_when_every_authored_program_fails(client, monkeypatch):
-    def boom(code, level, client_ip):
+    def boom(code, level, client_ip, *, from_misaki):
         raise custom.CustomError("no", 422)
 
     monkeypatch.setattr(custom, "create_set", boom)

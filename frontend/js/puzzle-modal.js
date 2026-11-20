@@ -40,7 +40,8 @@ function enterKey(label, onclick, { id, disabled = false, cls = '' } = {}) {
  */
 export function openPuzzle(opts) {
   const { puzzle, topic, title, boss = null, tag = null, maxAttempts = 1, free = 0, penalties = true,
-    awardText, startHint = 0, onResult = null, track = true, standalone = false, intro = '', introSource = 'canned', closeLabel = 'Về báo cáo', clock = null, closeOn = null } = opts;
+    awardText, startHint = 0, onResult = null, onAttempt = null, track = true, standalone = false,
+    intro = '', introSource = 'canned', closeLabel = 'Về báo cáo', clock = null, closeOn = null } = opts;
   // clock: { get: () => seconds left, total } (PvP lock limit only; solo modes pass nothing). closeOn: a promise that closes the panel when it settles.
   const root = document.getElementById('modal-root');
   const app = document.getElementById('app');
@@ -351,6 +352,7 @@ export function openPuzzle(opts) {
         render();
         return;
       }
+      onAttempt?.(answer);
       if (!res.correct) {
         st.wrongAnswer = answer;
         if (!standalone && !api.isMock) recordMistake({ topic, puzzleId: puzzle.id });

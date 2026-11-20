@@ -185,9 +185,27 @@ class MisakiMessage(BaseModel):
     text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 
 
+class OrderItem(BaseModel):
+    line_id: str = Field(max_length=40)
+    indent: int
+
+
+class MisakiAttempt(BaseModel):
+    puzzle_id: str = Field(max_length=20)
+    option_id: Optional[str] = Field(default=None, max_length=40)
+    order: Optional[list[OrderItem]] = Field(default=None, max_length=30)
+    reveal: bool = False
+
+
+class MisakiPuzzleReview(BaseModel):
+    set_id: str = Field(pattern=r"^[a-z2-7]{8}$")
+    attempts: list[MisakiAttempt] = Field(min_length=1, max_length=misaki.MAX_REVIEW_ATTEMPTS)
+
+
 class MisakiContext(BaseModel):
     level: Optional[Level] = None
     weak_topics: list[Topic] = Field(default_factory=list, max_length=4)
+    puzzle_review: Optional[MisakiPuzzleReview] = None
 
 
 class MisakiChatRequest(BaseModel):
@@ -205,11 +223,6 @@ class MisakiPuzzleRequest(BaseModel):
     topic: Topic
     idea: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     level: Level = "intermediate"
-
-
-class OrderItem(BaseModel):
-    line_id: str = Field(max_length=40)
-    indent: int
 
 
 class AnswerRequest(BaseModel):
@@ -411,25 +424,9 @@ def puzzle_explain(puzzle_id: str, req: AnswerRequest, request: Request):
                                diagnose=_diagnoser(puzzle_id))
     if result["correct"]:
         raise HTTPException(422, tr("Câu trả lời này đã đúng.", "This answer is already correct."))
-    data = puzzle["data"]
-    code = puzzle["code"]
-    if puzzle["type"] == "parsons":
-        lines = {line["id"]: line["text"] for line in data["lines"]}
-        choice = "\n".join("    " * item["indent"] + lines[item["line_id"]] for item in order)
-    else:
-        option = next(item for item in data["options"] if item["id"] == req.option_id)
-        choice = option["text"]
-        if puzzle["type"] == "find_bug":
-            line_number = next(i for i, line in enumerate(data["lines"], 1)
-                               if line["id"] == option["line_id"])
-            choice = tr(f"Dòng {line_number}: {choice}", f"Line {line_number}: {choice}")
-            code = "\n".join("    " * line["indent"] + line["text"] for line in data["lines"])
-    return tutor.feedback("explain", {
-        "prompt": i18n.pick(puzzle, "prompt"), "type": puzzle["type"], "code": code,
-        "choice": choice, "diagnosis": result["message"], "actual_output": result["actual_output"],
-        "expected_output": puzzle["expected_output"], "reference": result["explanation"],
-        "solution": result["solution_code"],
-    }, result["explanation"] or result["message"], client=_client_ip(request))
+    evidence = bank.attempt_context(puzzle, result, option_id=req.option_id, order=order)
+    return tutor.feedback("explain", evidence, result["explanation"] or result["message"],
+                          client=_client_ip(request))
 
 
 @app.get("/api/puzzle/{puzzle_id}/rematch")

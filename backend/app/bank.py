@@ -217,6 +217,29 @@ def _find_option(data: dict, option_id: Optional[str]) -> dict:
                        f"option_id '{option_id}' does not belong to this puzzle."))
 
 
+def attempt_context(row: dict, result: dict, *, option_id: Optional[str] = None,
+                    order: Optional[list[dict]] = None) -> dict:
+    """Tutor evidence for an already checked attempt, limited to what the game revealed."""
+    typ, data = row["type"], row["data"]
+    code = row["code"]
+    if typ == "parsons":
+        lines = {line["id"]: line["text"] for line in data["lines"]}
+        choice = "\n".join("    " * item["indent"] + lines[item["line_id"]] for item in order or [])
+    else:
+        option = _find_option(data, option_id)
+        choice = option["text"]
+        if typ == "find_bug":
+            number = next(i for i, line in enumerate(data["lines"], 1) if line["id"] == option["line_id"])
+            choice = tr(f"Dòng {number}: {choice}", f"Line {number}: {choice}")
+            code = "\n".join("    " * line["indent"] + line["text"] for line in data["lines"])
+    return {
+        "prompt": i18n.pick(row, "prompt"), "type": typ, "code": code,
+        "choice": choice, "diagnosis": result["message"], "actual_output": result["actual_output"],
+        "expected_output": row["expected_output"] if typ != "predict_output" or result["solution_code"] is not None else None,
+        "reference": result["explanation"], "solution": result["solution_code"],
+    }
+
+
 def check_answer(row: dict, *, option_id: Optional[str] = None, order: Optional[list[dict]] = None,
                  line_id: Optional[str] = None, reveal: bool = False, diagnose=None,
                  lang: Optional[str] = None) -> dict:

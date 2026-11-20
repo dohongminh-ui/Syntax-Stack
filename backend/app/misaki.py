@@ -13,7 +13,7 @@ import unicodedata
 from functools import partial
 from typing import Any, Optional
 
-from . import custom, i18n, rows, tutor
+from . import bank, custom, i18n, rows, tutor
 from .i18n import tr
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,7 @@ MAX_RAW_TEXT = 2500     # what we accept from the tutor before cutting it down
 MAX_IDEA = 200
 MAX_NOTE = 300
 MAX_CODE = 2500         # a puzzle reply is bigger than a chat reply; create_set enforces its own, lower, limit
+MAX_REVIEW_ATTEMPTS = 8  # up to two submissions per puzzle in the latest set
 MISAKI_LEVELS = (1, 2, 3, 4)
 ACTION_TYPES = ("rescue", "rows", "practice_tray", "skills", "pvp_training", "make_puzzle")
 
@@ -390,24 +391,85 @@ def _pick(options: list[dict], messages: list[dict]) -> dict:
 # --------------------------------------------------------------------------- chat flow
 
 
-def _ai_context(messages: list[dict], context: Optional[dict]) -> dict:
+_REVIEW_QUESTION = re.compile(
+    r"\b(?:review|how did i do|what did i get|what (?:did i do|went) wrong|why (?:was|is) (?:my|that|it)|"
+    r"which (?:puzzles?|answers?)|on lai|dung va sai|dung o dau|sai o dau|tai sao minh|vi sao minh)\b"
+)
+
+
+def _checked_review(pending: dict) -> list[dict]:
+    try:
+        puzzles = custom.misaki_puzzles(pending["set_id"])
+    except bank.BankError:
+        return []
+    checked = []
+    counts: dict[str, int] = {}
+    for attempt in reversed(pending["attempts"]):
+        puzzle_id = attempt["puzzle_id"]
+        puzzle = puzzles.get(puzzle_id)
+        if puzzle is None or counts.get(puzzle_id, 0) >= 2:
+            continue
+        option_id, order = attempt.get("option_id"), attempt.get("order")
+        try:
+            result = bank.check_answer(puzzle, option_id=option_id, order=order,
+                                       reveal=attempt.get("reveal", False), diagnose=custom.diagnose)
+            evidence = bank.attempt_context(puzzle, result, option_id=option_id, order=order)
+        except bank.BankError:
+            continue
+        counts[puzzle_id] = counts.get(puzzle_id, 0) + 1
+        checked.append({**evidence, "correct": result["correct"], "error_group": result["error_group"]})
+    return list(reversed(checked))
+
+
+def _review_reply(review: list[dict]) -> dict:
+    right = sum(attempt["correct"] for attempt in review)
+    wrong = len(review) - right
+    summary = tr(f"Các lượt gần đây: {right} đúng, {wrong} sai.", f"Recent attempts: {right} correct, {wrong} incorrect.")
+    details = [summary]
+    latest_wrong = next((attempt for attempt in reversed(review) if not attempt["correct"]), None)
+    if latest_wrong:
+        detail = latest_wrong["reference"] or latest_wrong["diagnosis"]
+        if latest_wrong["type"] == "predict_output":
+            choice = " · ".join(latest_wrong["choice"].splitlines())
+            detail = tr(f"Bạn đoán `{choice}`. ", f"You predicted `{choice}`. ") + detail
+        details.append(detail)
+    latest_right = next((attempt for attempt in reversed(review) if attempt["correct"]), None)
+    if latest_right:
+        details.append(tr("Ở lượt đúng gần nhất, bạn đã giải được câu đố. ", "On your latest correct try, you solved it. ")
+                       + (latest_right["reference"] or latest_right["diagnosis"]))
+    return {"text": clean_text(" ".join(details), MAX_TEXT), "mood": "thinking" if wrong else "happy", "action": None}
+
+
+def _ai_context(messages: list[dict], context: Optional[dict], review: list[dict]) -> dict:
     ctx = {"messages": [{"role": m["role"], "text": m["text"]} for m in messages],
            "rows_levels": sorted(rows_level_ids())}
     if context:
         ctx["learner"] = {"level": context.get("level"), "weak_topics": list(context.get("weak_topics") or [])}
+    if review:
+        ctx["puzzle_review"] = review
     return ctx
 
 
 def chat(messages: list[dict], context: Optional[dict], client: Optional[str]) -> dict:
     """``{"text", "source", "mood", "action"}``. The safety check runs first and never calls the tutor."""
-    if is_crisis(messages[-1]["text"]):
+    last = messages[-1]["text"]
+    if is_crisis(last):
         return safety_reply()
-    canned = canned_chat(messages, context)
-    if not tutor.configured():
+    folded = fold(last)
+    configured = tutor.configured()
+    wants_review = bool(_REVIEW_QUESTION.search(folded))
+    pending = (context or {}).get("puzzle_review")
+    review = _checked_review(pending) if pending and (configured or wants_review) else []
+    if pending and wants_review and not review:
+        return {"text": tr("Mình chưa tìm thấy lượt làm đã chấm. Bạn thử trả lời một câu đố mới của mình nhé.",
+                           "I couldn't find a checked attempt. Try answering one of my new puzzles first."),
+                "mood": "thinking", "action": None, "source": "canned"}
+    canned = _review_reply(review) if review and wants_review else canned_chat(messages, context)
+    if not configured:
         return {**canned, "source": "canned"}
-    topics = _strong_topics(fold(messages[-1]["text"]))
+    topics = _strong_topics(folded)
     validate = partial(validate_chat_reply, requested_topic=topics[0] if len(topics) == 1 else None)
-    return tutor.ask_json("misaki_chat", _ai_context(messages, context), canned, validate, client=client)
+    return tutor.ask_json("misaki_chat", _ai_context(messages, context, review), canned, validate, client=client)
 
 
 # --------------------------------------------------------------------------- puzzle flow (spec section 2)
@@ -451,7 +513,7 @@ def make_puzzle(topic: str, idea: str, level: str, client: Optional[str]) -> dic
                                {"code": "", "note": ""}, validate_puzzle_reply, client=client)
         if reply["source"] == "ai":
             try:
-                made = custom.create_set(reply["code"], level, client)
+                made = custom.create_set(reply["code"], level, client, from_misaki=True)
             except custom.CustomError as exc:
                 if _is_rate_limit(exc):
                     raise
@@ -465,7 +527,8 @@ def make_puzzle(topic: str, idea: str, level: str, client: Optional[str]) -> dic
     last: Optional[Exception] = None
     for code in programs:
         try:
-            return {"set": custom.create_set(code, level, client), "source": "canned", "note": _canned_note(topic)}
+            return {"set": custom.create_set(code, level, client, from_misaki=True),
+                    "source": "canned", "note": _canned_note(topic)}
         except custom.CustomError as exc:
             if _is_rate_limit(exc):
                 raise

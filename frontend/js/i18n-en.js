@@ -893,6 +893,8 @@ export const EN = new Map([
   ["Câu đố từ Misaki", "Puzzles from Misaki"],
   ["Misaki viết một chương trình Python nhỏ, hệ thống kiểm chứng và biến nó thành câu đố.", "Misaki writes a small Python program, and the system checks it and turns it into puzzles."],
   ["Về cuộc trò chuyện", "Back to the chat"],
+  ["Ôn lại với Misaki", "Review with Misaki"],
+  ["Mình đã làm đúng và sai ở đâu trong bộ câu đố này?", "What did I get right or wrong in your puzzles?"],
   ["Thiếu tin nhắn của bạn.", "Your message is missing."],
   ["Dáng", "Form"],
   ["Ẩn Misaki", "Hide Misaki"],

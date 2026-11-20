@@ -2,6 +2,7 @@
 // Answers live here and are checked client-side for the mock only; the real client never sees them.
 
 import { pvpServed, pvpAnswered, pvpHinted } from './mock-pvp.js';
+import { lang, t } from './i18n.js';
 
 const T = {
   variables: 'var',
@@ -375,6 +376,21 @@ export async function misakiChat(body) {
       text: 'Mình rất vui vì bạn đã nói với mình. Chuyện này quan trọng lắm, nhưng mình chỉ là một nhân vật trong trò chơi nên không giúp bạn đủ được. Bạn hãy nói ngay với một người lớn bạn tin tưởng hoặc thầy cô nhé. Bạn cũng có thể gọi Tổng đài quốc gia bảo vệ trẻ em 111 (miễn phí, 24/7).',
       source: 'safety', mood: 'worried', action: null,
     };
+  }
+  const review = body.context?.puzzle_review;
+  if (review?.set_id === 'mock-set' && /\b(review|right or wrong|how did i do|what went wrong|on lai|dung va sai|sai o dau)\b/.test(f)) {
+    const checked = review.attempts.flatMap((attempt) => {
+      const entry = byId(attempt.puzzle_id);
+      return entry ? [check(entry, attempt)] : [];
+    });
+    if (checked.length) {
+      const right = checked.filter((attempt) => attempt.ok).length;
+      const wrong = checked.length - right;
+      const detail = checked.filter((attempt) => !attempt.ok).at(-1);
+      const summary = lang() === 'en' ? `Recent attempts: ${right} correct, ${wrong} incorrect.`
+        : `Các lượt gần đây: ${right} đúng, ${wrong} sai.`;
+      return { text: `${summary} ${t(detail?.message || 'Chính xác!')}`, source: 'canned', mood: wrong ? 'thinking' : 'happy', action: null };
+    }
   }
   const bored = MK_BORED.test(f);
   const stuck = MK_STUCK.test(f);

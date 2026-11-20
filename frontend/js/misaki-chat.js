@@ -13,9 +13,13 @@ import { misakiAvatar, misakiTitle } from './misaki.js';
 import { showStrip, setMode, setStreak } from './strip.js';
 import { openCustom } from './custom.js';
 import { mountStage } from './misaki-stage.js';
+import { t } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
 const STORE_KEY = 'syntaxstack.misaki.chat';
+const REVIEW_KEY = 'syntaxstack.misaki.review';
+const REVIEW_QUESTION = 'Mình đã làm đúng và sai ở đâu trong bộ câu đố này?';
+const MAX_REVIEW_ATTEMPTS = 8;
 const MAX_INPUT = 500; // API: 1 to 500 characters per message
 const MAX_MESSAGES = 12; // API: 1 to 12 messages per request
 const MAX_KEPT = 60;
@@ -38,6 +42,7 @@ let msgs = null; // [{ role: 'misaki' | 'user', text, mood?, action?, local? }]
 let busy = false;
 let onScreen = false; // the stage is in view (the screen is open)
 let soloed = false; // the learner hid the stage panel
+let review = loadReview();
 
 export function initMisakiChat(n) {
   nav = { ...nav, ...n, run: { ...(n.run || {}) } };
@@ -88,13 +93,40 @@ function actionLabel(a) {
 // ---- history -----------------------------------------------------------------------------------------------------
 const greeting = () => ({ role: 'misaki', text: GREETING, mood: 'happy', local: true });
 
+function loadReview() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(REVIEW_KEY));
+    if (typeof saved?.set_id === 'string' && Array.isArray(saved.attempts)) return saved;
+  } catch {
+    /* the review is optional */
+  }
+  return null;
+}
+
+function saveReview(value) {
+  review = value;
+  try {
+    if (value) sessionStorage.setItem(REVIEW_KEY, JSON.stringify(value));
+    else sessionStorage.removeItem(REVIEW_KEY);
+  } catch {
+    /* keep the review in memory when storage is blocked */
+  }
+}
+
+function recordAttempt(setId, puzzleId, answer) {
+  const attempts = review?.set_id === setId ? review.attempts : [];
+  const last = attempts.filter((entry) => entry.puzzle_id === puzzleId).at(-1);
+  const recent = attempts.filter((entry) => entry.puzzle_id !== puzzleId || entry === last);
+  saveReview({ set_id: setId, attempts: [...recent, { puzzle_id: puzzleId, ...answer }].slice(-MAX_REVIEW_ATTEMPTS) });
+}
+
 function load() {
   try {
     const raw = JSON.parse(sessionStorage.getItem(STORE_KEY));
     if (Array.isArray(raw) && raw.length) {
       return raw
         .filter((m) => m && (m.role === 'user' || m.role === 'misaki') && typeof m.text === 'string' && m.text)
-        .map((m) => ({ role: m.role, text: m.text.slice(0, 700), mood: m.mood, action: cleanAction(m.action), local: !!m.local, ai: m.ai === true }))
+        .map((m) => ({ role: m.role, text: m.text.slice(0, 700), mood: m.mood, action: cleanAction(m.action), local: !!m.local }))
         .slice(-MAX_KEPT);
     }
   } catch {
@@ -118,9 +150,8 @@ function payload() {
 }
 
 // ---- DOM ---------------------------------------------------------------------------------------------------------
-// "· AI" only on replies the model actually wrote; authored lines (greeting, offline rules, safety) say just MISAKI.
-const head = (ai = false) => el('div', { class: 'tutor-head' }, misakiAvatar({ cls: 'tutor-badge' }),
-  el('span', { class: 'tutor-label', text: ai ? 'MISAKI · AI' : 'MISAKI' }));
+const head = () => el('div', { class: 'tutor-head' }, misakiAvatar({ cls: 'tutor-badge' }),
+  el('span', { class: 'tutor-label', text: 'MISAKI' }));
 
 function actionKey(action) {
   const k = keycap({ tag: 'button', topic: 'neutral', legend: actionLabel(action), legendClass: 'kb-label', variant: 'btn', enter: true, cls: 'mk-action' });
@@ -136,7 +167,7 @@ function rowFor(m) {
     return el('li', { class: 'mk-row mk-row-me' }, bubble);
   }
   return el('li', { class: 'mk-row mk-row-ai' },
-    el('div', { class: 'tutor mk-msg' }, head(!!m.ai), el('p', { class: 'tutor-body' }, richText(m.text))),
+    el('div', { class: 'tutor mk-msg' }, head(), el('p', { class: 'tutor-body' }, richText(m.text))),
     m.action ? actionKey(m.action) : null);
 }
 
@@ -208,13 +239,15 @@ async function send(raw) {
   setMood('loading');
   let reply;
   try {
-    reply = await api.misakiChat({ messages: payload(), context: { level: nav.level(), weak_topics: store.weakTopics(TOPICS, 4) } });
+    const context = { level: nav.level(), weak_topics: store.weakTopics(TOPICS, 4) };
+    if (review?.attempts.length) context.puzzle_review = review;
+    reply = await api.misakiChat({ messages: payload(), context });
   } catch {
     reply = { text: SAY.offline, mood: 'worried', action: null, local: true };
   }
   wait.remove();
   const text2 = typeof reply?.text === 'string' && reply.text.trim() ? reply.text.trim().slice(0, 700) : SAY.offline;
-  append({ role: 'misaki', text: text2, mood: reply?.mood, action: cleanAction(reply?.action), local: !!reply?.local || text2 === SAY.offline, ai: reply?.source === 'ai' });
+  append({ role: 'misaki', text: text2, mood: reply?.mood, action: cleanAction(reply?.action), local: !!reply?.local || text2 === SAY.offline });
   setMood(reply?.mood);
   setBusy(false);
 }
@@ -260,7 +293,14 @@ async function makePuzzle(a, key) {
   setMood('happy');
   setBusy(false);
   if (ui.root.hidden) return; // the learner left while she was writing: the note waits in the chat
-  openCustom({ preset: { set: res.set, note, back: openMisakiChat, backLabel: 'Về cuộc trò chuyện' } });
+  openCustom({ preset: {
+    set: res.set, note, back: openMisakiChat, backLabel: 'Về cuộc trò chuyện',
+    onAttempt: (id, answer) => recordAttempt(res.set.id, id, answer),
+    onReview: () => {
+      openMisakiChat();
+      send(t(REVIEW_QUESTION));
+    },
+  } });
 }
 
 // ---- composer ----------------------------------------------------------------------------------------------------
@@ -273,6 +313,7 @@ function grow() {
 function newChat() {
   if (busy) return;
   msgs = [greeting()];
+  saveReview(null);
   save();
   renderAll();
   setMood('happy');
@@ -348,7 +389,7 @@ export function openMisakiChat() {
   setStreak(null);
   if (!ui) {
     ui = build();
-    $('mk-plate').replaceChildren(keycap({ topic: 'conditions', legend: 'MISAKI · AI', legendClass: 'kb-label', cls: 'mk-plate-key' }));
+    $('mk-plate').replaceChildren(keycap({ topic: 'conditions', legend: 'MISAKI', legendClass: 'kb-label', cls: 'mk-plate-key' }));
     stage = mountStage($('mk-view'), { isPhone: () => !matchMedia('(min-width: 900px)').matches, bodySwitch: $('mk-body') });
     // no WebGL frames while the screen is hidden
     new IntersectionObserver(([e]) => {

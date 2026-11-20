@@ -161,7 +161,7 @@ def _view(set_id: str, meta: dict, puzzles: list[dict], level: str, *, with_sour
     }
 
 
-def create_set(code: str, level: str, client: Optional[str]) -> dict:
+def create_set(code: str, level: str, client: Optional[str], *, from_misaki: bool = False) -> dict:
     try:
         clean, tree = custom_gen.prepare_source(code)
     except custom_gen.InvalidSource as e:
@@ -189,7 +189,7 @@ def create_set(code: str, level: str, client: Optional[str]) -> dict:
     for n, p in enumerate(generated, 1):
         puzzles.append({**p, "id": f"c-{set_id}-{n}", "template_id": "custom", "topic": topic, "tier": 1})
     meta = {"topic": topic, "code": out["code"], "expected_output": out["expected_output"],
-            "skipped": out["skipped"]}
+            "skipped": out["skipped"], "from_misaki": from_misaki}
     with closing(_connect()) as con:
         con.execute("DELETE FROM custom_sets WHERE created_at < ?", (_now() - TTL_S,))  # lazy purge
         con.execute("INSERT INTO custom_sets VALUES (?,?,?,?,?,?)",
@@ -202,6 +202,11 @@ def create_set(code: str, level: str, client: Optional[str]) -> dict:
 def get_set(set_id: str, level: str) -> dict:
     s = _load_set(set_id)
     return _view(s["id"], s["meta"], s["puzzles"], level, with_source=False)
+
+
+def misaki_puzzles(set_id: str) -> dict[str, dict]:
+    s = _load_set(set_id)
+    return {p["id"]: p for p in s["puzzles"]} if s["meta"].get("from_misaki") else {}
 
 
 def get_puzzle(puzzle_id: str) -> dict:
