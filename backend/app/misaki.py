@@ -12,7 +12,7 @@ import re
 import unicodedata
 from typing import Any, Optional
 
-from . import custom, rows, tutor
+from . import custom, i18n, rows, tutor
 from .i18n import tr
 
 logger = logging.getLogger(__name__)
@@ -175,11 +175,22 @@ def validate_action(raw: Any) -> Optional[dict]:
     return None
 
 
+# Letters only Vietnamese uses (đ, ă, ơ, ư and the vowels with a hook or dot below). Three or more in an English
+# reply means the model ignored the language: treat it as unusable so the learner gets the authored line instead.
+_VI_LETTERS = set("đăơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ")
+
+
+def wrong_language(text: str) -> bool:
+    return i18n.resolve(None) == "en" and sum(ch in _VI_LETTERS for ch in text.lower()) >= 3
+
+
 def validate_chat_reply(raw: dict) -> dict:
     """Tutor reply -> ``{"text", "mood", "action"}``; ``ValueError`` when there is no usable text."""
     text = raw.get("text")
     if isinstance(text, str):
         text = text[:MAX_RAW_TEXT]
+        if wrong_language(text):
+            raise ValueError("reply not in the request's language")
     return {"text": clean_text(text, MAX_TEXT), "mood": normalize_mood(raw.get("mood")),
             "action": validate_action(raw.get("action"))}
 
@@ -192,6 +203,8 @@ def validate_puzzle_reply(raw: dict) -> dict:
     note = raw.get("note")
     try:
         note = clean_text(note, MAX_NOTE) if note is not None else ""
+        if wrong_language(note):
+            note = ""
     except ValueError:
         note = ""
     return {"code": code, "note": note}

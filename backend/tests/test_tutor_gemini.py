@@ -82,7 +82,7 @@ def test_request_shape_header_key_and_no_key_in_url(gemini):
     assert call["trust_env"] is False and call["timeout"] == 38
     body = call["json"]
     assert KEY not in json.dumps(body)
-    assert body["systemInstruction"]["parts"][0]["text"] == tutor_prompts.MISAKI_CHAT
+    assert body["systemInstruction"]["parts"][0]["text"] == tutor_prompts.MISAKI_CHAT + tutor_prompts.LANG_EN
     sent = json.loads(body["contents"][0]["parts"][0]["text"])
     assert sent == {"task": "misaki_chat", "lang": "en", "context": {"messages": [{"role": "user", "text": "hi"}]}}
     config = body["generationConfig"]
@@ -239,3 +239,19 @@ def test_cache_key_separates_models(gemini, monkeypatch):
     monkeypatch.setenv("SYNTAX_STACK_GEMINI_MODEL", "other-model")
     tutor.feedback("coach", {"n": 1}, "c")
     assert len(gemini.calls) == 2
+
+
+@pytest.mark.parametrize("task", ["misaki_chat", "misaki_puzzle", "explain", "content_review"])
+def test_english_requests_get_the_english_only_line(task):
+    en = tutor_prompts.build_request({"task": task, "lang": "en", "context": {}}, "gemini-3.5-flash-lite")
+    vi = tutor_prompts.build_request({"task": task, "lang": "vi", "context": {}}, "gemini-3.5-flash-lite")
+    text_en = en["systemInstruction"]["parts"][0]["text"]
+    text_vi = vi["systemInstruction"]["parts"][0]["text"]
+    assert text_en == text_vi + tutor_prompts.LANG_EN
+    assert "English only" in text_en and "English only" not in text_vi
+
+
+def test_n8n_flow_appends_the_same_english_line():
+    js = next(n for n in json.loads(N8N_JSON.read_text(encoding="utf-8"))["nodes"] if n["name"] == "Build tutor request")["parameters"]["jsCode"]
+    assert "const langEn = " + json.dumps(tutor_prompts.LANG_EN, ensure_ascii=False) + ";" in js
+    assert "(body.lang === 'en' ? langEn : '')" in js

@@ -565,3 +565,26 @@ def test_puzzle_when_every_authored_program_fails(client, monkeypatch):
     monkeypatch.setattr(custom, "create_set", boom)
     r = client.post(PUZZLE, json={"topic": "loops"})
     assert r.status_code == 503
+
+
+# --------------------------------------------------------------------------- reply language
+
+
+def test_vietnamese_reply_to_an_english_learner_falls_back_to_the_authored_line(client, ai):
+    ai.reply["misaki_chat"] = {"text": "Chào bạn, Misaki ở đây để giúp bạn gỡ rối Python nhé!", "mood": "happy",
+                               "action": None}
+    body = client.post(CHAT, json=say("hi misaki"), headers={"X-Lang": "en"}).json()
+    assert body["source"] == "canned"
+    assert not misaki.wrong_language(body["text"])
+    assert ai.calls[0]["lang"] == "en"
+
+
+def test_english_reply_to_an_english_learner_is_kept(client, ai):
+    ai.reply["misaki_chat"] = {"text": "Hi! What are you stuck on today? Maybe a café break first.", "mood": "happy",
+                               "action": None}
+    assert client.post(CHAT, json=say("hi"), headers={"X-Lang": "en"}).json()["source"] == "ai"
+
+
+def test_vietnamese_reply_to_a_vietnamese_learner_is_kept(client, ai):
+    ai.reply["misaki_chat"] = {"text": "Chào bạn, mình giúp được gì nào?", "mood": "happy", "action": None}
+    assert client.post(CHAT, json=say("chào"), headers={"X-Lang": "vi"}).json()["source"] == "ai"

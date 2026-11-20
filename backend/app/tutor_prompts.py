@@ -124,6 +124,12 @@ def is_structured(task: str) -> bool:
     return task in STRUCTURED_TASKS
 
 
+# Appended for English requests. The prompts are Vietnamese, and one "write in lang" clause inside them was not
+# enough: the model kept answering English learners in Vietnamese. Same string as LANG_EN in deploy/n8n-tutor.json.
+LANG_EN = ("\n\nIMPORTANT: lang is \"en\". The learner reads English. Write every text field of your reply in "
+           "English only, never Vietnamese, even though these instructions are in Vietnamese.")
+
+
 def build_request(body: dict, model: str) -> dict:
     """The ``generateContent`` request body for ``body`` (``{"task", "lang", "context"}``), as n8n builds it."""
     task = body.get("task")
@@ -131,6 +137,8 @@ def build_request(body: dict, model: str) -> dict:
     chat = task == "misaki_chat"
     puzzle = task == "misaki_puzzle"
     system = EDITORIAL if drafting else MISAKI_CHAT if chat else MISAKI_PUZZLE if puzzle else TUTOR
+    if body.get("lang") == "en":
+        system += LANG_EN
     config: dict[str, Any] = {
         "maxOutputTokens": 1900 if drafting else 700 if chat else 1200 if puzzle else 512,
         "temperature": 0.6 if chat else 0.5 if puzzle else 0.35,
