@@ -16,7 +16,8 @@ import { mountStage } from './misaki-stage.js';
 import { createVoicePlayer, voiceSupported } from './misaki-voice.js';
 import { createFollowAlong } from './misaki-follow-along.js';
 import {
-  rehearsing, beginRehearsal, rehearsalReply, rehearsalPuzzleIdea, isRehearsalRecording, preloadRehearsalAudio,
+  rehearsing, beginRehearsal, rehearsalReply, rehearsalPuzzleIdea, rehearsalVoice,
+  isRehearsalRecording, preloadRehearsalAudio,
 } from './misaki-rehearsal.js';
 import { isMuted, onMuteChange, prepareAudio } from './sound.js';
 import { lang, t } from './i18n.js';
@@ -63,7 +64,7 @@ let playbackScreen = null;
 const voicePlayer = createVoicePlayer((sample) => stage?.setVoiceSampler(sample));
 onMuteChange((muted) => {
   if (muted) voicePlayer.stop();
-  else if (rehearsing && voiceSupported && ui && !ui.root.hidden) preloadRehearsalAudio();
+  else if (ui && !ui.root.hidden) preloadSelectedVoice();
   document.querySelectorAll('.mk-voice').forEach((button) => { button.disabled = muted; });
 });
 let msgs = null; // [{ role: 'misaki' | 'user', text, mood?, action?, local? }]
@@ -73,6 +74,10 @@ let soloed = false; // the learner hid the stage panel
 let review = loadReview();
 const savedLanguage = store.loadMisakiVoiceLanguage();
 let voiceLanguage = VOICE_LANGUAGES.includes(savedLanguage) ? savedLanguage : lang();
+
+function preloadSelectedVoice() {
+  if (rehearsing && voiceSupported && !isMuted()) preloadRehearsalAudio(voiceLanguage);
+}
 
 export function initMisakiChat(n) {
   nav = { ...nav, ...n, run: { ...(n.run || {}) } };
@@ -370,7 +375,7 @@ async function send(raw, puzzleRequest) {
       if (previous?.role === 'misaki' && previous.action) context.previous_action = previous.action;
       reply = await api.misakiChat({
         messages: payload(), context, rehearsal: preparedReview || undefined,
-        voice: liveVoice, voice_language: liveVoice ? (rehearsing ? 'en' : voiceLanguage) : undefined,
+        voice: liveVoice, voice_language: liveVoice ? voiceLanguage : undefined,
       });
     }
   } catch {
@@ -379,7 +384,8 @@ async function send(raw, puzzleRequest) {
   if (preparedTurn || preparedReview) await finishRehearsalThinking(startedAt);
   const text2 = typeof reply?.text === 'string' && reply.text.trim() ? reply.text.trim().slice(0, 700) : offline;
   const message = { role: 'misaki', text: text2, mood: reply?.mood, action: cleanAction(reply?.action),
-    voice: reply?.recording ? { recording: reply.recording } : reply?.voice, language, local: !!reply?.local || text2 === offline };
+    voice: reply?.recording ? rehearsalVoice(reply.recording, voiceLanguage) : reply?.voice,
+    language, local: !!reply?.local || text2 === offline };
   const voice = voiceKey(message);
   if (voice && canPlayVoice(ui.root)) {
     const preparing = typingRow('Misaki đang chuẩn bị giọng nói');
@@ -429,7 +435,7 @@ async function makePuzzle(a, key) {
   let status = 0;
   try {
     res = await api.misakiPuzzle({ topic: a.topic, idea: a.idea || '', level: nav.level(),
-      rehearsal: prepared || undefined, voice: liveVoice, voice_language: liveVoice ? (rehearsing ? 'en' : voiceLanguage) : undefined });
+      rehearsal: prepared || undefined, voice: liveVoice, voice_language: liveVoice ? voiceLanguage : undefined });
     if (!Array.isArray(res?.set?.puzzles) || !res.set.puzzles.length) res = null;
   } catch (e) {
     status = e.status || 0;
@@ -447,7 +453,7 @@ async function makePuzzle(a, key) {
   }
   const note = typeof res.note === 'string' && res.note.trim() ? res.note.trim().slice(0, 300) : lines.puzzleNote;
   const message = { role: 'misaki', text: note, mood: 'happy', local: true, language,
-    voice: res.recording ? { recording: res.recording } : res.voice };
+    voice: res.recording ? rehearsalVoice(res.recording, voiceLanguage) : res.voice };
   append(message);
   setMood('happy');
   setBusy(false);
@@ -524,6 +530,7 @@ function build() {
     voiceLanguage = language.value;
     store.saveMisakiVoiceLanguage(voiceLanguage);
     voicePlayer.stop();
+    preloadSelectedVoice();
   });
   const voiceControl = el('label', { class: 'mk-voice-language', title: voiceLabel },
     icon('volume', { size: 14 }), language);
@@ -543,7 +550,7 @@ function build() {
   const scroller = el('div', { class: 'mk-scroll' }, log, followUp, el('p', { class: 'tutor-foot mk-foot-ai', text: DISCLAIMER }));
   const win = el('div', { class: 'editor mk-win' }, bar, scroller, form);
   $('mk-chat').replaceChildren(win);
-  return { root: $('screen-misaki'), log, scroller, input, send: send_, toggle, followUp, language, voiceControl };
+  return { root: $('screen-misaki'), log, scroller, input, send: send_, toggle, followUp, language };
 }
 
 // ---- hide / show the stage ----------------------------------------------------------------------------------------
@@ -580,7 +587,7 @@ export function openMisakiRehearsal() {
 
 export function openMisakiChat() {
   nav.show('screen-misaki');
-  if (rehearsing && voiceSupported && !isMuted()) preloadRehearsalAudio();
+  preloadSelectedVoice();
   showStrip(true, { back: nav.home, backLabel: 'Về màn hình chính' });
   setMode('TRÒ CHUYỆN VỚI MISAKI');
   setStreak(null);
@@ -604,7 +611,6 @@ export function openMisakiChat() {
     setSolo(store.loadMisakiStageHidden(), { save: false });
     stage.ready.then(syncStage); // a model that finishes loading while the panel is hidden must not start rendering
   }
-  ui.voiceControl.hidden = rehearsing;
   onScreen = true;
   syncStage();
   if (!msgs) {

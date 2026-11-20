@@ -7,6 +7,8 @@ import { isMuted, prepareAudio } from './sound.js';
 const Audio = globalThis.AudioContext || globalThis.webkitAudioContext;
 export const voiceSupported = Boolean(Audio);
 
+const playbackKey = (voice) => voice.recording ? `${voice.recording}:${voice.language || 'en'}` : voice.ticket;
+
 export function createVoicePlayer(setSampler) {
   let playing;
   let clip; // keep the most recently played reply for instant replay in this tab
@@ -33,7 +35,7 @@ export function createVoicePlayer(setSampler) {
     if (!context) return;
     const analyser = context.createAnalyser();
     analyser.connect(context.destination);
-    const key = voice.recording || voice.ticket;
+    const key = playbackKey(voice);
     const current = { key, onState, analyser, abort: new AbortController(), sources: new Set() };
     playing = current;
     onState(true);
@@ -78,7 +80,7 @@ export function createVoicePlayer(setSampler) {
       if (clip?.key === key) {
         enqueue(clip.buffer, false);
       } else if (isRehearsalRecording(voice.recording)) {
-        const data = await loadRehearsalRecording(voice.recording);
+        const data = await loadRehearsalRecording(voice.recording, voice.language);
         if (playing !== current) return;
         const buffer = await context.decodeAudioData(data.slice(0));
         if (playing !== current) return;
@@ -106,7 +108,7 @@ export function createVoicePlayer(setSampler) {
   }
 
   async function toggle(voice, onState, onStart, onClip) {
-    if (playing?.key === (voice.recording || voice.ticket)) stop();
+    if (playing?.key === playbackKey(voice)) stop();
     else await play(voice, onState, onStart, onClip);
   }
 

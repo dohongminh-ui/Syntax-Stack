@@ -26,6 +26,9 @@
 !frontend/css/*.css
 !frontend/js/
 !frontend/js/*.js
+!frontend/audio/
+!frontend/audio/misaki-rehearsal/
+!frontend/audio/misaki-rehearsal/*.wav
 !frontend/vendor/
 !frontend/vendor/*.js
 !frontend/vendor/LICENSES.txt

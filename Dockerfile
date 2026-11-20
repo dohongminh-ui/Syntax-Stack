@@ -19,6 +19,7 @@ COPY frontend/index.html frontend/index.html
 COPY frontend/*.png frontend/favicon.ico frontend/favicon.svg frontend/manifest.json frontend/robots.txt frontend/sitemap.xml frontend/
 COPY frontend/css frontend/css
 COPY frontend/js frontend/js
+COPY frontend/audio/misaki-rehearsal frontend/audio/misaki-rehearsal
 COPY frontend/vendor frontend/vendor
 
 # Learner-made puzzle sets live outside the image (compose mounts a named volume here) so shared links
