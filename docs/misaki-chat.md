@@ -1,6 +1,8 @@
 # Chat with Misaki
 
-Status: in development. This is the spec the feature is built from; sections marked *(built)* are checked in code.
+The live chat supports game recommendations, verified practice, checked puzzle reviews, and streamed
+speech. The [finals demo](presentation-script.md#slide-12--live-demo-target-330-hard-stop-345) uses
+the chat to launch both game modes before switching to the live classroom dashboard.
 
 A screen where the learner talks to Misaki, the game's AI character, drawn as a Live2D model. She asks
 what is troubling them (a Python topic, a mistake that keeps coming back, being bored or stuck), then
@@ -41,7 +43,9 @@ Request:
 ```
 
 - `messages`: 1 to 12 items, the last one has `role: "user"`. `role` is `user` or `misaki`, and `text`
-  is 1 to 500 characters. The client keeps the history; the server stores nothing.
+  is 1 to 500 characters. The browser keeps chat history for the current tab. The tutor can cache
+  recent requests and replies in memory.
+- `voice`: optional boolean, default `false`. Request a voice ticket for the reply when speech is available.
 - `voice_language`: optional `"vi"`, `"en"`, or `"ja"` with `voice: true`. The voice selector in the chat
   header is saved in the browser. Written replies always use the game's language (`X-Lang`).
 - `context` is optional and is a hint only. `level` is a `Level` and `weak_topics` holds 0 to 4 topics.
@@ -70,6 +74,8 @@ Response:
 - `action`: `null` for a `reply` tool call or exactly one of the shapes below for a game tool call.
   The server validates the tool and its arguments. Malformed calls or actions targeting a different
   topic from the learner's request use the authored fallback.
+- `voice`: optional `{ticket, expires, transcript}`. The ticket authorizes speech for that reply,
+  `expires` is a Unix timestamp in seconds, and `transcript` is the spoken text.
 
 | `type` | Extra fields | Client does |
 | --- | --- | --- |
@@ -88,13 +94,15 @@ starts the activity. The tool call supplies the action, and the app supplies the
 Request: `{"topic": "loops", "idea": "range bắt đầu từ 1", "level": "beginner"}`. `idea` is 0 to 200
 characters. The same optional `voice` and `voice_language` fields can request speech for Misaki's puzzle introduction.
 
-1. If the tutor is configured, ask the AI task `misaki_puzzle` for `{"code", "note"}`. `code` is a Python
-   program of at most 15 lines, in the custom-puzzle subset, on `topic`.
+1. The optional tutor proposes a Python program of at most 15 lines in the custom-puzzle subset and
+   a short introduction in the text language. If the voice language differs, it can also return a
+   spoken translation of the introduction.
 2. Pass `code` to `custom.create_set(code, level, client)`. If the AI fails, or `create_set` raises
    (invalid code, timeout, no puzzle could be made), fall back to one of the authored programs for that
    topic (two per topic, in `backend/app/misaki.py`) and call `create_set` with it.
 3. Response: `{"set": <create_set view>, "source": "ai" | "canned", "note": "<one line from Misaki>"}`.
-   The client plays the set through the custom-puzzle screen.
+   The client plays the set through the custom-puzzle screen. When speech is available the response
+   also includes `voice` for the introduction.
 
 After submitting an answer, the learner can choose **Review with Misaki** on the set screen to discuss
 their work in chat. Follow-up messages use the same evidence. The review uses up to two recent
@@ -118,41 +126,51 @@ says so in her own words on the client.
 
 ### Listening to a reply
 
-Misaki reads new chat replies aloud after the learner sends a message. The sound button in the
-game header mutes her, and the speaker button on a reply stops or replays that clip. The chat response
-carries an expiring playback ticket for `POST /api/misaki/voice`. With `stream: true` and a server-side
-`SYNTAX_STACK_GEMINI_API_KEY`, the endpoint streams 24 kHz mono PCM. Other requests return a WAV. The server
-sends Misaki's reply to Gemini 3.8 Flash-Lite TTS, which speaks Vietnamese, English, and Japanese with
-the Leda voice. On a provider rate limit, speech falls back to Gemini 3.8 Flash TTS with Leda.
-Voice calls share the tutor's quotas.
+Misaki reads new chat replies, puzzle introductions, and checked reviews aloud. Her voice selector
+chooses Vietnamese, English, or Japanese and remembers the choice separately from the game's
+Vietnamese or English text setting. The game header's sound button stops playback and makes new chat
+and puzzle requests text-only, skipping speech translation and synthesis.
 
-When the voice language differs from the game's language, the same chat tool call supplies a spoken
-translation. An additional translation request is used if the chat reply or puzzle introduction has no usable spoken
-translation. The browser buffers about 300 ms of streamed audio before starting playback and revealing the text.
-If audio fails or has not started
-after 15 seconds, it shows the reply and cancels autoplay. Muted turns request text only.
-While audio plays, the current phrase is highlighted using estimated timing from the clip and transcript.
+When the voice language differs from the text language, the tutor can include a spoken translation
+with its reply. If the translation is missing or unusable, the server can request it separately.
+Safety replies are text-only.
+
+The browser sends `{ticket, stream: true}` to `POST /api/misaki/voice`. The signed ticket expires
+after four hours and limits speech to the issued transcript. With a server-side
+`SYNTAX_STACK_GEMINI_API_KEY`, the endpoint streams 24 kHz, 16-bit little-endian mono PCM
+(`application/octet-stream`). A request without streaming, or an installation without the direct key,
+receives a WAV through its configured tutor. Gemini 3.8 Flash-Lite TTS uses the Leda voice, with
+Gemini 3.8 Flash TTS as the rate-limit fallback. Speech shares the tutor's quotas.
+
+The browser buffers about 300 ms of audio before starting playback and revealing the text. If audio
+fails or has not started after 15 seconds, the text appears and autoplay is canceled. While audio
+plays, the current phrase is highlighted with estimated timing from the clip and transcript.
 
 The browser estimates vowel shapes from the speech audio and blends the rig's mouth opening, form,
 pucker and funnel during playback. The current expression takes over when playback ends. Sending
-a new message stops the previous clip. The most recent clip can be replayed in the tab.
-Publish the updated n8n workflow alongside the app to enable speech through the production webhook.
+a new message or leaving the playback screen stops the clip. The speaker button stops or replays
+the reply, with the most recent completed clip cached in the tab.
 
-## 3. AI tasks (n8n)
+## 3. AI tasks
 
-Both tasks share the existing tutor client's quotas, two concurrency slots, and logging (`tutor.py`).
+These tasks share the tutor client's quotas, two concurrency slots, and logging (`tutor.py`).
 The workflow in `deploy/n8n-tutor.json` and the direct Gemini integration use the same prompts,
-function declarations, and puzzle response schema. Tests keep them in sync. n8n is preferred when
-both providers are configured. See [operations.md](operations.md).
+function declarations, and puzzle response schema. Tests keep them in sync. n8n is preferred for
+chat and puzzle generation when both providers are configured. Streamed speech goes directly to
+Gemini. Publish the updated n8n workflow with changes to its prompts or response schema.
+See [operations.md](operations.md).
 
 - `misaki_chat`: Gemini must return one native function call. `reply` carries ordinary chat, and each
   game function carries Misaki's `text`, `mood`, and that activity's typed arguments. The workflow
   forwards the candidate's `function_calls` to the backend, which decodes the call and validates any
-  proposed action. Puzzle review uses checked evidence. Publish the updated n8n workflow with the
-  app release so n8n can return the native tool envelope.
+  proposed action. Puzzle review uses checked evidence. A response can include `speech_text` for
+  the selected voice language.
 - `misaki_puzzle`: system prompt = the editorial constraints the custom pipeline accepts (variables, if,
   for, simple functions, print, range, basic arithmetic; 2 to 15 lines; 4-space indent; deterministic;
-  no input()). JSON schema `{code, note}`.
+  no input()). JSON schema `{code, note, speech_text?}`.
+- `misaki_voice_translation`: translates the final written reply or introduction when a spoken
+  translation is unavailable.
+- `misaki_voice`: synthesizes the ticket's transcript as streamed PCM or a buffered WAV.
 
 ## 4. Without AI (canned Misaki)
 
@@ -160,8 +178,8 @@ When the tutor is not configured, busy or over quota, `misaki.py` answers with a
 (Vietnamese and English, accent-insensitive). Topic words (`vòng lặp`, `loop`, `range`, `if`, `hàm`,
 `function`, `biến`...) lead to a `make_puzzle` or a focused `rescue practice`. "chán" / "bored" leads to
 `pvp_training`. "khó" / "stuck" / "sai hoài" leads to `practice_tray`. Anything else gets a friendly
-question that lists what she can help with. The demo works fully offline this way, and `?mock=1` mirrors
-it in `mock-api.js`.
+question that lists what she can help with. `?mock=1` mirrors the authored chat in `mock-api.js`.
+Use the configured tutor for live model-generated explanations and speech.
 
 ## 5. Safety
 

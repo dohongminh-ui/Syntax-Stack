@@ -36,6 +36,7 @@ All files are in `frontend/js/`. Imports form a tree with `main.js` at the top.
 | `storage.js` | `localStorage` wrappers (all in try/catch). | no | no |
 | `misaki-chat.js` | "Chat with Misaki": history (module + `sessionStorage`), composer, quick replies, her one action keycap, the puzzle flow into the custom-puzzle screen, hide/show of the stage. See [misaki-chat.md](misaki-chat.md). | yes | via `api.js` |
 | `misaki-stage.js` | The stage: lazy-loads `vendor/` (PixiJS 6.5.10, `@pixi/unsafe-eval`, pixi-live2d-display 0.4.0) and Live2D Cubism Core, shows the model (mood to expression and motion, pointer follow, chibi/normal body via `Clothes2`), or a portrait, or the keycap avatar. | yes | model files, Cubism Core |
+| `misaki-voice.js`, `misaki-pcm.js`, `misaki-follow-along.js`, `misaki-visemes.js` | Stream or replay Misaki's replies and puzzle introductions. The player supplies lip-sync samples and estimated phrase highlighting. Muted chat and puzzle turns request text only. | yes | via `api.js` |
 | `strip.js` | The header strip: wordmark, mode label, streak, LEDs, score. | yes | no |
 | `start.js` | Keycap title, one-time press wave, the two mini previews on the start screen. | yes | no |
 | `keycap.js` | The keycap factory, `keycap()` and `setLegend()`. | yes | no |
@@ -432,6 +433,7 @@ All access is wrapped in `try/catch` (`storage.js`); the game works with storage
 | `syntaxstack.rows.progress` | JSON `{ "r1": {"stars": 3, "score": 400}, ... }`, best values | `recordRowsResult` on a normal pass |
 | `syntaxstack.misaki.body` | `chibi` (default) or `normal`: which body her model shows | `misaki-stage.js` |
 | `syntaxstack.misaki.stage` | `hidden` or `shown` (default): the stage panel of the Misaki chat | `misaki-chat.js` |
+| `syntaxstack.misaki.language` | `vi`, `en`, or `ja` for Misaki's voice. Defaults to the game language until a choice is saved. | `misaki-chat.js` via `storage.js` |
 | `syntaxstack.practice.mistakes` | JSON array of the last 40 mistakes: `{topic, puzzleId}` from Code Rescue wrong answers (non-standalone, non-mock) and `{topic, levelId, errorGroup, rows}` from Syntax Rows failures (not practice, twist or `empty`) | `recordMistake` |
 
 `sessionStorage` key `ss.wave` marks that the title key wave already played in this tab; `syntaxstack.misaki.chat` holds the Misaki chat history (last 60 messages) for the tab.
@@ -477,10 +479,10 @@ From the home screen, while focus is outside an input/editor:
 The r3 shortcut uses `openPracticeRows`, so it does not overwrite stars or mistake history and still
 uses the real validator and tutor. Shortcuts ignore held-key repeats, composition and editable fields;
 they only work from home, so they cannot abandon a live match or reset work already on screen.
-For the AI-in-studying presentation, prepare tabs in this order: prediction (`Ctrl+Alt+3`), Misaki
-training (`Ctrl+Alt+4`), classroom (`Ctrl+Alt+1`). Use the browser's `Ctrl+1`, `Ctrl+2`, `Ctrl+3` to
-switch between them. Pasted-code generation (`Ctrl+Alt+2`) is for Q&A. See the timed rehearsal in
-[presentation-script.md](presentation-script.md).
+For the finals demo, put [Chat with Misaki](https://syntax.screepai.moe/?demo=misaki&lang=en) in the
+first tab and the open teacher dashboard in the second. Launch Code Rescue, Syntax Rows, and puzzle
+review from chat. Press `Ctrl+2` for the classroom finale. See the prompts and timed rehearsal in
+[presentation-script.md](presentation-script.md#slide-12--live-demo-target-330-hard-stop-345).
 
 ## 14. Mock mode and demo hooks
 

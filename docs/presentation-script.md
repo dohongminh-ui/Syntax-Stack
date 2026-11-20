@@ -1,17 +1,16 @@
-# Syntax Stack — speaking script (finals, v3.4, 10 minutes)
+# Syntax Stack — speaking script (finals, v3.5, 10 minutes)
 
-v2 is kept in `presentation-script.v2.md`. The talk is **10 minutes including a 3:20 live demo**
-(hard stop at 3:45). The theme is **AI in studying**: Misaki explains a specific mistake, the student
-applies the explanation, then Misaki supports practice. The classroom closes the learning story.
-**Misaki is not named before slide 8**: Cuong and Lam say "an AI tutor" until Lam's reveal,
-"Introducing Misaki, our AI tutor", so her name lands as a moment.
+v2 is kept in `presentation-script.v2.md`. The talk is **10 minutes including a 3:30 live demo**
+(hard stop at 3:45). Start in Chat with Misaki, launch both game modes from her chat, and have her
+review the student's checked puzzle attempts. The live classroom closes the demo.
+Cuong and Lam say "an AI tutor" until Lam introduces Misaki on slide 9.
 
 | Presenter | Slides | Section | Time |
 | --- | --- | --- | --- |
 | **Bui Manh Cuong** | 1–5 | Opening, problem | 1:45 |
-| **Tran Thuong Vu Lam** | 6–9 | Gap, solution, two modes | 2:00 |
-| **Do Hong Minh** | 10–16 | Mistakes as lessons, **live demo**, technology, business, close | 5:50 (demo 3:20) |
-| | | Buffer for transitions and network | 0:25 |
+| **Tran Thuong Vu Lam** | 6–10 | Gap, solution, Misaki reveal, two modes | 2:00 |
+| **Do Hong Minh** | 11–17 | Mistakes as lessons, **live demo**, technology, business, close | 6:00 (demo 3:30) |
+| | | Buffer for transitions and network | 0:15 |
 
 *Italics in brackets* are actions. **Bold** marks the words to stress. Lines starting with
 "↳ Cut if short on time" can be dropped without breaking the flow. At about 130 words a minute, each
@@ -22,28 +21,23 @@ section's word count matches its time; don't add to it on the day.
 - [ ] Laptop and both phones on **one phone hotspot**, not the venue Wi-Fi.
 - [ ] **Everything in English:** on the laptop and both phones, tap **EN** at the top right of the home
       screen (or open the site with `?lang=en`). It is remembered per browser; check each device once.
-- [ ] Laptop tab 1: from home press **Ctrl+Alt+3**. This opens the real r3 practice board, "Count to three",
-      with `range(2)` and `print(i)` placed and prediction expanded. Leave it **unrun** and prediction empty.
-- [ ] Tab 2: from home press **Ctrl+Alt+4**. Misaki level 1 and **Practice with Misaki** are selected.
-      Use **Choose a name** to save a generated nickname before presenting. Leave the menu open; **do not start
-      the match until this demo segment**, so it cannot finish while the tutor is on screen.
-- [ ] Tab 3: from home press **Ctrl+Alt+1**, then **Open room**. Have the real classroom already open
-      with **Player names: Random** (the default), browser in fullscreen, on the projector. Note
-      the room code.
-- [ ] Cuong's and Lam's phones: **already joined the room**, game started, sitting on a board where a row
-      is about to fill with **coral (loops)** blocks. Each phone gets a random name (e.g. "Quick Fox 17"):
-      **write both names down** so Minh can point at the right row.
+- [ ] Laptop tab 1: open [Chat with Misaki](https://syntax.screepai.moe/?demo=misaki&lang=en). Start a
+      **New chat**, turn sound on, and select **EN** for her voice. Keep the three prompts below handy.
+- [ ] Tab 2: from home press **Ctrl+Alt+1**, then **Open room**. Use **Player names: Random** (the
+      default). Keep the teacher dashboard open and note the room code.
+- [ ] Lam's phone: scan the QR, start playing, and stop at a Code Rescue puzzle before submitting.
+      Write down the assigned nickname so Minh can point at the right row.
 - [ ] Because the room uses random names, a judge who scans the QR cannot put anything rude on the
       projector. If something unexpected shows anyway, the row's **"Hide"** button removes it.
-- [ ] Use the browser's **Ctrl+1 / Ctrl+2 / Ctrl+3** to switch tabs on stage. The app's Ctrl+Alt shortcuts
-      only work from home and outside text fields. No judge-demo menu, mock data or fake scores.
-- [ ] Rehearse the exact wrong prediction and **Why?** on the production tutor; check that the
-      **MISAKI · AI TUTOR** card appears. A hand-written fallback does not demonstrate the language model.
-      Keep a clearly labelled recording of a real AI response; allow at most **8 seconds** of visible waiting.
+- [ ] Use **Ctrl+1** for Misaki and **Ctrl+2** for the teacher dashboard. The app's Ctrl+Alt shortcuts
+      work from home with focus outside text fields. Rehearse with a real room and the production tutor.
+- [ ] Rehearse the first Code Rescue clear and the Syntax Rows prediction explanation. Check that the
+      generated puzzle set offers **Predict the output**, and that **Review with Misaki** can discuss
+      your wrong and correct attempts. Check speech on the laptop before going on stage.
 - [ ] Rehearse the correction: return `range(2)` to the tray, place `range(3)` in the same position,
       then run again. This is the learning payoff, not just an AI reply.
-- [ ] Optional Q&A tab 4: **Ctrl+Alt+2** opens pasted-code puzzles. Keep the program below on the clipboard.
-- [ ] Fallback: a 20-second screen recording of the demo on the demo slide, plus screenshots.
+- [ ] Optional Q&A tab: **Ctrl+Alt+2** opens pasted-code puzzles. Keep the program below handy.
+- [ ] Fallback: a labelled 20-second recording of a real Misaki review and the classroom update.
 - [ ] Rehearse with a timer at least twice. The demo always runs long the first time.
 
 Pasted-code program for Q&A (not in the timed demo):
@@ -57,8 +51,8 @@ print(total)
 
 ## Slide changes from v2 (for Stack.pdf)
 
-The full slide-by-slide content is in `docs/presentation-content.md` (v3.4, 16 slides); slide numbers
-below and in the headings match it.
+The [slide content](presentation-content.md) follows the 17 slides in the finals deck, including
+the separate Misaki reveal.
 
 - Merge v2 slides 4–6 into **two** problem slides; keep the one-in-three pass-rate chart.
 - v2 slide 12 ("Learn from every run") becomes part of the demo; drop it as a separate slide.
@@ -101,7 +95,7 @@ and practice sites either say "wrong" or show the whole answer. Neither one teac
 
 ---
 
-## Tran Thuong Vu Lam — slides 6 to 9 (2:00)
+## Tran Thuong Vu Lam — slides 6 to 10 (2:00)
 
 ### Slide 6 — What a solution must do
 Thank you, Cuong. We set two requirements. Practice must be **short and low-stakes**: a few minutes on a
@@ -121,12 +115,15 @@ That is the job we gave our AI tutor.
 **One: the board is the program.** Each row is a line; the column where it starts is the indentation.
 You can *see* that `print` is inside the loop.
 
-**Two: an AI tutor that explains a checked result.** *(Pause; click to reveal her.)* Introducing
-**Misaki, our AI tutor.** Our validator runs the supported exercises in a limited environment and
+**Two: an AI tutor that explains a checked result.** *(Advance to the reveal.)*
+
+### Slide 9 — Introducing Misaki
+
+Introducing **Misaki, our AI tutor.** Our validator runs the supported exercises in a limited environment and
 compares the output. Misaki gets the student's prediction and the actual execution trace, then
 explains the mismatch. The student applies that explanation and runs again.
 
-### Slide 9 — Two modes
+### Slide 10 — Two modes
 **Code Rescue** trains recognition. Blocks are coloured by topic: variables, conditions, loops,
 functions. A full row **locks** and becomes a puzzle on that topic: fill the blank, predict the output,
 reorder lines, or find the bug.
@@ -144,9 +141,9 @@ give the same learning gains as writing code from scratch in less time (Ericson 
 
 ---
 
-## Do Hong Minh — slides 10 to 16 (5:50, including the 3:20 demo)
+## Do Hong Minh — slides 11 to 17 (6:00, including the 3:30 demo)
 
-### Slide 10 — One wrong answer is a lesson (0:45)
+### Slide 11 — One wrong answer is a lesson (0:45)
 Thank you, Lam. Code Rescue has one strict rule: **one mistake per game**. That makes students stop
 guessing and read the code.
 
@@ -158,49 +155,56 @@ plan** of everything you missed.
 ↳ Cut if short on time: Practice mode removes losing entirely and gives you more blocks in your weakest
 topic.
 
-### Slide 11 — Live demo (target 3:20, hard stop 3:45)
+### Slide 12 — Live demo (target 3:30, hard stop 3:45)
 
 | Clock | Action | Evidence to point at |
 | --- | --- | --- |
-| 0:00–0:15 | Tab 1: bring Misaki back beside the prepared r3 exercise. | A specific student task, not an open-ended chatbot. |
-| 0:15–1:35 | Predict `0`, `1`, `2`, run, tap **Why?**, then replace `range(2)` with `range(3)` and run again. | Checked mismatch → labelled AI explanation → the student's correction passes. |
-| 1:35–2:35 | Ctrl+2: start the prepared level-1 training match; after countdown tap **Suggest a move** and place one suggested piece. | Misaki as an opponent, a legal highlighted suggestion and its reason. |
-| 2:35–3:10 | Ctrl+3: Lam answers the prepared classroom puzzle wrong. | Teacher sees the actual named mistake; briefly invite QR joins without waiting. |
-| 3:10–3:20 | Connect the three beats. | AI explanation, guided practice and a teacher who can still see the class. |
+| 0:00–0:45 | Open Code Rescue from chat and clear one locked line. | Solving a Python puzzle unlocks the line. |
+| 0:45–1:50 | Open Syntax Rows Level 3, run a wrong prediction, ask **Why?**, and fix the loop. | The trace shows what ran, and the learner makes the correction. |
+| 1:50–2:55 | Generate a loop puzzle, submit a wrong answer and then the right one, and click **Review with Misaki**. | Misaki explains both server-checked attempts. |
+| 2:55–3:30 | Switch to the teacher tab. Lam answers the prepared classroom puzzle wrong. | The dashboard updates with the student's result and the class mistake breakdown. |
 
-**Misaki, the tutor.** Lam introduced **Misaki**; let's see her at work. I predict this loop prints 0, 1, 2.
-*(Run.)* It prints 0, 1. The validator has checked the mismatch. I ask **Why?**.
-*(Point at the AI card.)* Misaki explains using my prediction and the program's execution trace:
-`range(2)` stops before 2. She has the context of my actual attempt.
-*(Replace the range tile and run.)* I make the correction myself. Now it passes.
-**The explanation leads to another attempt**, not just an answer to copy.
+**1. Launch Code Rescue.** Paste this prompt into chat.
 
-**Misaki, the practice partner.** *(Ctrl+2, start training, wait for countdown.)* Here Misaki is also
-an AI opponent. In training I can ask **Suggest a move**. *(Tap and point at the highlighted cells and reason;
-place that piece.)* The suggestion helps me make a move while I stay in control.
-Her game moves and suggestions use **search**, not the tutor's language model; the event-coaching
-lines are authored. We use each technique for a different job.
+> Start a beginner Code Rescue run. I want to practice Python loops.
 
-**The teacher stays involved.** *(Ctrl+3; Lam answers wrong.)* AI support doesn't hide the student
-from the lecturer. Here is Lam's mistake on the live classroom dashboard. These are server-checked
-results, not an AI guess about the class. You can scan the QR to join too.
+Click Misaki's activity button. Fill one line, solve the Python puzzle that locks it, and show the
+line clearing. Return home and reopen **Chat with Misaki** in the same tab.
 
-**Close.** Misaki explains, the student applies it and practises, and the teacher sees where help
-is still needed. That is **AI supporting studying**.
+**2. Build, predict, and correct in Syntax Rows.** Paste the next prompt.
 
-**Timing rules:** don't wait for audience joins or a match result. Pasted-code generation, ranked
-play, the full ladder and the skill map are Q&A material. If the tutor has no result after 8 seconds,
-show the clearly labelled recording of a real AI response and continue; don't repeatedly request it.
-If only authored text appears, identify it as the fallback, not as AI. Don't claim measured learning gains.
-Use the 25-second talk buffer if needed, then stop the demo at **3:45**.
+> Now open Syntax Rows Level 3, Count to three. I want to build a loop with code tiles and predict its output.
 
-### Slide 12 — Technology (0:30)
+Build `for i in range(2):` with `print(i)` indented underneath. Predict `0`, `1`, and `2` on separate
+lines. Run it, show the trace stopping at `1`, then click **Why?** for Misaki's explanation.
+Replace `range(2)` with `range(3)` and run again. Return to the chat.
+
+**3. Generate a puzzle and review both attempts.** Paste the final prompt.
+
+> Make a beginner Python loop puzzle set. Use a short for loop with range(1, 4), and let me predict the output before you explain it.
+
+Click **Make puzzles** and open **Predict the output**. Submit a wrong answer, then correct it.
+Click **Review with Misaki** and let her explain the two checked attempts. If you're ahead of time,
+click **Try a follow-up** to show how she builds on the same mistake.
+
+**4. Show the live classroom.** Press **Ctrl+2** and cue Lam to submit a wrong answer. Point to the
+student's result and **Most common mistakes** as the dashboard updates. Keep the QR code visible
+for anyone who wants to join.
+
+> “Misaki helps a student understand their own mistake. The classroom dashboard helps the teacher see which mistakes the class needs to work on.”
+
+**Timing rules.** Save duels, ranked play, pasted-code generation, and the skill map for Q&A. If a
+tutor response takes more than eight seconds, use the labelled recording and keep moving. Identify
+authored replies as fallbacks if they appear. Use the 15-second talk buffer if needed and stop
+at **3:45**.
+
+### Slide 13 — Technology (0:30)
 In one breath: plain HTML, CSS and JavaScript on the front, Python and FastAPI on the back. The
 **validator** parses code, blocks anything outside a beginner whitelist, runs it with step and time
 limits, and names the error. **559 puzzles** are generated from templates, and every wrong option is
 **proven wrong** by running it. More than 400 automated tests protect all of it.
 
-### Slide 13 — Business potential (0:45)
+### Slide 14 — Business potential (0:45)
 **Free for students**, cheap to run: puzzles are generated once, in advance, and Misaki, the AI tutor, is capped
 with free hand-written fallbacks.
 
@@ -208,7 +212,7 @@ And the paid part is no longer an idea. You just saw the live classroom dashboar
 student support. Lecturers can also generate verified practice from their own code. That's a
 **classroom package for schools**, starting with BTEC FPT lecturers.
 
-### Slide 14 — Roadmap (0:20)
+### Slide 15 — Roadmap (0:20)
 Already built beyond the demo: a **ranked leaderboard** and **friend races**, where the server replays
 every game, so a score can't be faked. Next: a **pilot with real students** to measure learning (we
 don't claim it yet), and more languages like C# and JavaScript.
@@ -219,11 +223,11 @@ that light up as they master them.
 ↳ *(Only if 1v1 is rehearsed)* And a real-time **1v1 mode**: solve a lock and you send bug lines to your
 opponent's board, against a friend or against **Misaki**, who can also coach you while you play.
 
-### Slide 15 — Close and questions (0:10)
+### Slide 16 — Close and questions (0:10)
 Syntax Stack keeps the feeling of a game people love, and puts **verified code** underneath it, so
 every mistake becomes a lesson. Thank you. We'd be happy to take your questions.
 
-### Slide 15 — Prepared answers
+### Slide 16 — Prepared answers
 
 - **"Why not let AI grade the code?"** (Lam) AI can be confidently wrong. In a game where you only get one
   mistake, one wrong grade is unfair. The validator runs the code, so it's always right. AI explains.
@@ -248,10 +252,9 @@ every mistake becomes a lesson. Thank you. We'd be happy to take your questions.
   code, and a row clears only when the code is correct.
 - **"What does the AI cost?"** (Minh) It's capped per day and per visitor, cached, and the game works
   fully without it.
-- **"Who or what is Misaki?"** (Minh) Misaki is our AI character, with two jobs, and we're precise
-  about both. As the **tutor**, her explanations come from a large language model, **Google Gemini**,
-  through our own prompts, limits and hand-written fallbacks; she only explains what the validator has
-  already decided. As the **opponent**, she's a **search-based game AI**: she plans each move by
+- **"Who or what is Misaki?"** (Minh) As the **tutor**, she uses **Google Gemini** to suggest
+  activities, draft practice puzzles, and explain the learner's checked attempts. The validator checks
+  the puzzles and decides whether answers are correct. As the **opponent**, she plans each move by
   searching the possible placements and scoring the boards, the same family of technique classic game
   engines use. She isn't trained on data and doesn't learn; her four levels differ in how far she
   searches and how fast she plays.
@@ -269,5 +272,5 @@ every mistake becomes a lesson. Thank you. We'd be happy to take your questions.
   training mode where she coaches you during the match. Players see their own progress by climbing
   her levels.
 
-### Slide 16 — Thank you
+### Slide 17 — Thank you
 Try it now at **syntax.screepai.moe**.

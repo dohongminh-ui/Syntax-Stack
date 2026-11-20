@@ -64,8 +64,9 @@ Tutor environment variables (read on every call):
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SYNTAX_STACK_TUTOR_URL` | unset | n8n webhook URL. Tutor is off unless URL and token are both set. |
+| `SYNTAX_STACK_TUTOR_URL` | unset | n8n webhook URL, used when the token is also set. |
 | `SYNTAX_STACK_TUTOR_TOKEN` | unset | Shared secret sent as `X-Syntax-Stack-Token`. |
+| `SYNTAX_STACK_GEMINI_API_KEY` | unset | Server-side key for direct Gemini and streamed Misaki speech. |
 | `SYNTAX_STACK_TUTOR_DAILY_LIMIT` | `500` | Real tutor calls per local day (in-process, resets at midnight). `0` disables the tutor. Cache hits do not count. |
 | `SYNTAX_STACK_TUTOR_CLIENT_LIMIT` | `40` | Real tutor calls per visitor (IP) per day. |
 | `SYNTAX_STACK_API_DOCS` | off | `1` serves `/docs`, `/redoc`, `/openapi.json` (keep off in production). |
@@ -78,6 +79,10 @@ The workflow tries Gemini 3.8 Flash for board coaching and Flash-Lite for the sh
 and rematch requests. Gemini 3.7 Flash is the second Developer API attempt. Vertex is reached
 only if both Gemini requests return a quota or availability error. When the tutor is unavailable,
 the game uses the authored feedback and verified puzzle bank.
+
+With both providers configured, chat and puzzle generation use n8n, and speech streams directly
+from Gemini. For the playback contract and WAV fallback, see
+[Chat with Misaki](../docs/misaki-chat.md#listening-to-a-reply).
 
 On a Linux host running n8n on loopback port 5678, `docker compose up -d --build` from the
 project root runs the game on port 8000. Set `SYNTAX_STACK_BIND` to the host's LAN address

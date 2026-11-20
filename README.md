@@ -8,18 +8,27 @@ the BTEC Best Coder 2026 competition. Live: **https://syntax.screepai.moe**.
   a bug line; the second ends the run with a study plan.
 - **Syntax Rows**: each row of the board is a line of Python built from code tiles; rows only clear
   when the program runs correctly. Students can predict the output first and explain their code back.
-- **Misaki**: one AI character with two jobs. As the **AI tutor** she explains a student's actual
-  attempt using a language model (an optional n8n webhook), and the game falls back to authored text
-  whenever the tutor is off or fails. As the **AI opponent** in 1v1 she plans her moves with a search
-  algorithm (four levels, plus a training mode where she coaches you).
+- **Chat with Misaki**: the Live2D tutor can open a Code Rescue activity or Syntax Rows level, make a
+  verified puzzle set, and explain what the learner got right or wrong after checking their attempts.
+  She reads replies and puzzle introductions aloud in Vietnamese, English, or Japanese. The voice
+  selector is separate from the **VI | EN** text setting, and muting skips speech requests.
+- **Misaki in 1v1**: a search-based opponent with four levels and a training mode that suggests moves.
 - **Play together**: real-time 1v1 duels (against a friend or Misaki), a ranked leaderboard and friend
   races whose scores the server verifies by replaying the moves, and a **live classroom** where a
-  teacher sees the class's weak topics and most common mistakes.
+  teacher opens a room, students join by QR code, and checked answers update the class dashboard.
 - **More**: puzzles generated from pasted code (run in a sandbox), a skill map, generated friendly
   nicknames, and a **VI | EN** language switch (Vietnamese by default; `?lang=en` also works).
 
 A restricted Python validator, not an AI, decides what is correct. One FastAPI process serves the JSON
 API, the 1v1 WebSocket and the plain HTML/CSS/JS frontend.
+
+## Live demo
+
+Open [Chat with Misaki](https://syntax.screepai.moe/?demo=misaki&lang=en) with sound on. Ask her to
+open Code Rescue, then Syntax Rows Level 3. Have her make a loop puzzle and review a wrong answer and
+its correction. Finish on the teacher's dashboard as a teammate submits a Code Rescue answer from
+their phone. The [finals speaking script](docs/presentation-script.md#slide-12--live-demo-target-330-hard-stop-345)
+has the copy-paste prompts, staging and timing.
 
 ## Quick start
 
@@ -45,9 +54,8 @@ python3 -m venv .venv
 .venv/bin/python -m uvicorn app.main:app --port 8000
 ```
 
-Open **http://localhost:8000/**. API explorer: http://localhost:8000/docs. Health check:
-`GET /api/health` returns `{"ok": true, "puzzles": 706, "tutor": {...}}`: 706 generated forms, 559 of
-them playable in Code Rescue (the rest are debug-only variants).
+Open **http://localhost:8000/**. Set `SYNTAX_STACK_API_DOCS=1` to enable the API explorer at
+`/docs`. The `GET /api/health` endpoint reports the playable puzzle count and tutor status.
 
 **Run the tests** (from `backend/`):
 
@@ -55,12 +63,13 @@ them playable in Code Rescue (the rest are debug-only variants).
 .venv/bin/python -m pytest -q        # Windows: .venv\Scripts\python -m pytest -q
 ```
 
-Expected: about 540 passed (538 on 19 Nov 2026). The golden tests replay games in the real
-`game.js` (needs Node.js) and require the Python engine to reach the same result.
+The golden tests replay games in the real `game.js` using Node.js and check that the Python engine
+reaches the same result.
 
-The tutor is optional. To enable it, set `SYNTAX_STACK_TUTOR_URL` and `SYNTAX_STACK_TUTOR_TOKEN` in the
-server's environment ([docs/ai-tutor.md](docs/ai-tutor.md)). Without them everything works with
-authored hints and explanations.
+Enable the optional tutor with `SYNTAX_STACK_TUTOR_URL` and `SYNTAX_STACK_TUTOR_TOKEN` for n8n, or
+`SYNTAX_STACK_GEMINI_API_KEY` for direct Gemini. A server-side Gemini key also enables streaming
+speech when n8n handles chat. The game has authored hints and explanations for unavailable AI.
+See [tutor setup and deployment](docs/operations.md#environment-variables).
 
 Run uvicorn with **one worker**: 1v1 matches live in the server process.
 
@@ -109,7 +118,8 @@ sextax/
 │   │   ├── custom.py, custom_gen.py   paste-your-own-code puzzle sets (store, API logic, generator)
 │   │   ├── sandbox.py, sandbox_worker.py  child-process runner for pasted code
 │   │   ├── puzzle_tools.py            helpers shared by generate_bank.py and custom_gen.py
-│   │   └── tutor.py                   optional n8n tutor client (cache per language, fallback)
+│   │   ├── misaki.py, misaki_voice.py  chat actions, checked puzzle review, signed speech tickets
+│   │   └── tutor.py                   n8n and Gemini client, streamed speech, cache and quotas
 │   ├── content/
 │   │   ├── templates/*.yaml           16 Code Rescue templates (4 topics x 4 types), vi + *_en text
 │   │   ├── levels/r1..r5.yaml         5 Syntax Rows levels
@@ -136,6 +146,7 @@ sextax/
         ├── puzzle-modal.js            puzzle panel (4 puzzle types, hints, commit, result)
         ├── rows-game.js, rows-board.js, rows-screen.js  Syntax Rows rules, board, screens
         ├── pvp.js, pvp-screen.js, pvp-match.js, misaki.js  1v1 lobby, match UI, Misaki
+        ├── misaki-chat.js, misaki-stage.js, misaki-voice.js  Live2D tutor, chat and playback
         ├── ranked.js, race.js, leaderboard.js, runlog.js, rank-ui.js  ranked play and races
         ├── rooms.js                   live classroom (teacher and student)
         ├── custom.js, skills.js       puzzles from pasted code, skill map
@@ -159,6 +170,7 @@ sextax/
 | [docs/ranked-and-race.md](docs/ranked-and-race.md) | Ranked runs, races, leaderboards, server replay |
 | [docs/syntax-rows.md](docs/syntax-rows.md) | Syntax Rows levels, assembly, trace, twist, stars, adding a level |
 | [docs/ai-tutor.md](docs/ai-tutor.md) | The optional AI tutor, privacy, cost, n8n setup |
+| [docs/misaki-chat.md](docs/misaki-chat.md) | Chat actions, verified puzzles and reviews, voice, Live2D |
 | [docs/frontend.md](docs/frontend.md) | Frontend modules, state machines, drag, design system, motion, accessibility |
 | [docs/operations.md](docs/operations.md) | Setup, environment variables, tests, deployment, troubleshooting |
 | [docs/api-contract.md](docs/api-contract.md) | HTTP API contract |

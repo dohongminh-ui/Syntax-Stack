@@ -11,13 +11,14 @@ want to read the technical side. Start with [architecture.md](architecture.md).
 | [validator-and-safety.md](validator-and-safety.md) | The restricted Python runner: AST whitelist, limits, error groups, board-row mapping, threat model and its honest gaps, test coverage. |
 | [puzzle-bank.md](puzzle-bank.md) | Code Rescue content: template YAML schema, the 16 templates, the offline generator, SQLite schema, selection rules, how to add content. |
 | [syntax-rows.md](syntax-rows.md) | Syntax Rows: level YAML schema, board assembly, diagnosis order, trace, prediction, practice, twist, teach-back, hints, stars and score, how to add a level. |
-| [ai-tutor.md](ai-tutor.md) | The optional n8n tutor: tasks and exact requests, limits, fallback, privacy, cost controls, responsible-AI rules, n8n setup. |
+| [ai-tutor.md](ai-tutor.md) | Optional n8n and Gemini tutor: request formats, runtime limits, fallbacks, privacy and setup. |
 | [frontend.md](frontend.md) | Module map, screens, game state machines, rendering, drag system, puzzle panel, design system, motion, accessibility, local storage, mock mode and demo hooks. |
 | [operations.md](operations.md) | Setup, running, environment variables, regenerating the bank, tests, deployment, troubleshooting. |
-| [api-contract.md](api-contract.md) | The HTTP API contract (endpoints, enums, JSON examples). Not edited by these documents; see "Open questions" in each document for places where code goes beyond it. |
-| [misaki-chat.md](misaki-chat.md) | Chat with Misaki: Live2D chat screen, recommendations from a fixed action whitelist, AI-written programs turned into verified puzzles, canned and safety fallbacks, model licence handling. |
+| [api-contract.md](api-contract.md) | HTTP endpoints, request and response formats, and links to feature-specific contracts. |
+| [misaki-chat.md](misaki-chat.md) | Misaki's Live2D chat, game actions, verified puzzles, checked reviews, and VI / EN / JA voice playback. |
 | [design-brief.md](design-brief.md) | Visual design brief v2 ("Keycap"): tokens, keycap component, layout, motion rules. |
 | [presentation-content.md](presentation-content.md) | Slide text for the competition presentation (SERS template). |
+| [presentation-script.md](presentation-script.md) | Finals speaking script, copy-paste Misaki prompts, and live classroom staging. |
 
 Outside `docs/`:
 

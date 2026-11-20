@@ -71,10 +71,10 @@ Do not use `--reload` in production: Syntax Rows levels are cached after first u
 | --- | --- | --- | --- |
 | `SYNTAX_STACK_DB` | `app/bank.py` (read at import) | `backend/data/puzzles.sqlite` | Path of the puzzle database. |
 | `SYNTAX_STACK_LEVELS` | `app/rows.py` (read at import) | `backend/content/levels` | Folder with Syntax Rows level YAML files. |
-| `SYNTAX_STACK_TUTOR_URL` | `app/tutor.py` (read on every call) | unset | n8n webhook URL. With the token unset the tutor is off. |
+| `SYNTAX_STACK_TUTOR_URL` | `app/tutor.py` (read on every call) | unset | n8n webhook URL, used when the token is also set. |
 | `SYNTAX_STACK_TUTOR_TOKEN` | `app/tutor.py` (read on every call) | unset | Shared secret, sent as header `X-Syntax-Stack-Token`. |
-| `SYNTAX_STACK_GEMINI_API_KEY` | `app/tutor.py` (read on every call) | unset | Google Gemini API key for the direct provider (no n8n). Used only when the n8n pair above is not both set. Sent in the `x-goog-api-key` header, never in a URL, never logged. |
-| `SYNTAX_STACK_GEMINI_MODEL` | `app/tutor.py` (read on every call) | per task | Gemini model for every task of the direct provider. Default: the model the n8n flow uses first, `gemini-3.8-flash` for `coach` and `gemini-3.5-flash-lite` for every other task. |
+| `SYNTAX_STACK_GEMINI_API_KEY` | `app/tutor.py` (read on every call) | unset | Enables direct Gemini and streamed Misaki speech. Chat and puzzle creation prefer n8n with the pair above set. The key travels in the `x-goog-api-key` header. |
+| `SYNTAX_STACK_GEMINI_MODEL` | `app/tutor.py` (read on every call) | per task | Override for the direct provider's text model. Defaults to `gemini-3.8-flash` for `coach` and `gemini-3.5-flash-lite` for other text tasks. Speech selects its own TTS models. |
 | `SYNTAX_STACK_TUTOR_DAILY_LIMIT` | `app/tutor.py` (read on every call) | `500` | Maximum real tutor calls per local day, counted in process. `0` turns the tutor off (always canned). An unparsable value falls back to 500. |
 | `SYNTAX_STACK_TUTOR_CLIENT_LIMIT` | `app/tutor.py` (read on every call) | `40` | Maximum real tutor calls per visitor (IP) per local day, so one visitor cannot use up the daily limit for everyone. Over it: canned text (reason `client_limit`). |
 | `SYNTAX_STACK_PUBLIC_URL` | `app/rooms.py` (read on every call) | unset | Public base URL used for live-classroom join links and QR codes (e.g. `https://syntaxstack.example`). Unset: the proxy's `X-Forwarded-Proto` / `X-Forwarded-Host`, else the request host. |
@@ -84,8 +84,8 @@ Do not use `--reload` in production: Syntax Rows levels are cached after first u
 | `SYNTAX_STACK_BIND` | `compose.yaml` only | `127.0.0.1` | Address uvicorn binds to inside the compose service. Use the host's LAN address to allow LAN access. |
 | `PYTHONDONTWRITEBYTECODE` | `Dockerfile` | `1` | Avoids `.pyc` files in the image. |
 
-Everything else (port, host, workers) is a uvicorn command-line option. Nothing reads a `.env` file;
-set variables in the shell or the service definition.
+Set host, port, and workers with uvicorn command-line options. The app reads its process
+environment. Docker Compose can populate it from the host environment or the local `.env` file.
 
 The n8n tutor needs **both** `SYNTAX_STACK_TUTOR_URL` and `SYNTAX_STACK_TUTOR_TOKEN`. Details and the
 fallback rules: [ai-tutor.md](ai-tutor.md#4-environment-variables-and-runtime-limits).
@@ -96,9 +96,14 @@ uvicorn. With the n8n pair unset, `app/tutor.py` calls the Gemini REST API direc
 (`generativelanguage.googleapis.com`, key in a header, a 38 s timeout, no proxy settings read from the
 environment) using the same prompts, chat function declarations and structured response schemas as `deploy/n8n-tutor.json`
 (`app/tutor_prompts.py` holds the copy; a test keeps the two identical). Quotas, the in-process cache,
-the concurrency slots and the canned fallback are the same as with n8n, and if both providers are
-configured n8n wins. `GET /api/health` reports the active one as `tutor.provider` (`"n8n"`, `"gemini"`
+the concurrency slots and the canned fallback are the same as with n8n. When both providers are
+configured, n8n handles text requests. `GET /api/health` reports the text provider as `tutor.provider` (`"n8n"`, `"gemini"`
 or `null`). Keep the key out of git, as with the n8n token.
+
+**Misaki speech.** Set the Gemini key in the app's server environment to stream audio directly,
+including when chat uses n8n. An n8n-only installation serves buffered WAV audio through its tutor
+workflow. Publish the repository workflow in n8n alongside app releases that change the chat tools,
+puzzle schema, or translation prompt. See [Chat with Misaki](misaki-chat.md#listening-to-a-reply).
 
 ## 4. Regenerating the puzzle bank
 
@@ -274,8 +279,8 @@ relative URLs and is served by the same app, no CORS setup is needed.
   device that reaches the app directly (LAN, bypassing Cloudflare) can fake that header.
 - **The validator runs player-assembled programs in the web process.** Read
   [validator-and-safety.md](validator-and-safety.md#5-threat-model) before changing what can reach it.
-- **Secrets.** Keep `SYNTAX_STACK_TUTOR_TOKEN` out of git; the default in `compose.yaml` is the empty
-  string.
+- **Secrets.** Keep `SYNTAX_STACK_TUTOR_TOKEN` and `SYNTAX_STACK_GEMINI_API_KEY` out of git.
+  Compose supplies both from the server environment.
 - **Health check.** `GET /api/health`; treat `puzzles: 0` as a deployment error (database missing).
 - **Caching and asset versions.** The server renders `index.html` itself (`render_index` in
   `backend/app/main.py`): every stylesheet and `js/main.js` gets `?v=<build>`, and an import map points

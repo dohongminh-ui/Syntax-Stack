@@ -1,8 +1,8 @@
 # Optional AI tutor
 
-The AI tutor is an *optional* layer that turns validator results into short, readable feedback. The
-game is complete without it: every tutor-backed endpoint has an authored fallback, and when the tutor
-is not configured nothing ever calls out.
+The optional AI tutor explains validator results, suggests activities, and drafts puzzles for the
+game to verify. Gameplay has authored fallbacks when the tutor is unavailable. Chat with Misaki
+can also play her replies aloud when speech is available.
 
 Code: `backend/app/tutor.py` (client), `backend/app/main.py` (what is sent), `deploy/n8n-tutor.json`
 (a reference n8n workflow). Frontend labelling: `frontend/js/editor.js: tutorNote`.
@@ -12,15 +12,18 @@ Related: [architecture.md](architecture.md), [validator-and-safety.md](validator
 ## 1. Design in one paragraph
 
 The server decides correctness with the validator, then calls `tutor.feedback(task, context,
-fallback)`. If both `SYNTAX_STACK_TUTOR_URL` and `SYNTAX_STACK_TUTOR_TOKEN` are set and a concurrency
-slot is free, it POSTs `{task, context}` to an n8n webhook, validates the reply, caches it, and
-returns `{"text": ..., "source": "ai"}`. In every other case (not configured, busy, timeout, HTTP
-error, malformed reply) it returns `{"text": <authored fallback>, "source": "canned"}`. The browser
-shows the `source` so the learner can tell which is which. The tutor's text is only ever displayed.
+fallback)`. With a free concurrency slot, it sends `{task, lang, context}` to n8n or directly to
+Gemini. It validates and caches the reply and returns `{"text": ..., "source": "ai"}`. If the
+tutor is unavailable or returns an invalid reply, it returns authored text with `"source": "canned"`.
+The in-game tutor panels use the source to distinguish the two. Misaki chat uses one name label and
+explains the AI role in its footer.
 
-## 2. The six tasks and the exact request
+## 2. Gameplay tasks and request formats
 
-Every request body is the JSON object `{"task": "<name>", "context": {...}}` serialised with
+The [Misaki chat contract](misaki-chat.md#3-ai-tasks) covers native game actions, puzzle generation,
+speech translation, and playback. They share the runtime limits below.
+
+Every request body is the JSON object `{"task": "<name>", "lang": "en" | "vi", "context": {...}}` serialised with
 `ensure_ascii=False` (`tutor.feedback`). The context is built in `main.py` from server-side data
 (the stored puzzle row, the re-run board), never copied from what the client says about itself,
 except the learner's own words in `teach_back` and the answer they chose.
@@ -209,21 +212,24 @@ is ignored (the reference workflow also returns `status`, `error_category`, `fin
 
 | Setting | Value | Notes |
 | --- | --- | --- |
-| `SYNTAX_STACK_TUTOR_URL` | n8n production webhook URL | Read with `os.getenv` at each call. Unset or empty means canned only. |
-| `SYNTAX_STACK_TUTOR_TOKEN` | the shared secret | Sent as `X-Syntax-Stack-Token`. Both variables must be non-empty, or the tutor is skipped. |
+| `SYNTAX_STACK_TUTOR_URL` | n8n production webhook URL | Used with the shared token. |
+| `SYNTAX_STACK_TUTOR_TOKEN` | the shared secret | Sent as `X-Syntax-Stack-Token`. |
+| `SYNTAX_STACK_GEMINI_API_KEY` | server-side Gemini API key | Streams Misaki's speech directly. Also enables the direct tutor when n8n is unset. |
 | `SYNTAX_STACK_TUTOR_DAILY_LIMIT` | integer, default `500` | Real calls per local day (resets at local midnight, in process). `0` disables the tutor (always canned, reason `limit`). Cache hits do not count. |
 | `SYNTAX_STACK_TUTOR_CLIENT_LIMIT` | integer, default `40` | Real calls per visitor per local day. A visitor is a SHA-256 of the date and their IP (`CF-Connecting-IP`, else the direct peer), kept in memory only. Over it: canned, reason `client_limit`. Cache hits do not count. Stops one visitor exhausting the daily limit for everyone. |
 | Request timeout | 38 s (`_ask`) | 80 s for `review_content.py`. |
 | Reply limit | 1 to 750 characters after `strip()` | Violations raise `ValueError` and fall back. |
-| Cache | manual 128-entry LRU dict keyed by `(url, payload)` in `feedback()` | See below. |
+| Cache | 128-entry LRU keyed by provider URL, language, and payload | Speech audio bypasses the server cache. |
 | Concurrency | `BoundedSemaphore(2)` | See below. |
 
 `compose.yaml` sets `SYNTAX_STACK_TUTOR_URL` to `http://127.0.0.1:5678/webhook/syntax-stack-tutor`
-and passes `SYNTAX_STACK_TUTOR_TOKEN` from the host environment.
+and supplies the token and Gemini key from the host environment. When both providers are configured,
+n8n handles text and Gemini serves streamed speech.
 
 ### Cache
 
-`feedback()` keeps a manual `OrderedDict` cache (128 entries, least recently used evicted) so a cache hit can be told from a real call. The key is the pair `(url, payload string)`, so only an
+`feedback()` and structured tutor requests share a 128-entry `OrderedDict` cache. The keys include
+the URL, language, and payload, so only an
 **identical** task and context (same prompt, same code, same wrong choice, same learner text) is
 served from memory. Only successful replies are cached (exceptions are not). It is per process, has
 no expiry, and is cleared on restart. With several uvicorn workers each has its own cache.
@@ -233,13 +239,14 @@ no expiry, and is cleared on restart. With several uvicorn workers each has its 
 `feedback()` does `_slots.acquire(blocking=False)`. If both slots are in use the call returns the
 canned fallback immediately; it never waits in a queue. The slot is released in a `finally` block.
 The cache is checked before the slot, so a cache hit never needs a slot. During a tutor call the worker thread of that request is blocked for up to 38 s
-(FastAPI runs these endpoints in a thread pool).
+(FastAPI runs these endpoints in a thread pool). Streamed speech uses an asynchronous connection and
+holds a tutor slot until the stream completes or is canceled.
 
 ### Fallback rules
 
 `feedback()` returns canned text when any of the following is true:
 
-1. `SYNTAX_STACK_TUTOR_URL` or `SYNTAX_STACK_TUTOR_TOKEN` is unset or empty.
+1. No tutor is configured. The n8n URL/token pair or the direct Gemini key can configure the tutor.
 2. No slot is free (`busy`).
 3. The daily limit is reached or is 0 (`limit`).
 4. `httpx.HTTPError`, `httpx.InvalidURL` (for example a malformed URL), `ValueError`, `KeyError` or `TypeError`
@@ -276,13 +283,15 @@ Sent to the webhook (and from there to the model provider):
 - What the learner chose: a bank option, an arrangement of bank lines, or Syntax Rows tokens
   (as the assembled program).
 - The validator's diagnosis: message, error group, row index, outputs, and one trace step if asked.
-- The **learner's free text**: `reflection` in `teach_back` (up to 400 characters) and `prediction` in
-  `predict` (up to 240). These are the only fields a person types. `debrief` sends no client text, only
-  ids that the server resolves against the bank.
+- Learner input includes `reflection` in `teach_back` (up to 400 characters) and `prediction` in
+  `predict` (up to 240). Chat includes recent messages, requested puzzle ideas, and relevant checked
+  attempts. The tutor can receive weak topic labels derived from local mistake history.
+- Speech synthesis receives the issued reply transcript, which can be a translation of the text
+  shown in chat.
 
 Not sent: names, accounts, emails, session or device identifiers, IP addresses (the webhook sees the
-game server's address, not the learner's), the contents of `localStorage` (high score, stars, mistake
-history), or anything about other puzzles in the run. The game has no user identity to send.
+game server's address), scores, stars, or the full local mistake history. Learners can still type
+personal information into free-text fields.
 
 Things to be aware of:
 

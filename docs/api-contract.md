@@ -207,6 +207,14 @@ response carries them. A student opening a shared link never receives them. `lev
 
 ---
 
+# Chat with Misaki
+
+See [Misaki's API contract](misaki-chat.md#2-api) for chat messages and game actions, verified puzzle
+sets, checked reviews, and signed speech tickets. Both chat and puzzle creation accept optional
+`voice` and `voice_language` fields. The playback endpoint serves streamed PCM or buffered WAV.
+
+---
+
 # Syntax Rows API (see `Syntax_Rows_Gameplay_Spec.md`)
 
 Levels live in `backend/content/levels/*.yaml` (5 Beginner levels from spec §7). Each level file holds: id, order, title, goal (Vietnamese), expected_output, rows, cols (10), tokens (id, text, w in 1..3, topic or "syntax", is_distractor), canonical solution as rows of token ids with indent, required AST constructs (e.g. `For`, `If`, `FunctionDef`), 3 general hints, and 3 hints per error_group.
