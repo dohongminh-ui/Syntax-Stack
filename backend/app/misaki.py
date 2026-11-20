@@ -418,7 +418,7 @@ def _checked_review(pending: dict) -> list[dict]:
         except bank.BankError:
             continue
         counts[puzzle_id] = counts.get(puzzle_id, 0) + 1
-        checked.append({**evidence, "topic": puzzle["topic"], "correct": result["correct"],
+        checked.append({**evidence, "puzzle_id": puzzle_id, "topic": puzzle["topic"], "correct": result["correct"],
                         "error_group": result["error_group"]})
     return list(reversed(checked))
 

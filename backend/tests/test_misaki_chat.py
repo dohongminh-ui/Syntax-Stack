@@ -655,6 +655,7 @@ def test_chat_uses_checked_wrong_and_correct_attempts_from_misakis_puzzle(client
     response = client.post(CHAT, json=body, headers=headers)
     assert response.json()["source"] == "ai"
     first, second = ai.calls[-1]["context"]["puzzle_review"]
+    assert first["puzzle_id"] == second["puzzle_id"] == puzzle["id"]
     assert first["correct"] is False and first["choice"] == wrong["text"]
     assert first["expected_output"] is None and first["actual_output"] is None and first["solution"] is None
     assert second["correct"] is True and second["choice"] == correct["text"]
