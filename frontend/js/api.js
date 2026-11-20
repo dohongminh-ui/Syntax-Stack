@@ -86,19 +86,22 @@ export async function submitAnswer(id, body, { room = true } = {}) {
   return request('POST', '/api/puzzle/' + encodeURIComponent(id) + '/answer', body);
 }
 
-export async function getHint(id, level) {
+export async function getHint(id, level, { coach = false } = {}) {
   if (isMock) return (await mock()).getHint(id, level, matchCtx);
   const run = runCtx ? '&run_id=' + encodeURIComponent(runCtx.run_id) + '&run_token=' + encodeURIComponent(runCtx.run_token) : '';
   const match = matchCtx ? '&match_id=' + encodeURIComponent(matchCtx.match_id) + '&match_token=' + encodeURIComponent(matchCtx.match_token) : '';
-  return request('GET', '/api/puzzle/' + encodeURIComponent(id) + '/hint?level=' + level + run + match);
+  return request('GET', '/api/puzzle/' + encodeURIComponent(id) + '/hint?level=' + level + run + match + (coach ? '&coach=true' : ''),
+    null, coach ? { timeout: TUTOR_TIMEOUT_MS } : undefined);
 }
 
-export async function explainChoice(id, body) {
+export async function explainChoice(id, body, { coach = false, level = 'intermediate' } = {}) {
   if (isMock) {
+    if (coach) return (await mock()).coachChoice(id, body, level);
     const result = await (await mock()).submitAnswer(id, { ...body, reveal: true });
     return { text: result.explanation || result.message, source: 'canned' };
   }
-  return request('POST', '/api/puzzle/' + encodeURIComponent(id) + '/explain', body, { timeout: TUTOR_TIMEOUT_MS });
+  return request('POST', '/api/puzzle/' + encodeURIComponent(id) + '/explain' + (coach ? '?coach=true&level=' + level : ''),
+    body, { timeout: TUTOR_TIMEOUT_MS });
 }
 
 export async function rematch(id, level) {
@@ -162,6 +165,14 @@ export async function rowsHint(id, level, errorGroup, attempt) {
   const path = '/api/rows/levels/' + encodeURIComponent(id) + '/hint?level=' + level;
   if (attempt) return request('POST', path, attempt, { timeout: TUTOR_TIMEOUT_MS });
   return request('GET', path + (errorGroup ? '&error_group=' + encodeURIComponent(errorGroup) : ''));
+}
+
+export async function rowsReview(id, attempt, previous) {
+  if (isMock) {
+    const result = await (await mock()).rowsRun(id, attempt);
+    return { text: result.message, source: 'canned' };
+  }
+  return rowsHint(id, 1, null, { ...attempt, review: true, previous_rows: previous?.rows });
 }
 
 // ---- Custom puzzle sets (pasted code) ----

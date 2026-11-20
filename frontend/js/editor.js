@@ -112,8 +112,8 @@ export function richText(text) {
  * Tutor text. source 'ai' -> a labelled .tutor block; 'canned' -> the `# context: text` comment.
  * `{ loading: true }` renders the AI shell with a "reading" state.
  */
-export function tutorNote({ text = '', source = 'canned', context = '', loading = false, cls = '' } = {}) {
-  if (!loading && source !== 'ai') {
+export function tutorNote({ text = '', source = 'canned', context = '', loading = false, cls = '', named = false } = {}) {
+  if (!loading && source !== 'ai' && !named) {
     const label = context ? `${context}: ` : '';
     return comment(label + text, cls);
   }
@@ -121,11 +121,11 @@ export function tutorNote({ text = '', source = 'canned', context = '', loading 
     ? el('p', { class: 'tutor-body tutor-loading' }, 'Misaki đang đọc',
         el('span', { class: 'tutor-dots', 'aria-hidden': 'true' }, el('i'), el('i'), el('i')))
     : el('p', { class: 'tutor-body' }, richText(text));
-  return el('div', { class: 'tutor ' + cls, role: 'group', 'aria-label': 'Misaki, gia sư AI' },
+  return el('div', { class: 'tutor ' + cls, role: 'group', 'aria-label': named ? 'Misaki' : 'Misaki, gia sư AI' },
     el('div', { class: 'tutor-head' },
       misakiAvatar({ cls: 'tutor-badge' }),
-      el('span', { class: 'tutor-label', text: 'MISAKI · GIA SƯ AI' }),
+      el('span', { class: 'tutor-label', text: named ? 'MISAKI' : 'MISAKI · GIA SƯ AI' }),
       context ? el('span', { class: 'tutor-ctx', text: context }) : null),
     body,
-    loading ? null : el('p', { class: 'tutor-foot', text: 'Do AI tạo, có thể chưa chính xác. Hãy tự kiểm tra bằng Chạy kiểm tra.' }));
+    !loading && source === 'ai' ? el('p', { class: 'tutor-foot', text: 'Do AI tạo, có thể chưa chính xác. Hãy tự kiểm tra bằng Chạy kiểm tra.' }) : null);
 }

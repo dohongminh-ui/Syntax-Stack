@@ -19,6 +19,7 @@ const $ = (id) => document.getElementById(id);
 const STORE_KEY = 'syntaxstack.misaki.chat';
 const REVIEW_KEY = 'syntaxstack.misaki.review';
 const REVIEW_QUESTION = 'Mình đã làm đúng và sai ở đâu trong bộ câu đố này?';
+const FOLLOW_UP_QUESTION = 'Cho mình một câu hỏi tiếp theo cùng chủ đề, chỉ đổi một chi tiết nhé.';
 const MAX_REVIEW_ATTEMPTS = 8;
 const MAX_INPUT = 500; // API: 1 to 500 characters per message
 const MAX_MESSAGES = 12; // API: 1 to 12 messages per request
@@ -113,11 +114,12 @@ function saveReview(value) {
   }
 }
 
-function recordAttempt(setId, puzzleId, answer) {
+function recordAttempt(setId, puzzleId, answer, result) {
   const attempts = review?.set_id === setId ? review.attempts : [];
   const last = attempts.filter((entry) => entry.puzzle_id === puzzleId).at(-1);
   const recent = attempts.filter((entry) => entry.puzzle_id !== puzzleId || entry === last);
-  saveReview({ set_id: setId, attempts: [...recent, { puzzle_id: puzzleId, ...answer }].slice(-MAX_REVIEW_ATTEMPTS) });
+  saveReview({ set_id: setId, ready: review?.set_id === setId && review.ready || result?.correct || answer.reveal,
+    attempts: [...recent, { puzzle_id: puzzleId, ...answer }].slice(-MAX_REVIEW_ATTEMPTS) });
 }
 
 function load() {
@@ -211,6 +213,8 @@ function append(m) {
 function setBusy(on) {
   busy = on;
   ui.send.disabled = on;
+  ui.followUp.hidden = !review?.ready;
+  ui.followUp.disabled = on;
   ui.root.classList.toggle('is-busy', on);
   ui.log.setAttribute('aria-busy', on ? 'true' : 'false');
 }
@@ -230,6 +234,7 @@ function setMood(m) {
 async function send(raw) {
   const text = String(raw || '').trim().slice(0, MAX_INPUT);
   if (!text || busy) return;
+  const previous = msgs.at(-1);
   append({ role: 'user', text });
   ui.input.value = '';
   grow();
@@ -240,7 +245,8 @@ async function send(raw) {
   let reply;
   try {
     const context = { level: nav.level(), weak_topics: store.weakTopics(TOPICS, 4) };
-    if (review?.attempts.length) context.puzzle_review = review;
+    if (review?.attempts.length) context.puzzle_review = { set_id: review.set_id, attempts: review.attempts };
+    if (previous?.role === 'misaki' && previous.action) context.previous_action = previous.action;
     reply = await api.misakiChat({ messages: payload(), context });
   } catch {
     reply = { text: SAY.offline, mood: 'worried', action: null, local: true };
@@ -256,11 +262,7 @@ async function runAction(a, key) {
   if (busy) return;
   if (a.type === 'make_puzzle') return makePuzzle(a, key);
   try {
-    if (a.type === 'rescue') nav.run.rescue({ mode: a.mode, level: a.level, focusTopic: a.focus_topic || undefined });
-    else if (a.type === 'rows') await nav.run.rows(a.level_id);
-    else if (a.type === 'practice_tray') nav.run.practice();
-    else if (a.type === 'skills') nav.run.skills();
-    else if (a.type === 'pvp_training') nav.run.pvp(a.misaki);
+    await nav.run[a.type]?.(a);
   } catch (e) {
     toast(e.message);
   }
@@ -295,7 +297,7 @@ async function makePuzzle(a, key) {
   if (ui.root.hidden) return; // the learner left while she was writing: the note waits in the chat
   openCustom({ preset: {
     set: res.set, note, back: openMisakiChat, backLabel: 'Về cuộc trò chuyện',
-    onAttempt: (id, answer) => recordAttempt(res.set.id, id, answer),
+    onAttempt: (id, answer, result) => recordAttempt(res.set.id, id, answer, result),
     onReview: () => {
       openMisakiChat();
       send(t(REVIEW_QUESTION));
@@ -314,6 +316,7 @@ function newChat() {
   if (busy) return;
   msgs = [greeting()];
   saveReview(null);
+  setBusy(false);
   save();
   renderAll();
   setMood('happy');
@@ -354,10 +357,12 @@ function build() {
   bar.querySelector('.ed-meta').replaceWith(el('div', { class: 'mk-bar-r' }, fresh, toggle));
 
   const log = el('ol', { class: 'mk-log', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions', 'aria-label': 'Cuộc trò chuyện với Misaki' });
-  const scroller = el('div', { class: 'mk-scroll' }, log, el('p', { class: 'tutor-foot mk-foot-ai', text: DISCLAIMER }));
+  const followUp = el('button', { class: 'btn', type: 'button', text: 'Thử câu hỏi tiếp theo', hidden: true,
+    onclick: () => send(t(FOLLOW_UP_QUESTION)) });
+  const scroller = el('div', { class: 'mk-scroll' }, log, followUp, el('p', { class: 'tutor-foot mk-foot-ai', text: DISCLAIMER }));
   const win = el('div', { class: 'editor mk-win' }, bar, scroller, form);
   $('mk-chat').replaceChildren(win);
-  return { root: $('screen-misaki'), log, scroller, input, send: send_, toggle };
+  return { root: $('screen-misaki'), log, scroller, input, send: send_, toggle, followUp };
 }
 
 // ---- hide / show the stage ----------------------------------------------------------------------------------------

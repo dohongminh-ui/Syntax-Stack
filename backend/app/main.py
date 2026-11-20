@@ -206,6 +206,7 @@ class MisakiContext(BaseModel):
     level: Optional[Level] = None
     weak_topics: list[Topic] = Field(default_factory=list, max_length=4)
     puzzle_review: Optional[MisakiPuzzleReview] = None
+    previous_action: Optional[dict[str, Any]] = Field(default=None, max_length=8)
 
 
 class MisakiChatRequest(BaseModel):
@@ -225,11 +226,15 @@ class MisakiPuzzleRequest(BaseModel):
     level: Level = "intermediate"
 
 
-class AnswerRequest(BaseModel):
+class PuzzleSubmission(BaseModel):
     option_id: Optional[str] = Field(default=None, max_length=40)
     order: Optional[list[OrderItem]] = Field(default=None, max_length=30)
     line_id: Optional[str] = Field(default=None, max_length=40)
     reveal: bool = False
+
+
+class AnswerRequest(PuzzleSubmission):
+    previous: Optional[PuzzleSubmission] = None
     # Live classroom: when both are valid the server logs the checked result for the teacher dashboard.
     room: Optional[str] = Field(default=None, max_length=16)
     player_token: Optional[str] = Field(default=None, max_length=64)
@@ -277,6 +282,9 @@ class RunRequest(BaseModel):
 
 class RowsHintRequest(RunRequest):
     trace_step: Optional[int] = Field(default=None, ge=0)
+    review: bool = False
+    previous_rows: Optional[list[RowPlacement]] = Field(default=None, max_length=30)
+    preview: bool = False
 
 
 class RowsTwistRequest(RunRequest):
@@ -299,7 +307,8 @@ class DebriefRequest(BaseModel):
     level: Level
     mode: Literal["rescue", "practice"]
     end_reason: Literal["crash", "nofit"]
-    wrong: list[WrongAttempt] = Field(min_length=1, max_length=12)
+    wrong: list[WrongAttempt] = Field(default_factory=list, max_length=12)
+    right: list[WrongAttempt] = Field(default_factory=list, max_length=12)
 
 
 class RunCreateRequest(BaseModel):
@@ -403,30 +412,56 @@ def puzzle_answer(puzzle_id: str, req: AnswerRequest):
 
 
 @app.get("/api/puzzle/{puzzle_id}/hint")
-def puzzle_hint(puzzle_id: str, level: int = Query(..., ge=1, le=3),
+def puzzle_hint(puzzle_id: str, request: Request, level: int = Query(..., ge=1, le=3), coach: bool = False,
                 run_id: Optional[str] = Query(default=None, max_length=32),
                 run_token: Optional[str] = Query(default=None, max_length=64),
                 match_id: Optional[str] = Query(default=None, max_length=32),
                 match_token: Optional[str] = Query(default=None, max_length=64)):
-    hint = hints.puzzle_hint(_get_puzzle(puzzle_id), level)
+    puzzle = _get_puzzle(puzzle_id)
+    hint = hints.puzzle_hint(puzzle, level)
     if run_id and run_token and not custom.is_custom_id(puzzle_id):
         ranked.record_hint(run_id, run_token, puzzle_id, level)  # never raises
     if match_id and match_token and not custom.is_custom_id(puzzle_id):
         pvp.record_hint(match_id, match_token, puzzle_id, level)  # never raises
+    if coach:
+        public = bank.public_puzzle(puzzle)
+        context = {"goal": public["prompt"], "type": public["type"], "code": public["code"],
+                   "lines": public["lines"], "hint_level": level, "reference": hint["text"]}
+        return {"level": level, **tutor.feedback("coach", context, hint["text"], client=_client_ip(request))}
     return hint
 
 
 @app.post("/api/puzzle/{puzzle_id}/explain")
-def puzzle_explain(puzzle_id: str, req: AnswerRequest, request: Request):
+def puzzle_explain(puzzle_id: str, req: AnswerRequest, request: Request, coach: bool = False,
+                   level: Level = "intermediate"):
     puzzle = _get_puzzle(puzzle_id)
     order = [item.model_dump() for item in req.order] if req.order is not None else None
-    result = bank.check_answer(puzzle, option_id=req.option_id, order=order, reveal=True,
+    result = bank.check_answer(puzzle, option_id=req.option_id, order=order, reveal=req.reveal if coach else True,
                                diagnose=_diagnoser(puzzle_id))
-    if result["correct"]:
+    if result["correct"] and not coach:
         raise HTTPException(422, tr("Câu trả lời này đã đúng.", "This answer is already correct."))
     evidence = bank.attempt_context(puzzle, result, option_id=req.option_id, order=order)
-    return tutor.feedback("explain", evidence, result["explanation"] or result["message"],
-                          client=_client_ip(request))
+    completed = result["correct"] or req.reveal
+    followup = bank.prediction_followup(puzzle, level) if coach and completed and not custom.is_custom_id(puzzle_id) else None
+    if coach:
+        evidence["correct"] = result["correct"]
+        evidence["follow_up_available"] = followup is not None
+        if result["correct"] and req.previous:
+            previous = req.previous
+            previous_order = [o.model_dump() for o in previous.order] if previous.order is not None else None
+            try:
+                before = bank.check_answer(puzzle, option_id=previous.option_id, order=previous_order,
+                                           reveal=True, diagnose=_diagnoser(puzzle_id))
+                if not before["correct"]:
+                    evidence["previous_attempt"] = bank.attempt_context(
+                        puzzle, before, option_id=previous.option_id, order=previous_order)
+            except bank.BankError:
+                pass  # the current checked answer is still usable
+    reply = tutor.feedback("explain" if not coach or completed else "coach",
+                           evidence, result["explanation"] or result["message"], client=_client_ip(request))
+    if followup:
+        reply["follow_up"] = followup
+    return reply
 
 
 @app.get("/api/puzzle/{puzzle_id}/rematch")
@@ -461,31 +496,52 @@ def rescue_debrief(req: DebriefRequest, request: Request):
                 result = bank.check_answer(
                     puzzle, option_id=item.option_id, line_id=item.line_id, reveal=True,
                     order=[o.model_dump() for o in item.order] if item.order is not None else None)
-                if not result["correct"]:
-                    diagnosis = result["message"]
+                if result["correct"]:
+                    continue
+                diagnosis = result["message"]
             except bank.BankError:
                 pass  # an invalid attempt only loses its diagnosis
         mistakes.append({"topic": puzzle["topic"], "type": puzzle["type"],
                          "template_id": puzzle["template_id"], "prompt": i18n.pick(puzzle, "prompt"),
                          "diagnosis": diagnosis})
-    if not mistakes:
+    strengths: dict[str, int] = {}
+    for item in req.right:
+        try:
+            puzzle = bank.get_puzzle(item.puzzle_id)
+            result = bank.check_answer(puzzle, option_id=item.option_id, line_id=item.line_id,
+                                       order=[o.model_dump() for o in item.order] if item.order is not None else None)
+        except bank.BankError:
+            continue
+        if result["correct"]:
+            topic = puzzle["topic"]
+            strengths[topic] = strengths.get(topic, 0) + 1
+    if not mistakes and not strengths:
         raise HTTPException(422, tr("Không có lỗi nào để tổng kết.", "There are no mistakes to sum up."))
     topic_counts: dict[str, int] = {}
     for m in mistakes:
         topic_counts[m["topic"]] = topic_counts.get(m["topic"], 0) + 1
-    focus_topic = max(topic_counts, key=topic_counts.get)  # ties: first in order of appearance
-    count = topic_counts[focus_topic]
+    focus_counts = topic_counts or strengths
+    focus_topic = max(focus_counts, key=focus_counts.get)  # ties: first in order of appearance
+    count = topic_counts.get(focus_topic, 0)
     fallback = tr(
         f"Ván này bạn sai nhiều nhất ở chủ đề {TOPIC_NAMES_VI.get(focus_topic, focus_topic)} ({count} lần). "
         "Hãy chơi Luyện tập chủ đề này để quen lại quy tắc trước ván sau.",
         f"In this game you made the most mistakes in {TOPIC_NAMES_EN.get(focus_topic, focus_topic)} "
         f"({count} time{'' if count == 1 else 's'}). "
-        "Play Practice on this topic to get used to the rule again before your next game.")
+        "Play Practice on this topic to get used to the rule again before your next game.") if count else tr(
+        "Bạn có thể thử một bài Luyện tập cùng chủ đề để củng cố kỹ năng.",
+        "Try one more Practice round on this topic to reinforce the skill.")
+    if strengths:
+        strength = max(strengths, key=strengths.get)
+        fallback = tr(f"Bạn đã giải đúng {strengths[strength]} câu về {TOPIC_NAMES_VI[strength]}. ",
+                      f"You answered {strengths[strength]} on {TOPIC_NAMES_EN[strength]} correctly. ") + fallback
     if req.end_reason == "crash":
         fallback += tr(" Nhớ rằng hai câu trả lời sai sẽ kết thúc một ván Code Rescue.",
                        " Remember that two wrong answers end a Code Rescue game.")
     context = {"level": req.level, "mode": req.mode, "end_reason": req.end_reason,
                "topic_counts": topic_counts, "focus_topic": focus_topic, "mistakes": mistakes}
+    if strengths:
+        context["correct_topic_counts"] = strengths
     reply = tutor.feedback("debrief", context, fallback, client=_client_ip(request))
     return {**reply, "focus_topic": focus_topic}
 
@@ -756,6 +812,32 @@ def rows_coach(level_id: str, req: RowsHintRequest, request: Request,
     diagnosis = rows.run_level(config, [row.model_dump() for row in req.rows],
                                include_trace=req.trace_step is not None)
     hint = hints.rows_hint(config, level, diagnosis["error_group"])
+    if req.preview:
+        if not diagnosis["code"]:
+            return hint
+        return {"level": level, **tutor.feedback("coach", {
+            "goal": i18n.pick(config, "goal"), "code": diagnosis["code"],
+            "hint_level": level, "reference": hint["text"],
+        }, hint["text"], client=_client_ip(request))}
+    if req.review and diagnosis["code"]:
+        has_twist = diagnosis["passed"] and config.get("twist_output") is not None
+        context = {
+            "goal": i18n.pick(config, "goal"), "code": diagnosis["code"], "correct": diagnosis["passed"],
+            "diagnosis": diagnosis["message"], "actual_output": diagnosis["actual_output"],
+            "expected_output": diagnosis["expected_output"],
+            "next_step": "change one tile" if has_twist else "try another level" if diagnosis["passed"] else "review the relevant row",
+        }
+        if req.previous_rows is not None:
+            before = rows.run_level(config, [row.model_dump() for row in req.previous_rows])
+            if not before["passed"]:
+                context["previous_attempt"] = {key: before[key] for key in ("code", "message", "row", "actual_output")}
+        step = tr(" Hãy thử đổi một mảnh mã rồi dự đoán đầu ra mới.",
+                  " Try changing one tile and predicting the new output.") if has_twist else ""
+        if diagnosis["passed"] and not step:
+            step = tr(" Chọn một màn khác để áp dụng lại quy tắc vừa học.",
+                      " Try another level to apply the same rule again.")
+        fallback = diagnosis["message"] + step
+        return {"level": level, **tutor.feedback("explain", context, fallback, client=_client_ip(request))}
     if diagnosis["passed"] or not diagnosis["code"]:
         return hint
     context = {

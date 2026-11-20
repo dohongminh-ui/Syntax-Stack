@@ -414,6 +414,12 @@ async function fetchPuzzle(p) {
 
 const attemptsFor = () => (G.mode === 'rescue' ? 1 : 3);
 
+function recordCorrect(puzzle, kind, answer, result) {
+  if (!result.correct) return;
+  G.rightLog.push({ puzzle_id: puzzle.id, kind, ...answer });
+  if (G.rightLog.length > 12) G.rightLog.shift();
+}
+
 async function runLock() {
   if (busy || G.phase !== 'locked') return;
   busy = true;
@@ -440,6 +446,8 @@ async function runLock() {
       boss: L.boss ? `Boss ${i + 1}/2` : null,
       maxAttempts: attemptsFor(),
       free,
+      coachLevel: G.level,
+      onAttempt: (answer, result) => recordCorrect(puzzle, 'rescue', answer, result),
       onResult: (r) => { if (!r.correct && G.mode === 'rescue' && G.mistakes >= 1) setStatus('crash'); },
       awardText: (h) => {
         if (i < parts - 1) return 'Đúng câu 1/2. Còn một câu nữa.';
@@ -502,6 +510,8 @@ async function onBugTap(bugId) {
     tag: 'DEBUG',
     maxAttempts: attemptsFor(),
     penalties: false,
+    coachLevel: G.level,
+    onAttempt: (answer, result) => recordCorrect(puzzle, 'debug', answer, result),
     onResult: (r) => { if (!r.correct && G.mode === 'rescue') setStatus('crash'); },
     awardText: () => `+${Game.BUG_FIX_POINTS} điểm Redemption`,
   });
@@ -567,6 +577,8 @@ async function afterResolution() {
       tag: 'LAST COMMIT',
       maxAttempts: 1,
       penalties: false,
+      coachLevel: G.level,
+      onAttempt: (answer, result) => recordCorrect(puzzle, 'last_commit', answer, result),
       awardText: () => 'Dọn 3 hàng đầy nhất!',
     });
     RunLog.lastCommit(puzzle.id);
@@ -679,26 +691,27 @@ function loadDebrief() {
   const game = G;
   document.getElementById('end-debrief')?.remove();
   const wrong = game.wrongLog.filter((w) => w.puzzleId).slice(-12);
-  if (!wrong.length) return;
+  if (!wrong.length && !game.rightLog.length) return;
   const slot = el('div', { id: 'end-debrief', class: 'end-debrief' },
-    el('h2', { class: 'report-h', text: 'Tổng kết' }), tutorNote({ loading: true }));
+    el('h2', { class: 'report-h', text: 'Tổng kết' }), tutorNote({ loading: true, named: true }));
   $('end-report').previousElementSibling.before(slot);
   const body = {
     level: game.level,
     mode: game.mode,
     end_reason: game.endReason === 'crash' ? 'crash' : 'nofit',
     wrong: wrong.map((w) => ({ puzzle_id: w.puzzleId, kind: w.kind, ...w.attempt })),
+    right: game.rightLog,
   };
   api.debrief(body).then((r) => {
     if (G !== game || $('screen-end').hidden || !slot.isConnected) return;
     slot.replaceChildren(el('h2', { class: 'report-h', text: 'Tổng kết' }),
-      tutorNote({ text: r.text, source: r.source === 'ai' ? 'ai' : 'canned', context: 'tổng kết' }));
+      tutorNote({ text: r.text, source: r.source, context: 'tổng kết', named: true }));
     const k = r.focus_topic && $('end-practice').querySelector(`[data-topic="${r.focus_topic}"]`);
     if (k) {
       k.classList.add('enter-key');
       const ret = el('span', { class: 'ret', 'aria-hidden': 'true' }, icon('enter', { size: 14 }));
       k.querySelector('.cap-top').append(ret);
-      k.parentElement.prepend(k);
+      slot.append(k);
     }
   }).catch(() => {
     if (slot.isConnected) slot.remove();
@@ -774,11 +787,11 @@ async function boot() {
     level: () => prefs.level,
     // what her action keycaps do (they only run on a click); "make a puzzle" is handled inside misaki-chat.js
     run: {
-      rescue: ({ mode, level, focusTopic }) => startGame({ mode, level: LEVEL_NAME[level] ? level : prefs.level, focusTopic }),
-      rows: (id) => openLevel(id),
-      practice: () => showPractice(),
+      rescue: ({ mode, level, focus_topic }) => startGame({ mode, level, focusTopic: focus_topic || undefined }),
+      rows: ({ level_id }) => openLevel(level_id),
+      practice_tray: () => showPractice(),
       skills: () => openSkills(),
-      pvp: (misaki) => Pvp.startMisakiTraining(misaki),
+      pvp_training: ({ misaki }) => Pvp.startMisakiTraining(misaki),
     },
   });
   initStart();

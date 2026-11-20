@@ -39,6 +39,7 @@ export function newGame({ mode = 'rescue', level = 'beginner', focusTopic = null
     seenIds: [],
     recentTemplates: [],
     wrongLog: [],
+    rightLog: [],
     topicMisses: {},
     bugLines: [],
     nextBugId: 1,

@@ -16,6 +16,10 @@ def candidate(text, finish="STOP", extra_parts=()):
     return {"candidates": [{"finishReason": finish, "content": {"parts": [*extra_parts, {"text": text}]}}]}
 
 
+def chat_call(name="reply", **args):
+    return {"functionCall": {"name": name, "args": {"text": "Hi!", "mood": "happy", **args}}}
+
+
 @pytest.fixture
 def gemini(monkeypatch):
     """Direct provider on; ``gemini.calls`` records every httpx.post; ``gemini.reply`` is the JSON (or exception) returned."""
@@ -72,7 +76,7 @@ def test_n8n_is_preferred_when_both_are_set(monkeypatch, gemini):
 
 
 def test_request_shape_header_key_and_no_key_in_url(gemini):
-    gemini.reply = candidate(json.dumps({"text": "Chào bạn!", "mood": "happy", "action": None}))
+    gemini.reply = candidate("", extra_parts=[chat_call()])
     tutor.ask_json("misaki_chat", {"messages": [{"role": "user", "text": "hi"}]}, {"text": "c"},
                    lambda raw: raw, lang="en")
     (call,) = gemini.calls
@@ -86,14 +90,15 @@ def test_request_shape_header_key_and_no_key_in_url(gemini):
     sent = json.loads(body["contents"][0]["parts"][0]["text"])
     assert sent == {"task": "misaki_chat", "lang": "en", "context": {"messages": [{"role": "user", "text": "hi"}]}}
     config = body["generationConfig"]
-    assert config["responseMimeType"] == "application/json"
-    assert config["responseSchema"] == tutor_prompts.CHAT_SCHEMA
+    assert "responseMimeType" not in config and "responseSchema" not in config
+    assert body["tools"] == [{"functionDeclarations": tutor_prompts.CHAT_TOOLS}]
+    assert body["toolConfig"] == {"functionCallingConfig": {"mode": "ANY"}}
     assert (config["maxOutputTokens"], config["temperature"]) == (700, 0.6)
     assert config["thinkingConfig"] == {"thinkingLevel": "MINIMAL"}
 
 
 @pytest.mark.parametrize("task, system, schema, tokens, temp", [
-    ("misaki_chat", tutor_prompts.MISAKI_CHAT, tutor_prompts.CHAT_SCHEMA, 700, 0.6),
+    ("misaki_chat", tutor_prompts.MISAKI_CHAT, None, 700, 0.6),
     ("misaki_puzzle", tutor_prompts.MISAKI_PUZZLE, tutor_prompts.PUZZLE_SCHEMA, 1200, 0.5),
     ("content_review", tutor_prompts.EDITORIAL, tutor_prompts.REVIEW_SCHEMA, 1900, 0.35),
     ("coach", tutor_prompts.TUTOR, None, 512, 0.35),
@@ -128,7 +133,7 @@ def test_prompts_match_the_n8n_flow():
     """The Python prompts and schemas are the ones in the n8n node (kept word for word)."""
     js = next(n for n in json.loads(N8N_JSON.read_text(encoding="utf-8"))["nodes"]
               if n["name"] == "Build tutor request")["parameters"]["jsCode"]
-    wanted = ("tutor", "editorial", "misakiChat", "misakiPuzzle", "schema", "chatSchema", "puzzleSchema")
+    wanted = ("tutor", "editorial", "misakiChat", "misakiPuzzle", "schema", "chatTools", "puzzleSchema")
     consts = {m.group(1): json.loads(m.group(2)) for m in re.finditer(r"^const (\w+) = (.*);$", js, re.M)
               if m.group(1) in wanted}
     assert consts["tutor"] == tutor_prompts.TUTOR
@@ -136,7 +141,7 @@ def test_prompts_match_the_n8n_flow():
     assert consts["misakiChat"] == tutor_prompts.MISAKI_CHAT
     assert consts["misakiPuzzle"] == tutor_prompts.MISAKI_PUZZLE
     assert consts["schema"] == tutor_prompts.REVIEW_SCHEMA
-    assert consts["chatSchema"] == tutor_prompts.CHAT_SCHEMA
+    assert consts["chatTools"] == tutor_prompts.CHAT_TOOLS
     assert consts["puzzleSchema"] == tutor_prompts.PUZZLE_SCHEMA
     assert tutor_prompts.COACH_MODEL in js and tutor_prompts.DEFAULT_MODEL in js
 
@@ -168,17 +173,31 @@ def test_unusable_plain_reply_falls_back(gemini, reply):
     assert tutor.feedback("coach", {"n": 1}, "canned") == {"text": "canned", "source": "canned"}
 
 
-def test_structured_reply_is_parsed_and_validated(gemini):
-    gemini.reply = candidate(json.dumps({"text": "Hi!", "mood": "happy", "action": None}))
-    out = tutor.ask_json("misaki_chat", {"m": 1}, {"text": "canned"}, lambda raw: {"text": raw["text"]})
-    assert out == {"text": "Hi!", "source": "ai"}
+def test_native_gemini_call_is_parsed_and_validated(gemini):
+    gemini.reply = candidate("", extra_parts=[{"thought": True, "text": "hidden"},
+        chat_call("rescue", text="Practice loops with a Code Rescue round.", mode="practice", level="beginner", focus_topic="loops")])
+    out = tutor.ask_json("misaki_chat", {"m": 1}, {"text": "canned"}, misaki.validate_chat_reply, lang="en")
+    assert out == {"text": "Practice loops with a Code Rescue round.", "mood": "happy", "source": "ai",
+                   "action": {"type": "rescue", "mode": "practice", "level": "beginner", "focus_topic": "loops"}}
+
+
+@pytest.mark.parametrize("reply", [
+    candidate('{"text":"A button is below."}'), candidate(""),
+    candidate("", extra_parts=[chat_call(), chat_call("skills")]),
+    candidate("", extra_parts=[chat_call("rows")]), candidate("", extra_parts=[chat_call("open_url")]),
+    candidate("", finish="MAX_TOKENS", extra_parts=[chat_call()]),
+])
+def test_missing_or_invalid_chat_tool_falls_back(gemini, reply):
+    gemini.reply = reply
+    out = tutor.ask_json("misaki_chat", {"m": 1}, {"text": "canned"}, misaki.validate_chat_reply)
+    assert out == {"text": "canned", "source": "canned"}
 
 
 @pytest.mark.parametrize("text", ["not json", "[1, 2]", '"str"', ""])
-def test_structured_reply_that_is_not_an_object_falls_back(gemini, text):
+def test_invalid_generated_puzzle_json_falls_back(gemini, text):
     gemini.reply = candidate(text)
-    out = tutor.ask_json("misaki_chat", {"m": 1}, {"text": "canned"}, lambda raw: {"text": raw["text"]})
-    assert out == {"text": "canned", "source": "canned"}
+    out = tutor.ask_json("misaki_puzzle", {"m": 1}, {"code": "canned"}, misaki.validate_puzzle_reply)
+    assert out == {"code": "canned", "source": "canned"}
 
 
 # --------------------------------------------------------------------------- fallback, quota, cache
@@ -218,7 +237,9 @@ def test_quota_cache_and_stats_apply_to_the_direct_provider(gemini, monkeypatch)
 
 def test_chat_and_feedback_share_one_quota_on_the_direct_provider(gemini, monkeypatch):
     monkeypatch.setenv("SYNTAX_STACK_TUTOR_DAILY_LIMIT", "2")
-    gemini.reply = candidate(json.dumps({"text": "Chào!", "mood": "happy", "action": None}))
+    gemini.reply = candidate("", extra_parts=[
+        {"functionCall": {"name": "reply", "args": {"text": "Chào!", "mood": "happy"}}},
+    ])
     assert misaki.chat([{"role": "user", "text": "xin chào"}], None, None)["source"] == "ai"
     gemini.reply = candidate("hint")
     assert tutor.feedback("coach", {"n": 1}, "c")["source"] == "ai"

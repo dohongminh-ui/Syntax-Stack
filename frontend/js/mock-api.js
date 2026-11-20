@@ -273,6 +273,15 @@ async function submitAnswerBase(id, body) {
   };
 }
 
+export async function coachChoice(id, body, level) {
+  const result = await submitAnswerBase(id, body);
+  const puzzle = byId(id)?.pub;
+  const follow = (result.correct || body.reveal) && BANK.find(({ pub }) =>
+    pub.id !== id && pub.topic === puzzle.topic && pub.type === 'predict_output' && pub.code !== puzzle.code);
+  return { text: result.explanation || result.message, source: 'canned',
+    ...(follow ? { follow_up: publicCopy(follow, level) } : {}) };
+}
+
 export async function getHint(id, level, match = null) {
   await sleep(100);
   const entry = byId(id);
@@ -298,8 +307,6 @@ export async function explainPrediction(prediction, actual) {
   };
 }
 
-const MOCK_TOPIC_NAMES = { variables: 'Biến', conditions: 'Điều kiện', loops: 'Vòng lặp', functions: 'Hàm' };
-
 export async function debrief(body) {
   await sleep(300);
   const counts = {};
@@ -308,9 +315,15 @@ export async function debrief(body) {
     if (topic) counts[topic] = (counts[topic] || 0) + 1;
   }
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-  const focus = top ? top[0] : null;
+  const strengths = (body.right || []).filter((a) => {
+    const entry = byId(a.puzzle_id);
+    return entry && check(entry, a).ok;
+  });
+  const focus = top ? top[0] : byId(strengths.at(-1)?.puzzle_id)?.pub.topic ?? null;
   return {
-    text: `Ván này bạn sai ${(body.wrong || []).length} câu${focus ? `, nhiều nhất ở chủ đề ${MOCK_TOPIC_NAMES[focus] || focus}` : ''}. Hãy đọc lại phần giải thích của từng câu rồi luyện thêm một lượt ngắn.`,
+    text: lang() === 'en'
+      ? `${strengths.length} correct, ${(body.wrong || []).length} incorrect. Try one targeted practice round next.`
+      : `Bạn đúng ${strengths.length} câu, sai ${(body.wrong || []).length} câu. Hãy thử thêm một lượt luyện tập theo chủ đề.`,
     source: 'canned',
     focus_topic: focus,
   };
@@ -377,7 +390,17 @@ export async function misakiChat(body) {
       source: 'safety', mood: 'worried', action: null,
     };
   }
+  const previous = body.context?.previous_action;
+  if (previous && /^(yes(?: please)?|yeah|sure|okay|ok|vang|duoc(?: a| nhe)?|dong y)$/.test(f)) {
+    const text = lang() === 'en' ? 'Sure! Use the button below to get started.' : 'Được nhé! Bấm nút bên dưới để bắt đầu.';
+    return { text, source: 'canned', mood: 'happy', action: previous };
+  }
   const review = body.context?.puzzle_review;
+  if (review?.set_id === 'mock-set' && /\b(follow up|bai tuong tu|cau hoi tiep theo)\b/.test(f)) {
+    const topic = byId(review.attempts.at(-1)?.puzzle_id)?.pub.topic;
+    if (topic) return { text: lang() === 'en' ? 'Try one more puzzle on the same idea.' : 'Thử thêm một câu cùng chủ đề nhé.',
+      source: 'canned', mood: 'thinking', action: { type: 'make_puzzle', topic, idea: '' } };
+  }
   if (review?.set_id === 'mock-set' && /\b(review|right or wrong|how did i do|what went wrong|on lai|dung va sai|sai o dau)\b/.test(f)) {
     const checked = review.attempts.flatMap((attempt) => {
       const entry = byId(attempt.puzzle_id);

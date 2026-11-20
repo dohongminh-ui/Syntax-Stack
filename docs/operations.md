@@ -94,7 +94,7 @@ fallback rules: [ai-tutor.md](ai-tutor.md#4-environment-variables-and-runtime-li
 n8n, set only `SYNTAX_STACK_GEMINI_API_KEY` (and optionally `SYNTAX_STACK_GEMINI_MODEL`) before starting
 uvicorn. With the n8n pair unset, `app/tutor.py` calls the Gemini REST API directly
 (`generativelanguage.googleapis.com`, key in a header, a 38 s timeout, no proxy settings read from the
-environment) using the same prompts, JSON mode and response schemas as `deploy/n8n-tutor.json`
+environment) using the same prompts, chat function declarations and structured response schemas as `deploy/n8n-tutor.json`
 (`app/tutor_prompts.py` holds the copy; a test keeps the two identical). Quotas, the in-process cache,
 the concurrency slots and the canned fallback are the same as with n8n, and if both providers are
 configured n8n wins. `GET /api/health` reports the active one as `tutor.provider` (`"n8n"`, `"gemini"`

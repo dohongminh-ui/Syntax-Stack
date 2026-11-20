@@ -47,7 +47,15 @@ def ai(monkeypatch):
         out = fake.reply.get(body["task"])
         if isinstance(out, Exception):
             raise out
-        return out if out is not None else {"text": "Chào bạn!", "mood": "happy", "action": None}
+        out = out if out is not None else {"text": "Chào bạn!", "mood": "happy", "action": None}
+        if body["task"] != "misaki_chat" or not isinstance(out, dict) or "action" not in out:
+            return out
+        action = out["action"]
+        args = {k: v for k, v in out.items() if k != "action"}
+        name = action.get("type") if isinstance(action, dict) else "reply" if action is None else action
+        if isinstance(action, dict):
+            args.update({k: v for k, v in action.items() if k != "type"})
+        return {"function_calls": [{"name": name, "args": args}]}
 
     monkeypatch.setattr(tutor, "request_tutor", request)
     return fake
@@ -156,15 +164,13 @@ def test_ai_reply_is_returned_with_source_ai(client, ai):
     {"type": "open_url", "url": "https://evil.example"},
     "make_puzzle", ["skills"], 7, {},
 ])
-def test_invalid_action_is_dropped_but_the_text_stays(client, ai, action):
+def test_invalid_tool_falls_back_instead_of_publishing_its_message(client, ai, action):
     ai.reply["misaki_chat"] = {"text": "Thử cái này nhé.", "mood": "happy", "action": action}
     body = client.post(CHAT, json=say("hello")).json()
-    assert body["source"] == "ai" and body["text"] == "Thử cái này nhé." and body["action"] is None
+    assert body["source"] == "canned" and body["text"] != "Thử cái này nhé." and body["action"] is None
 
 
 @pytest.mark.parametrize("lang, request_text, reply_text, action", [
-    ("en", "I keep getting loops wrong",
-     "Let's practice variables, just click the button below.", None),
     ("vi", "Mình hay sai vòng lặp",
      "Bạn bấm nút bên dưới để luyện tập nhé.", {"type": "rescue", "mode": "practice"}),
     ("en", "I keep getting loops wrong", "Let's practice variables.",
@@ -186,6 +192,46 @@ def test_explanation_without_a_button_still_passes(client, ai):
     ai.reply["misaki_chat"] = reply
     response = client.post(CHAT, json=say("How do loops work?"), headers={"X-Lang": "en"})
     assert response.json() == {**reply, "source": "ai"}
+
+
+def test_button_decision_comes_from_the_tool_even_when_text_is_identical(client, ai):
+    text = "Let's practice loops."
+    ai.reply["misaki_chat"] = {"function_calls": [{"name": "reply", "args": {
+        "text": text, "mood": "happy", "type": "make_puzzle", "topic": "loops",
+    }}]}
+    assert client.post(CHAT, json=say("How do loops work?"), headers={"X-Lang": "en"}).json()["action"] is None
+    ai.reply["misaki_chat"] = {"function_calls": [{"name": "make_puzzle", "args": {
+        "text": text, "mood": "happy", "type": "reply", "topic": "loops",
+    }}]}
+    body = client.post(CHAT, json=say("Make a puzzle about loops"), headers={"X-Lang": "en"}).json()
+    assert body["text"] == text and body["action"] == {"type": "make_puzzle", "topic": "loops", "idea": ""}
+
+
+def test_old_webhook_without_native_call_uses_authored_fallback(client, ai):
+    ai.reply["misaki_chat"] = {"text": "Let's practice variables, just click the button below.", "mood": "happy"}
+    body = client.post(CHAT, json=say("I keep getting loops wrong"), headers={"X-Lang": "en"}).json()
+    assert body["source"] == "canned" and body["action"]["topic"] == "loops"
+
+
+def test_short_confirmation_follows_the_immediately_previous_action(client, ai):
+    offer = {"role": "misaki", "text": "Shall we practice loops?"}
+    action = {"type": "rescue", "mode": "practice", "level": "beginner", "focus_topic": "loops"}
+    body = say("yes please", [offer]) | {"context": {"previous_action": action}}
+    reply = client.post(CHAT, json=body, headers={"X-Lang": "en"}).json()
+    assert reply["action"] == action and "button" in reply["text"]
+    assert not ai.calls
+    body["messages"].insert(1, {"role": "user", "text": "actually, what's next?"})
+    assert client.post(CHAT, json=body).json()["action"] is None
+
+
+def test_requested_follow_up_falls_back_to_playable_puzzle_on_checked_topic(client, ai):
+    ai.reply["misaki_chat"] = {"text": "Want to try another?", "mood": "happy", "action": None}
+    set_view = client.post(PUZZLE, json={"topic": "loops"}).json()["set"]
+    puzzle, correct, _ = _prediction_answers(set_view)
+    body = _review_request(set_view, puzzle, correct)
+    body["messages"][-1]["text"] = "Give me one follow-up puzzle and change just one detail."
+    reply = client.post(CHAT, json=body, headers={"X-Lang": "en"}).json()
+    assert reply["action"] == {"type": "make_puzzle", "topic": "loops", "idea": ""}
 
 
 def test_valid_actions_pass_with_only_their_own_fields(client, ai):

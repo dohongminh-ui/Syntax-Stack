@@ -70,11 +70,10 @@ def gemini_model(task: str) -> str:
 
 
 def request_gemini(model: str, payload: str, *, timeout: float) -> dict:
-    """Call Gemini directly and return what the n8n flow would: ``{"text"}`` or the parsed JSON object.
+    """Call Gemini directly and normalize its response to the same envelope as the n8n flow.
 
     The key travels only in the ``x-goog-api-key`` header (never in the URL, never logged)."""
     body = json.loads(payload)
-    structured = tutor_prompts.is_structured(body.get("task"))
     response = httpx.post(
         GEMINI_ENDPOINT.format(model=model),
         json=tutor_prompts.build_request(body, model),
@@ -82,7 +81,7 @@ def request_gemini(model: str, payload: str, *, timeout: float) -> dict:
         timeout=timeout, trust_env=False,
     )
     response.raise_for_status()
-    return tutor_prompts.parse_response(response.json(), structured)
+    return tutor_prompts.parse_response(response.json(), body.get("task"))
 
 
 def _call(url: str, payload: str) -> dict:

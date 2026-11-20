@@ -196,7 +196,48 @@ def test_debrief_diagnosis_for_parsons_and_invalid_attempts(client, all_rows, se
     ]
     assert debrief(client, attempts).status_code == 200
     diagnoses = [m["diagnosis"] for m in sent[0]["context"]["mistakes"]]
-    assert diagnoses[0] and diagnoses[1:] == [None, None, None]
+    assert diagnoses[0] and diagnoses[1:] == [None, None]
+
+
+def test_debrief_counts_correct_attempts_and_picks_one_topic(client, all_rows, sent):
+    wrong, _, _ = wrong_fill(all_rows, "conditions")
+    wrong_loop, loop, _ = wrong_fill(all_rows, "loops")
+    good = next(option for option in loop["data"]["options"] if option["correct"])
+    right = {**wrong_loop, "option_id": good["id"]}
+    assert debrief(client, [wrong], right=[right, wrong_loop]).json()["focus_topic"] == "conditions"
+    assert sent[-1]["context"]["correct_topic_counts"] == {"loops": 1}
+    assert debrief(client, [], right=[right], end_reason="nofit").json()["focus_topic"] == "loops"
+
+
+def test_code_rescue_coach_hides_solution_until_result_and_supplies_checked_followup(client, all_rows, sent):
+    puzzle = next(row for row in all_rows if row["topic"] == "loops" and row["type"] == "predict_output")
+    root = f"/api/puzzle/{puzzle['id']}"
+    assert client.get(root + "/hint?level=1&coach=true").status_code == 200
+    assert sent[-1]["task"] == "coach" and sent[-1]["context"]["code"] == puzzle["code"]
+    assert "solution" not in sent[-1]["context"] and "expected_output" not in sent[-1]["context"]
+    wrong = next(o for o in puzzle["data"]["options"] if not o["correct"])
+    answer = next(o for o in puzzle["data"]["options"] if o["correct"])
+    review = root + "/explain?coach=true&level=beginner"
+    assert "follow_up" not in client.post(review, json={"option_id": wrong["id"]}).json()
+    assert sent[-1]["context"]["solution"] is None and sent[-1]["context"]["expected_output"] is None
+    result = client.post(review, json={"option_id": answer["id"], "previous": {"option_id": wrong["id"]}}).json()
+    assert sent[-1]["context"]["correct"] is True
+    assert sent[-1]["context"]["previous_attempt"]["choice"] == wrong["text"]
+    follow = result["follow_up"]
+    assert follow["topic"] == "loops" and follow["id"] != puzzle["id"] and follow["expected_output"] is None
+
+
+def test_rows_coach_uses_current_board_and_checked_result(client, sent):
+    route = "/api/rows/levels/r3/hint?level=1"
+    broken = swap("r3", "t4", "t1")
+    assert client.post(route, json={"rows": broken, "preview": True}).status_code == 200
+    assert "actual_output" not in sent[-1]["context"] and "range(2)" in sent[-1]["context"]["code"]
+    assert client.post(route, json={"rows": broken}).status_code == 200
+    assert sent[-1]["task"] == "coach" and sent[-1]["context"]["actual_output"] == "0\n1"
+    assert client.post(route, json={"rows": canon("r3"), "review": True, "previous_rows": broken}).status_code == 200
+    context = sent[-1]["context"]
+    assert sent[-1]["task"] == "explain" and context["correct"] is True
+    assert context["actual_output"] == "0\n1\n2" and context["previous_attempt"]["actual_output"] == "0\n1"
 
 
 def test_debrief_skips_unknown_ids_and_rejects_when_none_remain(client, all_rows, sent):

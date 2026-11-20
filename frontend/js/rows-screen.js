@@ -371,7 +371,7 @@ function renderPane() {
     s.hintsShown.forEach((h, i) => {
       const ai = h.source === 'ai';
       const context = ai ? `gợi ý ${i + 1}${h.step ? ` · bước ${h.step}` : ''}` : `Gợi ý ${i + 1}${h.step ? ` (bước ${h.step})` : ''}`;
-      hl.append(tutorNote({ text: h.text, source: ai ? 'ai' : 'canned', context }));
+      hl.append(tutorNote({ text: h.text, source: h.source, context, named: true }));
     });
     nodes.push(hl);
   }
@@ -389,7 +389,7 @@ function renderActions() {
   }
   parts.actions.hidden = false;
   const n = s.hintsShown.length + 1;
-  const hintLabel = parts.trace.open ? `Gợi ý bước này · ${n}/3` : `Gợi ý ${n}/3`;
+  const hintLabel = parts.trace.open ? `Gợi ý bước này · ${n}/3` : 'Hỏi Misaki';
   const hint = G.baseline ? null : n <= 3
     ? el('button', { class: 'btn', type: 'button', disabled: G.busy || G.hintBusy, onclick: showHint },
         icon('bulb', { size: 18 }), G.hintBusy ? 'Đang tải gợi ý…' : hintLabel,
@@ -408,7 +408,9 @@ async function showHint() {
   game.note = '';
   renderActions();
   const step = game.parts.trace.open ? game.traceIndex + 1 : null;
-  const attempt = step ? { ...game.lastAttempt, trace_step: step - 1 } : game.lastAttempt;
+  const current = R.payload(s);
+  const attempt = step ? { ...game.lastAttempt, trace_step: step - 1 }
+    : { ...current, preview: JSON.stringify(current.rows) !== JSON.stringify(game.lastAttempt?.rows) };
   try {
     const h = await api.rowsHint(s.level.id, n, s.lastGroup, attempt);
     R.addHint(s, { ...h, step });
@@ -561,12 +563,30 @@ function twistButton(game) {
   return k;
 }
 
+function reviewResult(game) {
+  const note = el('div', { 'aria-live': 'polite' });
+  const button = el('button', { class: 'btn', type: 'button', text: 'Hỏi Misaki', onclick: async () => {
+    button.disabled = true;
+    note.replaceChildren(tutorNote({ loading: true, named: true }));
+    try {
+      const feedback = await api.rowsReview(game.state.level.id, game.lastAttempt, game.previousFailed);
+      note.replaceChildren(tutorNote({ text: feedback.text, source: feedback.source, named: true }));
+      button.hidden = true;
+    } catch (e) {
+      note.textContent = e.message;
+      button.disabled = false;
+    }
+  } });
+  return el('div', {}, button, note);
+}
+
 function showResult() {
   const game = G;
   const { state: s } = game;
   if (game.baseline || game.returnTo) {
     G.parts.result.replaceChildren(el('div', { class: 'rg-result' },
       el('h2', { text: game.baseline ? 'Đổi một mảnh thành công!' : 'Hoàn thành bài luyện!' }),
+      game.baseline ? null : reviewResult(game),
       game.baseline ? null : teachBackPanel(game),
       el('div', { class: 'res-actions' }, el('div', { class: 'res-keys' }, game.baseline ? null : twistButton(game),
         enterKey(game.returnTo ? 'Về bài luyện' : 'Chọn màn', game.returnTo || openSelect)))));
@@ -581,6 +601,7 @@ function showResult() {
     el('dl', { class: 'receipt', 'aria-label': 'Kết quả màn chơi' },
       ...[['stars', `${r.stars}/3`], ['runs', r.runs], ['hints_used', r.hints], ['unused_distractors', r.unused], ['read_code', r.read ? `+${R.PREDICT_BONUS}` : '0'], ['level_score', r.score]].map(([k, v]) => el('div', {}, el('dt', { text: k }), el('dd', { text: String(v) })))),
     r.stars < 3 ? comment('Chơi lại để lấy thêm sao: đạt ngay lần chạy đầu, không dùng gợi ý.') : null,
+    reviewResult(game),
     teachBackPanel(game),
     el('div', { class: 'res-actions' },
       el('div', { class: 'res-keys' }, twistButton(game),
@@ -639,6 +660,7 @@ async function run() {
   }
   if (game !== G) return;
   game.lastAttempt = attempt;
+  if (!resp.passed) game.previousFailed = attempt;
   game.lastPrediction = prediction || null;
   const verdict = R.notePrediction(s, attempt, resp);
   if (verdict) {

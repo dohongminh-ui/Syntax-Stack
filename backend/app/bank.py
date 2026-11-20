@@ -190,6 +190,25 @@ def select_puzzle(*, kind: str, topic: Optional[str], tier: Optional[int], level
 # --------------------------------------------------------------------------- answers
 
 
+def prediction_followup(row: dict, level: str) -> Optional[dict]:
+    """A checked prediction from the same template family when one is available."""
+    stem, _, suffix = row["template_id"].rpartition("_")
+    preferred = f"{stem}_predict" if suffix in {"fill", "predict", "parsons", "bug"} else row["template_id"]
+    con = _connect()
+    try:
+        candidates = con.execute(
+            "SELECT * FROM puzzles WHERE id != ? AND topic = ? AND type = 'predict_output' AND debug_only = 0 "
+            "ORDER BY (template_id != ?), abs(tier - ?), id LIMIT 30",
+            (row["id"], row["topic"], preferred, row["tier"]),
+        )
+        for candidate in candidates:
+            if candidate["code"] != row["solution_code"] and candidate["expected_output"] != row["expected_output"]:
+                return public_puzzle(_row_to_dict(candidate), level)
+        return None
+    finally:
+        con.close()
+
+
 def _result(row: dict, correct: bool, reveal: bool, group: Optional[str], message: str,
             actual: Optional[str], note: Optional[str] = None, lang: Optional[str] = None) -> dict:
     show = correct or reveal

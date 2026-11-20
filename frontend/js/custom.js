@@ -240,9 +240,9 @@ async function openOne(p, closeLabel) {
     const res = await openPuzzle({
       puzzle: p, topic: topicOf(set), title: 'Câu đố của bạn', tag: 'TỰ TẠO',
       maxAttempts: 3, penalties: false, standalone: true, closeLabel, track: false,
-      onAttempt: preset?.onAttempt ? (answer) => {
+      onAttempt: preset?.onAttempt ? (answer, result) => {
         if (st.set !== set) return;
-        preset.onAttempt(p.id, answer);
+        preset.onAttempt(p.id, answer, result);
         const review = $('cu-misaki-review');
         if (review) review.hidden = false;
       } : null,

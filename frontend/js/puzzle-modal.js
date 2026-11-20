@@ -40,7 +40,7 @@ function enterKey(label, onclick, { id, disabled = false, cls = '' } = {}) {
  */
 export function openPuzzle(opts) {
   const { puzzle, topic, title, boss = null, tag = null, maxAttempts = 1, free = 0, penalties = true,
-    awardText, startHint = 0, onResult = null, onAttempt = null, track = true, standalone = false,
+    awardText, startHint = 0, onResult = null, onAttempt = null, track = true, standalone = false, coachLevel = null,
     intro = '', introSource = 'canned', closeLabel = 'Về báo cáo', clock = null, closeOn = null } = opts;
   // clock: { get: () => seconds left, total } (PvP lock limit only; solo modes pass nothing). closeOn: a promise that closes the panel when it settles.
   const root = document.getElementById('modal-root');
@@ -312,15 +312,17 @@ export function openPuzzle(opts) {
     }
     async function showHint() {
       const level = st.hints.length + 1;
-      if (level > 3 || st.phase !== 'answer') return;
+      if (level > 3 || st.phase !== 'answer' || st.hintBusy) return;
       st.note = '';
+      st.hintBusy = true;
+      render();
       try {
-        const h = await api.getHint(puzzle.id, level);
-        st.hints.push(h.text);
+        st.hints.push(await api.getHint(puzzle.id, level, { coach: !!coachLevel }));
       } catch (e) {
         st.note = 'Không tải được gợi ý: ' + e.message;
       }
-      render();
+      st.hintBusy = false;
+      if (!st.closing) render();
     }
 
     // ---- submit ----
@@ -352,7 +354,8 @@ export function openPuzzle(opts) {
         render();
         return;
       }
-      onAttempt?.(answer);
+      st.lastAnswer = answer;
+      onAttempt?.(answer, res);
       if (!res.correct) {
         st.wrongAnswer = answer;
         if (!standalone && !api.isMock) recordMistake({ topic, puzzleId: puzzle.id });
@@ -420,7 +423,9 @@ export function openPuzzle(opts) {
 
       if (st.hints.length) {
         const hl = el('ol', { class: 'hints', 'aria-live': 'polite' });
-        st.hints.forEach((t, i) => hl.append(el('li', {}, comment(`Gợi ý ${i + 1}: ${t}`))));
+        st.hints.forEach((h, i) => hl.append(el('li', {}, coachLevel
+          ? tutorNote({ text: h.text, source: h.source, context: `Gợi ý ${i + 1}`, named: true })
+          : comment(`Gợi ý ${i + 1}: ${h.text}`))));
         body.append(hl);
       }
       if (st.note) body.append(el('p', { class: 'msg-err', role: 'alert', text: st.note }));
@@ -460,12 +465,13 @@ export function openPuzzle(opts) {
       }
 
       const hintBtn = next <= 3
-        ? el('button', { class: 'btn hint-btn', type: 'button', disabled: busy, onclick: showHint },
-            icon('bulb', { size: 18 }), `Gợi ý ${next}/3`, el('span', { class: 'pen', text: ' · ' + penaltyText(next) }))
+        ? el('button', { class: 'btn hint-btn', type: 'button', disabled: busy || st.hintBusy, onclick: showHint },
+            icon('bulb', { size: 18 }), st.hintBusy ? 'Đang tải gợi ý…' : coachLevel ? 'Hỏi Misaki' : `Gợi ý ${next}/3`,
+            el('span', { class: 'pen', text: ' · ' + penaltyText(next) }))
         : el('span', { class: 'hint-done', text: 'Đã xem hết gợi ý' });
       const go = () => (maxAttempts === 1 ? ((st.phase = 'confirm'), render()) : submit());
-      st.primary = complete() && !busy ? go : null;
-      const commit = enterKey(busy ? 'Đang chấm…' : 'Chạy kiểm tra', go, { disabled: !complete() || busy });
+      st.primary = complete() && !busy && !st.hintBusy ? go : null;
+      const commit = enterKey(busy ? 'Đang chấm…' : 'Chạy kiểm tra', go, { disabled: !complete() || busy || st.hintBusy });
       return el('div', { class: 'foot' }, attemptsDots(), el('div', { class: 'foot-row' }, hintBtn, commit));
     }
 
@@ -478,15 +484,18 @@ export function openPuzzle(opts) {
     }
 
     function explainControl() {
-      if (!st.wrongAnswer) return null;
+      const answer = coachLevel ? st.lastAnswer : st.wrongAnswer;
+      if (!answer) return null;
       const note = el('div', { 'aria-live': 'polite' });
-      const button = el('button', { class: 'btn', type: 'button', text: 'Vì sao mình sai?' });
+      const button = el('button', { class: 'btn', type: 'button', text: coachLevel ? 'Hỏi Misaki' : 'Vì sao mình sai?' });
       button.addEventListener('click', async () => {
         button.disabled = true;
-        note.replaceChildren(tutorNote({ loading: true }));
+        note.replaceChildren(tutorNote({ loading: true, named: !!coachLevel }));
         try {
-          const result = await api.explainChoice(puzzle.id, st.wrongAnswer);
-          note.replaceChildren(tutorNote({ text: result.text, source: result.source, cls: 'explain' }));
+          const previous = coachLevel && st.correct ? st.wrongAnswer : undefined;
+          const result = await api.explainChoice(puzzle.id, { ...answer, previous }, { coach: !!coachLevel, level: coachLevel });
+          note.replaceChildren(tutorNote({ text: result.text, source: result.source, cls: 'explain', named: !!coachLevel }),
+            ...(result.follow_up ? [predictionCheck(result.follow_up)] : []));
           button.hidden = true;
         } catch (e) {
           note.textContent = 'Không tải được giải thích: ' + e.message;
@@ -494,6 +503,25 @@ export function openPuzzle(opts) {
         }
       });
       return el('div', {}, button, note);
+    }
+
+    function predictionCheck(followup) {
+      const status = el('p', { role: 'status' });
+      const opts = el('div', { class: 'opts opts-block' });
+      for (const option of followup.options) {
+        opts.append(el('button', { class: 'btn', type: 'button', onclick: async () => {
+          for (const key of opts.children) key.disabled = true;
+          try {
+            const checked = await api.submitAnswer(followup.id, { option_id: option.id, reveal: true }, { room: false });
+            status.textContent = checked.message;
+          } catch (e) {
+            status.textContent = e.message;
+            for (const key of opts.children) key.disabled = false;
+          }
+        } }, el('pre', { class: 'opt-text', text: option.text })));
+      }
+      return el('details', {}, el('summary', { text: 'Thử câu hỏi tiếp theo' }),
+        el('p', { text: followup.prompt }), codeBlock(followup.code), opts, status);
     }
 
     function resultPanel() {
