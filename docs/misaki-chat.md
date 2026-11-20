@@ -143,7 +143,10 @@ credit, so:
   registered.
 - With the folder missing, the screen shows the existing Misaki keycap avatar. Nothing breaks.
 - The chat screen always shows the credit line for the model under the stage.
-- **Ask the creator before any public deployment** that serves the model files.
+- The creator has given permission for the site to serve the model. The model is still not in the public
+  repository: it is copied to the server once into `/opt/stacks/syntax-stack/frontend/live2d/`, and
+  `compose.yaml` mounts that folder read-only into the container. Deploys (`git reset`) leave the ignored
+  folder alone, and the image never contains it.
 
 Runtime: PixiJS + pixi-live2d-display (MIT, vendored in `frontend/vendor/`), plus Live2D Cubism Core
 loaded from Live2D's official URL, which is allowed in the CSP by that exact path. They load lazily, only
