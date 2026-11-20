@@ -98,12 +98,15 @@ _CRISIS = re.compile(r"\b(?:" + "|".join([
     r"(?:abuses|abused|molests|molested|rapes|raped|touches|touched) me", r"sexually abus\w*",
     r"hits me", r"beats me", r"beating me",
 ]) + r")\b")
+_CRISIS_JA = re.compile(r"死にたい|自殺したい|生きていたくない|自分を傷つけたい|虐待されている")
 
 
 def is_crisis(text: str) -> bool:
     """True when the message reads as a serious personal or safety issue (self-harm, abuse, wanting to die...)."""
     if not isinstance(text, str) or not text.strip():
         return False
+    if _CRISIS_JA.search(text):
+        return True
     folded = fold(text)
     if not _CRISIS.search(folded):
         return False
@@ -114,9 +117,10 @@ def is_crisis(text: str) -> bool:
     return True
 
 
-def safety_reply() -> dict:
+def safety_reply(language: Optional[str] = None) -> dict:
     return {
-        "text": tr(
+        "text": ("話してくれてありがとう。今すぐ、信頼できる大人や先生に話してね。"
+                 "今すぐ危険があるなら、地域の緊急窓口に連絡してね。") if language == "ja" else tr(
             "Mình rất vui vì bạn đã nói với mình. Chuyện này quan trọng lắm, nhưng mình chỉ là một nhân vật trong "
             "trò chơi nên không giúp bạn đủ được. Bạn hãy nói ngay với một người lớn bạn tin tưởng hoặc thầy cô nhé. "
             "Bạn cũng có thể gọi Tổng đài quốc gia bảo vệ trẻ em 111 (miễn phí, 24/7).",
@@ -182,18 +186,21 @@ def validate_action(raw: Any) -> Optional[dict]:
 _VI_LETTERS = set("đăơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ")
 
 
-def wrong_language(text: str) -> bool:
-    return i18n.resolve(None) == "en" and sum(ch in _VI_LETTERS for ch in text.lower()) >= 3
+def wrong_language(text: str, language: Optional[str] = None) -> bool:
+    if language == "ja":
+        return re.search(r"[\u3041-\u3096\u30a1-\u30fa]", text) is None
+    return i18n.resolve(language) == "en" and sum(ch in _VI_LETTERS for ch in text.lower()) >= 3
 
 
 def validate_chat_reply(raw: dict, *, requested_topic: Optional[str] = None, follow_up: bool = False,
-                        previous_action: Optional[dict] = None, review_topic: Optional[str] = None) -> dict:
+                        previous_action: Optional[dict] = None, review_topic: Optional[str] = None,
+                        language: Optional[str] = None) -> dict:
     """Only a validated native game tool can supply a button."""
     raw = tutor_prompts.decode_chat_call(raw.get("function_calls"))
     text = raw.get("text")
     if isinstance(text, str):
         text = text[:MAX_RAW_TEXT]
-        if wrong_language(text):
+        if wrong_language(text, language):
             raise ValueError("reply not in the request's language")
     text = clean_text(text, MAX_TEXT)
     proposal = raw["action"]
@@ -214,7 +221,7 @@ def validate_chat_reply(raw: dict, *, requested_topic: Optional[str] = None, fol
     return {"text": text, "mood": normalize_mood(raw.get("mood")), "action": action}
 
 
-def validate_puzzle_reply(raw: dict) -> dict:
+def validate_puzzle_reply(raw: dict, *, language: Optional[str] = None) -> dict:
     """Tutor reply -> ``{"code", "note"}``; ``ValueError`` when there is no program."""
     code = raw.get("code")
     if not isinstance(code, str) or not code.strip() or len(code) > MAX_CODE:
@@ -222,7 +229,7 @@ def validate_puzzle_reply(raw: dict) -> dict:
     note = raw.get("note")
     try:
         note = clean_text(note, MAX_NOTE) if note is not None else ""
-        if wrong_language(note):
+        if wrong_language(note, language):
             note = ""
     except ValueError:
         note = ""
@@ -428,9 +435,13 @@ def _checked_review(pending: dict) -> list[dict]:
     return list(reversed(checked))
 
 
-def _review_reply(review: list[dict]) -> dict:
+def _review_reply(review: list[dict], language: Optional[str]) -> dict:
     right = sum(attempt["correct"] for attempt in review)
     wrong = len(review) - right
+    mood = "thinking" if wrong else "happy"
+    if language == "ja":
+        return {"text": f"採点した結果は、正解が{right}回、不正解が{wrong}回だったよ。",
+                "mood": mood, "action": None}
     summary = tr(f"Các lượt gần đây: {right} đúng, {wrong} sai.", f"Recent attempts: {right} correct, {wrong} incorrect.")
     details = [summary]
     latest_wrong = next((attempt for attempt in reversed(review) if not attempt["correct"]), None)
@@ -444,7 +455,7 @@ def _review_reply(review: list[dict]) -> dict:
     if latest_right:
         details.append(tr("Ở lượt đúng gần nhất, bạn đã giải được câu đố. ", "On your latest correct try, you solved it. ")
                        + (latest_right["reference"] or latest_right["diagnosis"]))
-    return {"text": clean_text(" ".join(details), MAX_TEXT), "mood": "thinking" if wrong else "happy", "action": None}
+    return {"text": clean_text(" ".join(details), MAX_TEXT), "mood": mood, "action": None}
 
 
 def _ai_context(messages: list[dict], context: Optional[dict], review: list[dict]) -> dict:
@@ -457,11 +468,12 @@ def _ai_context(messages: list[dict], context: Optional[dict], review: list[dict
     return ctx
 
 
-def chat(messages: list[dict], context: Optional[dict], client: Optional[str]) -> dict:
+def chat(messages: list[dict], context: Optional[dict], client: Optional[str], *,
+         language: Optional[str] = None) -> dict:
     """``{"text", "source", "mood", "action"}``. The safety check runs first and never calls the tutor."""
     last = messages[-1]["text"]
     if is_crisis(last):
-        return safety_reply()
+        return safety_reply(language)
     context = context or {}
     folded = fold(last)
     configured = tutor.configured()
@@ -472,16 +484,23 @@ def chat(messages: list[dict], context: Optional[dict], client: Optional[str]) -
     review = _checked_review(pending) if pending and (configured or wants_review) else []
     review_topic = review[-1]["topic"] if review else None
     if wants_review and not review:
-        canned = {"text": tr("Mình chưa tìm thấy lượt làm đã chấm. Bạn thử trả lời một câu đố mới của mình nhé.",
+        canned = {"text": "まだ採点した答えが見つからないよ。まずは新しい問題を解いてみてね。" if language == "ja" else
+                  tr("Mình chưa tìm thấy lượt làm đã chấm. Bạn thử trả lời một câu đố mới của mình nhé.",
                              "I couldn't find a checked attempt. Try answering one of my new puzzles first."),
                   "mood": "thinking", "action": None}
         if puzzle_request:
             return {**canned, "source": "canned"}
     elif follow_up:
-        canned = {"text": tr("Thử thêm một câu cùng chủ đề nhé.", "Try one more puzzle on the same idea."),
+        canned = {"text": "同じテーマでもう一問やってみよう。" if language == "ja" else
+                  tr("Thử thêm một câu cùng chủ đề nhé.", "Try one more puzzle on the same idea."),
                   "mood": "thinking", "action": {"type": "make_puzzle", "topic": review_topic, "idea": ""}}
+    elif wants_review:
+        canned = _review_reply(review, language)
     else:
-        canned = _review_reply(review) if wants_review else canned_chat(messages, context)
+        canned = canned_chat(messages, context)
+        if language == "ja":
+            canned["text"] = ("下のボタンから始めてみよう！" if canned["action"]
+                              else "こんにちは！Pythonの質問や、練習したいことを教えてね。")
     if not configured:
         return {**canned, "source": "canned"}
     previous_action = None
@@ -495,8 +514,8 @@ def chat(messages: list[dict], context: Optional[dict], client: Optional[str]) -
     topics = _strong_topics(folded)
     requested_topic = review_topic if follow_up else topics[0] if len(topics) == 1 else None
     validate = partial(validate_chat_reply, requested_topic=requested_topic, follow_up=follow_up,
-                       previous_action=previous_action, review_topic=review_topic)
-    return tutor.ask_json(tutor_prompts.CHAT_TASK, ai_context, canned, validate, client=client)
+                       previous_action=previous_action, review_topic=review_topic, language=language)
+    return tutor.ask_json(tutor_prompts.CHAT_TASK, ai_context, canned, validate, client=client, lang=language)
 
 
 # --------------------------------------------------------------------------- puzzle flow (spec section 2)
@@ -523,21 +542,25 @@ AUTHORED: dict[str, list[str]] = {
 }
 
 
-def _canned_note(topic: str) -> str:
-    name = topic_name(topic)
+def _canned_note(topic: str, language: Optional[str]) -> str:
+    if language == "ja":
+        return "短いPythonプログラムを書いたよ。何をするか考えてみてね！"
+    name = tr(*TOPIC_NAMES[topic], lang=language)
     return tr(f"Mình viết sẵn một chương trình nhỏ về {name}. Thử đoán xem nó làm gì nhé!",
-              f"I wrote a small program about {name} for you. Try to work out what it does!")
+              f"I wrote a small program about {name} for you. Try to work out what it does!", language)
 
 
 def _is_rate_limit(exc: Exception) -> bool:
     return isinstance(exc, custom.CustomError) and exc.status == 429
 
 
-def make_puzzle(topic: str, idea: str, level: str, client: Optional[str]) -> dict:
+def make_puzzle(topic: str, idea: str, level: str, client: Optional[str], *,
+                language: Optional[str] = None) -> dict:
     """``{"set", "source": "ai" | "canned", "note"}``. A 429 from the custom-set rate limit passes through."""
     if tutor.configured():
         reply = tutor.ask_json("misaki_puzzle", {"topic": topic, "idea": idea, "level": level},
-                               {"code": "", "note": ""}, validate_puzzle_reply, client=client)
+                               {"code": "", "note": ""}, partial(validate_puzzle_reply, language=language),
+                               client=client, lang=language)
         if reply["source"] == "ai":
             try:
                 made = custom.create_set(reply["code"], level, client, from_misaki=True)
@@ -548,14 +571,14 @@ def make_puzzle(topic: str, idea: str, level: str, client: Optional[str]) -> dic
             except Exception as exc:  # the sandbox must never take the endpoint down: use an authored program
                 logger.warning("misaki puzzle: AI program failed (%s)", type(exc).__name__)
             else:
-                return {"set": made, "source": "ai", "note": reply["note"] or _canned_note(topic)}
+                return {"set": made, "source": "ai", "note": reply["note"] or _canned_note(topic, language)}
     programs = AUTHORED[topic][:]
     random.shuffle(programs)
     last: Optional[Exception] = None
     for code in programs:
         try:
             return {"set": custom.create_set(code, level, client, from_misaki=True),
-                    "source": "canned", "note": _canned_note(topic)}
+                    "source": "canned", "note": _canned_note(topic, language)}
         except custom.CustomError as exc:
             if _is_rate_limit(exc):
                 raise

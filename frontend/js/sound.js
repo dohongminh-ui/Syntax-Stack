@@ -1,5 +1,6 @@
 // WebAudio-synthesised sound effects + haptics. No audio files. One mute toggle covers both.
 const KEY = 'syntaxstack.sound';
+const muteListeners = new Set();
 let ctx = null;
 let master = null;
 let muted = false;
@@ -8,12 +9,14 @@ try {
 } catch { /* storage blocked */ }
 
 export const isMuted = () => muted;
+export const onMuteChange = (listener) => { muteListeners.add(listener); };
 
 export function setMuted(b) {
   muted = !!b;
   try {
     localStorage.setItem(KEY, muted ? 'off' : 'on');
   } catch { /* ignore */ }
+  for (const listener of muteListeners) listener(muted);
 }
 
 function ensure() {
@@ -33,6 +36,8 @@ function ensure() {
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   return ctx;
 }
+
+export const prepareAudio = ensure;
 
 // Autoplay policy: create / resume on the first user gesture.
 for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, ensure, { capture: true, passive: true });

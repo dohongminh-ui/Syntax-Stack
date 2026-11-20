@@ -156,6 +156,16 @@ export function saveSkillsSeen(levels) {
   }
 }
 
+const MISAKI_LANGUAGE_KEY = 'syntaxstack.misaki.language';
+
+export function loadMisakiLanguage() {
+  try { return localStorage.getItem(MISAKI_LANGUAGE_KEY); } catch { return null; }
+}
+
+export function saveMisakiLanguage(language) {
+  try { localStorage.setItem(MISAKI_LANGUAGE_KEY, language); } catch { /* keep the choice in memory */ }
+}
+
 // ---- Chat with Misaki: which body her model shows ('chibi' is the default, 'normal' the tall form) ----
 const BODY_KEY = 'syntaxstack.misaki.body';
 

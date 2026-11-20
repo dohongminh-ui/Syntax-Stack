@@ -164,6 +164,19 @@ def test_plain_text_reply_is_parsed_like_the_n8n_node(gemini):
     assert tutor.feedback("coach", {"n": 2}, "canned")["text"] == "a b"
 
 
+def test_voice_uses_the_interactions_endpoint_and_prebuilt_voice(gemini):
+    gemini.reply = {"steps": [{"type": "model_output", "content": [{"type": "audio", "data": "YXVkaW8="}]}]}
+    assert tutor.ask_json("misaki_voice", {"text": "こんにちは！"}, {}, lambda raw: raw, cache=False) == {
+        "audio": "YXVkaW8=", "source": "ai",
+    }
+    (call,) = gemini.calls
+    assert call["url"] == "https://generativelanguage.googleapis.com/v1beta/interactions"
+    assert call["json"] == {
+        "model": "gemini-3.8-flash-lite-tts", "store": False, "input": "こんにちは！",
+        "response_format": {"type": "audio"}, "generation_config": {"speech_config": [{"voice": "Leda"}]},
+    }
+
+
 @pytest.mark.parametrize("reply", [
     {}, {"candidates": []}, {"candidates": [{}]}, candidate("hi", finish="MAX_TOKENS"), candidate("hi", finish="SAFETY"),
     {"candidates": [{"finishReason": "STOP", "content": {"parts": []}}]}, candidate("   "), "not a dict", [1],
@@ -276,3 +289,11 @@ def test_n8n_flow_appends_the_same_english_line():
     js = next(n for n in json.loads(N8N_JSON.read_text(encoding="utf-8"))["nodes"] if n["name"] == "Build tutor request")["parameters"]["jsCode"]
     assert "const langEn = " + json.dumps(tutor_prompts.LANG_EN, ensure_ascii=False) + ";" in js
     assert "(body.lang === 'en' ? langEn : '')" in js
+
+
+def test_japanese_prompt_matches_the_n8n_flow():
+    js = next(n for n in json.loads(N8N_JSON.read_text(encoding="utf-8"))["nodes"] if n["name"] == "Build tutor request")["parameters"]["jsCode"]
+    assert "const langJa = " + json.dumps(tutor_prompts.LANG_JA, ensure_ascii=False) + ";" in js
+    for task in (tutor_prompts.CHAT_TASK, "misaki_puzzle"):
+        request = tutor_prompts.build_request({"task": task, "lang": "ja", "context": {}}, tutor_prompts.DEFAULT_MODEL)
+        assert request["systemInstruction"]["parts"][0]["text"].endswith(tutor_prompts.LANG_JA)

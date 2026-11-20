@@ -15,7 +15,7 @@ async function mock() {
 const TIMEOUT_MS = 15000;
 const TUTOR_TIMEOUT_MS = 45000;
 
-async function request(method, url, body, { timeout = TIMEOUT_MS, headers = null, raw = false } = {}) {
+async function request(method, url, body, { timeout = TIMEOUT_MS, headers = null, raw = false, binary = false } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   let res;
@@ -44,6 +44,7 @@ async function request(method, url, body, { timeout = TIMEOUT_MS, headers = null
     throw err;
   }
   if (raw || res.status === 204) return null;
+  if (binary) return res.arrayBuffer();
   return res.json();
 }
 
@@ -196,6 +197,10 @@ const MISAKI_PUZZLE_TIMEOUT_MS = 75000; // tutor (up to ~38 s) + the sandbox tha
 export async function misakiChat(body) {
   if (isMock) return (await mock()).misakiChat(body);
   return request('POST', '/api/misaki/chat', body, { timeout: TUTOR_TIMEOUT_MS });
+}
+
+export function misakiVoice(ticket) {
+  return request('POST', '/api/misaki/voice', { ticket }, { timeout: TUTOR_TIMEOUT_MS, binary: true });
 }
 
 /** body: { topic, idea, level } -> { set, source: 'ai'|'canned', note }. `set` has the custom-set shape. 429 = rate limited. */

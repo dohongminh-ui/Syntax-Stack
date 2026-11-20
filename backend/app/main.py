@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
-from . import bank, custom, hints, i18n, misaki, nicknames, pvp, ranked, rescue_engine, rooms, rows, tutor
+from . import bank, custom, hints, i18n, misaki, misaki_voice, nicknames, pvp, ranked, rescue_engine, rooms, rows, tutor
 from . import validator as V
 from .i18n import tr
 
@@ -213,6 +213,8 @@ class MisakiContext(BaseModel):
 class MisakiChatRequest(BaseModel):
     messages: list[MisakiMessage] = Field(min_length=1, max_length=12)
     context: Optional[MisakiContext] = None
+    voice: bool = False
+    language: Optional[Literal["vi", "en", "ja"]] = None
 
     @model_validator(mode="after")
     def _last_is_user(self):
@@ -221,10 +223,15 @@ class MisakiChatRequest(BaseModel):
         return self
 
 
+class MisakiVoiceRequest(BaseModel):
+    ticket: str = Field(min_length=1, max_length=4096)
+
+
 class MisakiPuzzleRequest(BaseModel):
     topic: Topic
     idea: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     level: Level = "intermediate"
+    language: Optional[Literal["vi", "en", "ja"]] = None
 
 
 class PuzzleSubmission(BaseModel):
@@ -566,14 +573,33 @@ def custom_get(set_id: str, level: Level = "intermediate"):
 @app.post("/api/misaki/chat")
 def misaki_chat(req: MisakiChatRequest, request: Request):
     """A reply from Misaki: ``{text, source: ai|canned|safety, mood, action}``. Nothing is stored or logged."""
-    return misaki.chat([m.model_dump() for m in req.messages],
-                       req.context.model_dump() if req.context else None, _client_ip(request))
+    token = i18n.set_lang(req.language if req.language in i18n.LANGS else i18n.cur())
+    try:
+        reply = misaki.chat([m.model_dump() for m in req.messages],
+                            req.context.model_dump() if req.context else None, _client_ip(request),
+                            language=req.language)
+    finally:
+        i18n.reset(token)
+    if req.voice and reply["source"] != "safety" and (voice := misaki_voice.issue(reply["text"])):
+        reply["voice"] = voice
+    return reply
+
+
+@app.post("/api/misaki/voice")
+def misaki_speech(req: MisakiVoiceRequest, request: Request):
+    text = misaki_voice.read_ticket(req.ticket)
+    if not text:
+        raise HTTPException(403, "Giọng nói này không còn khả dụng.")
+    wav = misaki_voice.synthesize(text, _client_ip(request))
+    if not wav:
+        raise HTTPException(503, "Giọng nói của Misaki chưa sẵn sàng. Bạn thử lại sau nhé.")
+    return Response(wav, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/misaki/puzzle")
 def misaki_puzzle(req: MisakiPuzzleRequest, request: Request):
     """A custom puzzle set that Misaki wrote (or an authored one): ``{set, source: ai|canned, note}``."""
-    return misaki.make_puzzle(req.topic, req.idea, req.level, _client_ip(request))
+    return misaki.make_puzzle(req.topic, req.idea, req.level, _client_ip(request), language=req.language)
 
 
 # --------------------------------------------------------------------------- live classroom

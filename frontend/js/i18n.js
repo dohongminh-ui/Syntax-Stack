@@ -106,7 +106,7 @@ function inCode(node) {
 function translateText(node) {
   const v = node.nodeValue;
   if (!v || v.length > MAX_LEN || !HAS_LETTER.test(v)) return;
-  if (inCode(node)) return;
+  if (inCode(node) || node.parentElement?.closest('[translate="no"]')) return;
   const out = translate(v);
   if (out !== v) node.nodeValue = out;
 }

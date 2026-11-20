@@ -1,6 +1,10 @@
 /* Chat with Misaki (js/misaki-chat.js, js/misaki-stage.js). Tokens, keycaps, the editor window and the .tutor block
    come from base.css and modal.css. Phone first: stage on top, chat below; two columns from 900px. */
 
+/* Keep the shared sound toggle available in chat's plain header. */
+body:has(#screen-misaki:not([hidden])) .strip-plain .strip-r { display: flex; }
+body:has(#screen-misaki:not([hidden])) .strip-plain .strip-r > :not(.strip-sound) { display: none; }
+
 .misaki {
   height: calc(100vh - var(--strip-h));
   height: calc(100dvh - var(--strip-h));
@@ -95,6 +99,13 @@
 .mk-row-ai { max-width: min(100%, 580px); }
 .mk-row-me { align-items: flex-end; }
 .mk-msg { max-width: 100%; min-width: 0; }
+.mk-voice {
+  display: grid; place-items: center; width: 30px; height: 30px; margin-inline-start: auto;
+  padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer;
+}
+.mk-voice:not(:disabled):hover, .mk-voice:focus-visible { background: var(--bg); }
+.mk-voice:disabled { opacity: 0.45; cursor: default; }
+@media (pointer: coarse) { .mk-voice { width: 44px; height: 44px; } }
 .mk-foot-ai { margin-top: auto; }
 
 /* learner: a neutral keycap bubble, right-aligned */
@@ -183,11 +194,28 @@
 }
 @media (max-width: 899px) and (pointer: coarse) { .mk-body .keyopt .cap-top { min-height: 40px; } }
 
-/* title bar: "new chat" and the hide/show-Misaki keycap */
+/* Chat controls in the title bar */
 .mk-bar-r { display: flex; align-items: center; gap: 10px; padding-bottom: 4px; }
+.mk-language {
+  min-height: 30px;
+  padding: 0 4px 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  color-scheme: dark;
+  font: 700 12px/1 var(--f-mono);
+  cursor: pointer;
+}
+.mk-language:focus-visible { outline: 2px solid var(--mustard); outline-offset: 2px; }
+.mk-language:disabled { opacity: 0.6; cursor: default; }
 .mk-toggle { --u: 32px; flex: none; }
 .mk-toggle .cap-top { align-items: center; min-height: 30px; padding: 0 9px; }
 .mk-toggle-in { display: inline-flex; align-items: center; gap: 6px; color: var(--legend); }
 .mk-toggle-t { font: 600 12px/1 var(--f-ui); white-space: nowrap; }
-@media (max-width: 599px) { .mk-toggle-t { display: none; } .mk-toggle .cap-top { padding: 0 11px; } }
-@media (pointer: coarse) { .mk-toggle .cap-top { min-height: 38px; } }
+@media (max-width: 599px) {
+  .mk-bar-r { gap: 6px; }
+  .mk-toggle-t { display: none; }
+  .mk-toggle .cap-top { padding: 0 11px; }
+}
+@media (pointer: coarse) { .mk-language, .mk-toggle .cap-top { min-height: 38px; } }

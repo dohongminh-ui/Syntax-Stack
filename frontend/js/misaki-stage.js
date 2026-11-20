@@ -29,6 +29,14 @@ const MOODS = {
   dizzy: { face: { ParamMouthOpenY: 0.15, key3: 1 } }, // white circle eyes
 };
 const FACE_PARAMS = [...new Set(Object.values(MOODS).flatMap(({ face }) => Object.keys(face)))];
+// This export has no keyforms on ParamA/I/U/E/O. Map those sounds to the working mouth sliders.
+const VOWEL_POSES = [
+  { opening: 0.88, form: 0.05, pucker: 0, funnel: 0 },    // A
+  { opening: 0.27, form: 0.85, pucker: 0, funnel: 0 },    // I
+  { opening: 0.24, form: -0.35, pucker: 0.62, funnel: 0.36 }, // U
+  { opening: 0.48, form: 0.62, pucker: 0, funnel: 0 },    // E
+  { opening: 0.63, form: -0.24, pucker: 0.18, funnel: 0.65 }, // O
+];
 const ARM_PARAMS = {
   Raise: ['Movement2', 'Param59', 'Param60', 'Param61', 'Param62'],
   Finger: ['Movement3', 'Param36', 'Param39', 'Param40', 'Param41', 'Param42', 'Param43'],
@@ -115,7 +123,7 @@ function portraitUrl() {
 
 /**
  * Builds the stage inside `host` (the host should have position: relative and a size). Returns
- * `{ ready, setMood, pause, resume, refit, mode }`. `mode` is 'avatar' | 'portrait' | 'model' and changes as things load.
+ * `{ ready, setMood, setVoiceSampler, pause, resume, refit, mode }`. `mode` changes as the model loads.
  */
 export function mountStage(host, { isPhone = () => innerWidth < 900, bodySwitch = null } = {}) {
   const avatar = el('div', { class: 'mk-fallback' }, misakiAvatar({ cls: 'mk-avatar-big' }));
@@ -131,11 +139,13 @@ export function mountStage(host, { isPhone = () => innerWidth < 900, bodySwitch 
     refit() {},
   };
   let mood = 'neutral';
+  let voiceSampler = null;
   let live = null; // set once the model is up
   api.setMood = (m) => {
     mood = Object.hasOwn(MOODS, m) ? m : 'neutral';
     live?.apply(mood);
   };
+  api.setVoiceSampler = (sample) => { voiceSampler = sample; };
   const set = (mode) => {
     api.mode = mode;
     host.dataset.state = mode;
@@ -157,7 +167,7 @@ export function mountStage(host, { isPhone = () => innerWidth < 900, bodySwitch 
     if (saveData() || !hasWebGL()) return showPortrait();
     try {
       const PIXI = await loadRuntime();
-      live = await buildModel(PIXI, host, isPhone, () => mood, bodySwitch);
+      live = await buildModel(PIXI, host, isPhone, () => mood, bodySwitch, () => voiceSampler?.());
     } catch (e) {
       console.warn('Misaki Live2D model unavailable:', e.message);
       return showPortrait();
@@ -174,7 +184,7 @@ export function mountStage(host, { isPhone = () => innerWidth < 900, bodySwitch 
   return api;
 }
 
-async function buildModel(PIXI, host, isPhone, getMood, bodySwitch) {
+async function buildModel(PIXI, host, isPhone, getMood, bodySwitch, sampleVoice) {
   const { Live2DModel, MotionPriority } = PIXI.live2d;
   const canvas = el('canvas', { class: 'mk-canvas' });
   const rect = host.getBoundingClientRect();
@@ -307,6 +317,28 @@ async function buildModel(PIXI, host, isPhone, getMood, bodySwitch) {
       place();
     }
     im.coreModel.setParameterValueById(BODY_PARAM, body.value);
+    const speech = sampleVoice();
+    if (!speech) return;
+    const amplitude = reducedMotion() ? 0.45 : 1;
+    let vowelStrength = 0;
+    let opening = 0;
+    let form = 0;
+    let pucker = 0;
+    let funnel = 0;
+    for (let i = 0; i < VOWEL_POSES.length; i++) {
+      const pose = VOWEL_POSES[i];
+      const weight = speech.vowels[i] * amplitude;
+      vowelStrength += weight;
+      opening += pose.opening * weight;
+      form += pose.form * weight;
+      pucker += pose.pucker * weight;
+      funnel += pose.funnel * weight;
+    }
+    const rest = Math.max(0, 1 - vowelStrength);
+    core.setParameterValueById('ParamMouthOpenY', opening + speech.opening * amplitude * 0.85 * rest);
+    core.setParameterValueById('ParamMouthForm', form + core.getParameterValueById('ParamMouthForm') * rest);
+    core.setParameterValueById('Mouthpucker', pucker);
+    core.setParameterValueById('MouthFunnel', funnel);
   });
   const setBody = (name) => {
     if (!(name in BODY_VALUE)) return;

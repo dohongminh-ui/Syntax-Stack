@@ -66,6 +66,8 @@ GEMINI_PREFIX = "gemini:"   # pseudo-URL (part of the cache key) that routes a c
 
 
 def gemini_model(task: str) -> str:
+    if task == tutor_prompts.VOICE_TASK:
+        return tutor_prompts.VOICE_MODEL
     return (os.getenv("SYNTAX_STACK_GEMINI_MODEL") or "").strip() or tutor_prompts.default_model(task)
 
 
@@ -74,13 +76,16 @@ def request_gemini(model: str, payload: str, *, timeout: float) -> dict:
 
     The key travels only in the ``x-goog-api-key`` header (never in the URL, never logged)."""
     body = json.loads(payload)
+    voice = body.get("task") == tutor_prompts.VOICE_TASK
     response = httpx.post(
-        GEMINI_ENDPOINT.format(model=model),
-        json=tutor_prompts.build_request(body, model),
+        tutor_prompts.VOICE_ENDPOINT if voice else GEMINI_ENDPOINT.format(model=model),
+        json=tutor_prompts.build_voice_request(body) if voice else tutor_prompts.build_request(body, model),
         headers={"x-goog-api-key": os.environ["SYNTAX_STACK_GEMINI_API_KEY"]},
         timeout=timeout, trust_env=False,
     )
     response.raise_for_status()
+    if voice:
+        return tutor_prompts.parse_voice_response(response.json())
     return tutor_prompts.parse_response(response.json(), body.get("task"))
 
 
@@ -176,13 +181,14 @@ def _finish(task: str, started: float, outcome: str, value: Any, fallback: Any) 
 
 
 def _run(task: str, context: dict, fallback: Any, client: Optional[str], lang: Optional[str],
-         ask: Callable[[str, str], Any]) -> tuple[Any, str]:
+         ask: Callable[[str, str], Any], *, cache: bool = True) -> tuple[Any, str]:
     """Shared core of ``feedback`` and ``ask_json``: configuration check, quotas, cache, slots, logging.
 
     ``ask(url, payload)`` makes the call and returns the validated reply (a string or a dict); it raises
     ``ValueError`` & co. for a bad reply. Returns ``(reply, "ai")`` or ``(fallback, "canned")``."""
     global _calls, _ai
-    lang = i18n.resolve(lang)
+    if lang != "ja" or task not in (tutor_prompts.CHAT_TASK, "misaki_puzzle"):
+        lang = i18n.resolve(lang)
     who = client_key(client)
     started = time.monotonic()
     kind = provider()
@@ -198,7 +204,7 @@ def _run(task: str, context: dict, fallback: Any, client: Optional[str], lang: O
         return _finish(task, started, "canned:error", None, fallback)
     key = (url, lang, payload)
     with _lock:
-        hit = _cache.get(key)
+        hit = _cache.get(key) if cache else None
         if hit is not None:
             _cache.move_to_end(key)
     if hit is not None:
@@ -228,10 +234,11 @@ def _run(task: str, context: dict, fallback: Any, client: Optional[str], lang: O
             return _finish(task, started, "canned:error", None, fallback)
         with _lock:
             _ai += 1
-            _cache[key] = copy.deepcopy(reply)
-            _cache.move_to_end(key)
-            while len(_cache) > CACHE_SIZE:
-                _cache.popitem(last=False)
+            if cache:
+                _cache[key] = copy.deepcopy(reply)
+                _cache.move_to_end(key)
+                while len(_cache) > CACHE_SIZE:
+                    _cache.popitem(last=False)
         return _finish(task, started, "ai", reply, fallback)
     finally:
         _slots.release()
@@ -248,12 +255,12 @@ def feedback(task: str, context: dict, fallback: str, client: Optional[str] = No
 
 
 def ask_json(task: str, context: dict, fallback: dict, validate: Callable[[dict], dict],
-             client: Optional[str] = None, lang: Optional[str] = None) -> dict:
+             client: Optional[str] = None, lang: Optional[str] = None, *, cache: bool = True) -> dict:
     """Like ``feedback`` for tasks that need a structured reply (``misaki_chat``, ``misaki_puzzle``).
 
     Same quotas, slots, cache, day roll and log line. ``validate(raw_reply_object)`` returns the cleaned dict or raises
     ``ValueError`` / ``KeyError`` / ``TypeError``; any such error means the AI failed. Returns
     ``{**validated, "source": "ai"}`` or ``{**fallback, "source": "canned"}``."""
     value, source = _run(task, context, fallback, client, lang,
-                         lambda url, payload: validate(_call(url, payload)))
+                         lambda url, payload: validate(_call(url, payload)), cache=cache)
     return {**value, "source": source}

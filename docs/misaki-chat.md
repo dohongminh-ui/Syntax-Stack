@@ -42,6 +42,8 @@ Request:
 
 - `messages`: 1 to 12 items, the last one has `role: "user"`. `role` is `user` or `misaki`, and `text`
   is 1 to 500 characters. The client keeps the history; the server stores nothing.
+- `language`: optional `"vi"`, `"en"`, or `"ja"`. The choice in the chat header controls Misaki's replies
+  and is saved in the browser. Without a choice, the chat uses the game's language.
 - `context` is optional and is a hint only. `level` is a `Level` and `weak_topics` holds 0 to 4 topics.
   It comes from the learner's own local mistake history.
 - `context.puzzle_review`, when present, contains `set_id` and up to eight recent submissions to the last
@@ -84,7 +86,7 @@ starts the activity. The tool call supplies the action, and the app supplies the
 ### `POST /api/misaki/puzzle`
 
 Request: `{"topic": "loops", "idea": "range bắt đầu từ 1", "level": "beginner"}`. `idea` is 0 to 200
-characters.
+characters. The optional `language` field selects the language of Misaki's note.
 
 1. If the tutor is configured, ask the AI task `misaki_puzzle` for `{"code", "note"}`. `code` is a Python
    program of at most 15 lines, in the custom-puzzle subset, on `topic`.
@@ -113,6 +115,19 @@ previous failed board and uses its existing one-tile challenge where available.
 
 The custom-set rate limit (`custom.RATE_LIMIT`) still applies. A 429 is passed through, and Misaki
 says so in her own words on the client.
+
+### Listening to a reply
+
+Misaki reads new chat replies aloud after the learner sends a message. The sound button in the
+game header mutes her, and the speaker button on a reply stops or replays that clip. The chat response
+carries an expiring playback ticket for `POST /api/misaki/voice`, which returns WAV audio. The server
+sends Misaki's reply to Gemini 3.8 Flash-Lite TTS, which speaks Vietnamese, English, and Japanese with
+the Leda voice. Voice calls share the tutor's quotas.
+
+The browser estimates vowel shapes from the speech audio and blends the rig's mouth opening, form,
+pucker and funnel during playback. The current expression takes over when playback ends. Sending
+a new message stops the previous clip. The most recent clip can be replayed in the tab.
+Publish the updated n8n workflow alongside the app to enable speech through the production webhook.
 
 ## 3. AI tasks (n8n)
 

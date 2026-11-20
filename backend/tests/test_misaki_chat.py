@@ -195,6 +195,66 @@ def test_explanation_without_a_button_still_passes(client, ai):
     assert response.json() == {**reply, "source": "ai"}
 
 
+def test_voice_is_on_demand_and_requires_a_valid_ticket(client, ai):
+    import base64
+    import io
+    import wave
+
+    text = "Try changing the stop in `range(4)`."
+    ai.reply["misaki_chat"] = {"text": text, "mood": "thinking", "action": None}
+    request = {**say("How do loops work?"), "voice": True}
+    voice = client.post(CHAT, json=request, headers={"X-Lang": "en"}).json()["voice"]
+    ticket = voice["ticket"]
+    assert [call["task"] for call in ai.calls] == ["misaki_chat"]
+    evidence = io.BytesIO()
+    with wave.open(evidence, "wb") as wav:
+        wav.setparams((1, 2, 24000, 0, "NONE", "not compressed"))
+        wav.writeframes(b"\x00\x01" * 480)
+    clip = evidence.getvalue()
+    ai.reply["misaki_voice"] = {"audio": base64.b64encode(clip).decode()}
+    endpoint = "/api/misaki/voice"
+    bad_ticket = ticket[:-1] + ("0" if ticket[-1] != "0" else "1")
+    assert client.post(endpoint, json={"ticket": bad_ticket}).status_code == 403
+    assert len(ai.calls) == 1
+    response = client.post(endpoint, json={"ticket": ticket})
+    assert response.status_code == 200 and response.content == clip
+    assert response.headers["content-type"] == "audio/wav"
+    assert ai.calls[-1]["context"] == {"text": "Try changing the stop in range(4)."}
+
+
+def test_safety_reply_does_not_offer_voice(client, ai):
+    response = client.post(CHAT, json={**say("I want to die"), "voice": True}).json()
+    assert response["source"] == "safety" and "voice" not in response
+    assert not ai.calls
+
+
+@pytest.mark.parametrize("language,text", [
+    ("vi", "Vòng lặp chạy từng bước một."),
+    ("en", "A loop runs one step at a time."),
+    ("ja", "ループは一つずつ処理するよ。"),
+])
+def test_chat_language_switch_controls_the_reply_and_voice_transcript(client, ai, language, text):
+    from app import misaki_voice
+
+    ai.reply["misaki_chat"] = {"text": text, "mood": "happy", "action": None}
+    headers = {"X-Lang": "vi" if language == "en" else "en"}
+    reply = client.post(CHAT, json={**say("Explain loops"), "language": language, "voice": True}, headers=headers).json()
+    assert ai.calls[-1]["lang"] == language
+    assert reply["source"] == "ai" and reply["text"] == text
+    assert misaki_voice.read_ticket(reply["voice"]["ticket"]) == text
+
+
+def test_japanese_chat_fallback_and_puzzle_note(client, ai):
+    ai.reply["misaki_chat"] = {"text": "Let's practice Python!", "mood": "happy", "action": None}
+    reply = client.post(CHAT, json={**say("こんにちは"), "language": "ja"}).json()
+    assert reply["source"] == "canned" and "こんにちは" in reply["text"]
+    assert client.post(CHAT, json={**say("hi"), "language": "jp"}).status_code == 422
+
+    puzzle = client.post(PUZZLE, json={"topic": "loops", "language": "ja"}).json()
+    assert ai.calls[-1]["lang"] == "ja"
+    assert "プログラム" in puzzle["note"] and puzzle["set"]["puzzles"]
+
+
 def test_button_decision_comes_from_the_tool_even_when_text_is_identical(client, ai):
     text = "Let's practice loops."
     ai.reply["misaki_chat"] = {"function_calls": [{"name": "reply", "args": {
