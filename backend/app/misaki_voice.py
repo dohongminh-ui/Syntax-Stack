@@ -28,7 +28,7 @@ def issue(text: str) -> dict | None:
     expires = int(time.time()) + TICKET_TTL
     transcript = base64.urlsafe_b64encode(text.encode()).decode()
     payload = f"{expires}.{transcript}"
-    return {"ticket": f"{payload}.{_signature(key, payload)}", "expires": expires}
+    return {"ticket": f"{payload}.{_signature(key, payload)}", "expires": expires, "transcript": text}
 
 
 def read_ticket(ticket: str) -> str | None:

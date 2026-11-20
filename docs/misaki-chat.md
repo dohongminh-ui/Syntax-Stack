@@ -126,8 +126,9 @@ the Leda voice. On a provider rate limit, speech falls back to Gemini 3.8 Flash 
 Voice calls share the tutor's quotas.
 
 When the voice language differs from the game's language, the same chat tool call supplies a spoken
-translation. The browser prepares playback before revealing the bubble and shows the text after at most
-five extra seconds if audio is still loading. Muted or unavailable speech leaves the written reply visible.
+translation. The browser reveals the reply when playback starts. If audio fails or has not started
+after 15 seconds, it shows the reply and cancels autoplay. Muted speech also leaves the text visible.
+While audio plays, the current phrase is highlighted using estimated timing from the clip and transcript.
 
 The browser estimates vowel shapes from the speech audio and blends the rig's mouth opening, form,
 pucker and funnel during playback. The current expression takes over when playback ends. Sending

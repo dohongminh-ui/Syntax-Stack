@@ -14,6 +14,7 @@ import { showStrip, setMode, setStreak } from './strip.js';
 import { openCustom } from './custom.js';
 import { mountStage } from './misaki-stage.js';
 import { createVoicePlayer, voiceSupported } from './misaki-voice.js';
+import { createFollowAlong } from './misaki-follow-along.js';
 import { isMuted, onMuteChange, prepareAudio } from './sound.js';
 import { lang, t } from './i18n.js';
 
@@ -26,7 +27,7 @@ const MAX_REVIEW_ATTEMPTS = 8;
 const MAX_INPUT = 500; // API: 1 to 500 characters per message
 const MAX_MESSAGES = 12; // API: 1 to 12 messages per request
 const MAX_KEPT = 60;
-const VOICE_REVEAL_MS = 5000;
+const VOICE_START_TIMEOUT_MS = 15000;
 const LEVELS = ['beginner', 'intermediate', 'advanced'];
 const VOICE_LANGUAGES = ['vi', 'en', 'ja'];
 
@@ -180,12 +181,14 @@ function payload() {
 const head = (voiceButton) => el('div', { class: 'tutor-head' }, misakiAvatar({ cls: 'tutor-badge' }),
   el('span', { class: 'tutor-label', text: 'MISAKI' }), voiceButton);
 
-function voiceKey(voice) {
+function voiceKey({ voice, text }) {
   if (!voiceSupported || typeof voice?.ticket !== 'string' || !(voice.expires * 1000 > Date.now())) return null;
+  const follow = createFollowAlong(text, voice.transcript);
   const idleLabel = t('Nghe Misaki');
   const activeLabel = t('Dừng giọng Misaki');
   const button = el('button', { class: 'mk-voice', type: 'button', disabled: isMuted() });
   const setState = (active) => {
+    if (!active) follow.stop();
     const label = active ? activeLabel : idleLabel;
     button.setAttribute('aria-label', label);
     button.title = label;
@@ -193,15 +196,16 @@ function voiceKey(voice) {
   };
   setState(false);
   button.addEventListener('click', () => {
-    voicePlayer.toggle(voice.ticket, setState).catch(() => toast(t('Giọng Misaki chưa sẵn sàng. Hãy thử lại.')));
+    voicePlayer.toggle(voice.ticket, setState, follow.start)
+      .catch(() => toast(t('Giọng Misaki chưa sẵn sàng. Hãy thử lại.')));
   });
   const play = () => new Promise((resolve) => {
     voicePlayer.play(voice.ticket, (active) => {
       setState(active);
       if (!active) resolve();
-    }).then(resolve, resolve);
+    }, follow.start).then(resolve, resolve);
   });
-  return { button, play };
+  return { button, play, spans: follow.spans };
 }
 
 function actionKey(action) {
@@ -211,7 +215,7 @@ function actionKey(action) {
   return k;
 }
 
-function rowFor(m, voice = voiceKey(m.voice)) {
+function rowFor(m, voice = voiceKey(m)) {
   if (m.role === 'user') {
     const bubble = keycap({ topic: 'neutral', legend: '', legendClass: 'mk-me-text', cls: 'mk-bubble' });
     bubble.querySelector('.mk-me-text').textContent = m.text;
@@ -219,7 +223,8 @@ function rowFor(m, voice = voiceKey(m.voice)) {
   }
   return el('li', { class: 'mk-row mk-row-ai' },
     el('div', { class: 'tutor mk-msg' }, head(voice?.button),
-      el('p', { class: 'tutor-body', lang: m.language, translate: m.language && 'no' }, richText(m.text))),
+      el('p', { class: 'tutor-body', lang: m.language, translate: m.language && 'no' },
+        voice?.spans ?? richText(m.text))),
     m.action ? actionKey(m.action) : null);
 }
 
@@ -313,13 +318,18 @@ async function send(raw, puzzleRequest) {
   const text2 = typeof reply?.text === 'string' && reply.text.trim() ? reply.text.trim().slice(0, 700) : offline;
   const message = { role: 'misaki', text: text2, mood: reply?.mood, action: cleanAction(reply?.action), voice: reply?.voice,
     language, local: !!reply?.local || text2 === offline };
-  const voice = voiceKey(message.voice);
+  const voice = voiceKey(message);
   if (voice && !ui.root.hidden && !document.hidden && !isMuted()) {
     const preparing = typingRow('Misaki đang chuẩn bị giọng nói');
     wait.replaceWith(preparing);
     wait = preparing;
     let timer;
-    await Promise.race([voice.play(), new Promise((resolve) => { timer = setTimeout(resolve, VOICE_REVEAL_MS); })]);
+    await Promise.race([voice.play(), new Promise((resolve) => {
+      timer = setTimeout(() => {
+        voicePlayer.stop();
+        resolve();
+      }, VOICE_START_TIMEOUT_MS);
+    })]);
     clearTimeout(timer);
     if (isMuted()) voice.button.disabled = true;
   }

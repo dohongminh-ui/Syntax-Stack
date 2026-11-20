@@ -23,7 +23,7 @@ export function createVoicePlayer(setSampler) {
     onState(false);
   }
 
-  async function play(ticket, onState) {
+  async function play(ticket, onState, onStart) {
     if (isMuted() || !voiceSupported) return;
     stop();
     const context = prepareAudio();
@@ -49,8 +49,10 @@ export function createVoicePlayer(setSampler) {
         if (playing === current) stop();
       };
       setSampler(createVisemeSampler(analyser, context.sampleRate));
-      source.start();
+      const startedAt = context.currentTime;
+      source.start(startedAt);
       current.source = source;
+      onStart(buffer, () => context.currentTime - startedAt);
     } catch (error) {
       if (playing !== current) return;
       stop();
@@ -58,9 +60,9 @@ export function createVoicePlayer(setSampler) {
     }
   }
 
-  async function toggle(ticket, onState) {
+  async function toggle(ticket, onState, onStart) {
     if (playing?.ticket === ticket) stop();
-    else await play(ticket, onState);
+    else await play(ticket, onState, onStart);
   }
 
   return { play, toggle, stop };

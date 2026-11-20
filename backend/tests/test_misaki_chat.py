@@ -255,6 +255,7 @@ def test_voice_language_changes_only_the_playback_transcript(client, ai, site, v
     assert ai.calls[-1]["context"]["voice_language"] == voice_language
     assert reply["source"] == "ai" and reply["text"] == text
     assert "speech_text" not in reply
+    assert reply["voice"]["transcript"] == spoken
     assert misaki_voice.read_ticket(reply["voice"]["ticket"]) == spoken
 
 

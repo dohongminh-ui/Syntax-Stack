@@ -99,6 +99,12 @@ body:has(#screen-misaki:not([hidden])) .strip-plain .strip-r > :not(.strip-sound
 .mk-row-ai { max-width: min(100%, 580px); }
 .mk-row-me { align-items: flex-end; }
 .mk-msg { max-width: 100%; min-width: 0; }
+.mk-phrase.is-speaking {
+  color: var(--ice);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.2em;
+}
 .mk-voice {
   display: grid; place-items: center; width: 30px; height: 30px; margin-inline-start: auto;
   padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer;
