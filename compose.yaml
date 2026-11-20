@@ -6,9 +6,15 @@ services:
     volumes:
       # custom puzzle sets (Tạo câu đố từ code); kept across rebuilds so shared /?set= links keep working
       - custom-sets:/var/lib/syntax-stack
+      # Misaki's Live2D model (docs/misaki-chat.md section 6): copied onto the server only, never committed or
+      # baked into the image. A missing folder just shows her keycap avatar.
+      - ./frontend/live2d:/app/frontend/live2d:ro
     environment:
       SYNTAX_STACK_TUTOR_URL: http://127.0.0.1:5678/webhook/syntax-stack-tutor
       SYNTAX_STACK_TUTOR_TOKEN: ${SYNTAX_STACK_TUTOR_TOKEN:-}
+      # Direct Gemini when n8n is not set up (n8n wins when both are configured)
+      SYNTAX_STACK_GEMINI_API_KEY: ${SYNTAX_STACK_GEMINI_API_KEY:-}
+      SYNTAX_STACK_GEMINI_MODEL: ${SYNTAX_STACK_GEMINI_MODEL:-}
       # Asset version stamped on CSS/JS URLs; deploy/update.sh sets it to the git commit.
       # Empty falls back to a hash of the frontend files.
       SYNTAX_STACK_BUILD: ${SYNTAX_STACK_BUILD:-}

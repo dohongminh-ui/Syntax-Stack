@@ -26,3 +26,6 @@
 !frontend/css/*.css
 !frontend/js/
 !frontend/js/*.js
+!frontend/vendor/
+!frontend/vendor/*.js
+!frontend/vendor/LICENSES.txt
