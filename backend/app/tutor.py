@@ -83,6 +83,8 @@ def request_gemini(model: str, payload: str, *, timeout: float) -> dict:
         headers={"x-goog-api-key": os.environ["SYNTAX_STACK_GEMINI_API_KEY"]},
         timeout=timeout, trust_env=False,
     )
+    if voice and response.status_code == 429:
+        return {"status": 429}
     response.raise_for_status()
     if voice:
         return tutor_prompts.parse_voice_response(response.json())
@@ -261,6 +263,12 @@ def ask_json(task: str, context: dict, fallback: dict, validate: Callable[[dict]
     Same quotas, slots, cache, day roll and log line. ``validate(raw_reply_object)`` returns the cleaned dict or raises
     ``ValueError`` / ``KeyError`` / ``TypeError``; any such error means the AI failed. Returns
     ``{**validated, "source": "ai"}`` or ``{**fallback, "source": "canned"}``."""
-    value, source = _run(task, context, fallback, client, lang,
-                         lambda url, payload: validate(_call(url, payload)), cache=cache)
+    def ask(url: str, payload: str) -> dict:
+        raw = _call(url, payload)
+        if task == tutor_prompts.VOICE_TASK and raw.get("status") == 429:
+            time.sleep(1)
+            raw = _call(url, payload)
+        return validate(raw)
+
+    value, source = _run(task, context, fallback, client, lang, ask, cache=cache)
     return {**value, "source": source}

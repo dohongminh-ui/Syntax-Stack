@@ -195,7 +195,7 @@ def test_explanation_without_a_button_still_passes(client, ai):
     assert response.json() == {**reply, "source": "ai"}
 
 
-def test_voice_is_on_demand_and_requires_a_valid_ticket(client, ai):
+def test_voice_is_on_demand_and_requires_a_valid_ticket(client, ai, monkeypatch):
     import base64
     import io
     import wave
@@ -220,6 +220,19 @@ def test_voice_is_on_demand_and_requires_a_valid_ticket(client, ai):
     assert response.status_code == 200 and response.content == clip
     assert response.headers["content-type"] == "audio/wav"
     assert ai.calls[-1]["context"] == {"text": "Try changing the stop in range(4)."}
+
+    request_tutor = tutor.request_tutor
+    attempts = []
+
+    def temporarily_throttled(*args, **kwargs):
+        attempts.append(True)
+        return {"status": 429} if len(attempts) == 1 else request_tutor(*args, **kwargs)
+
+    delays = []
+    monkeypatch.setattr(tutor, "request_tutor", temporarily_throttled)
+    monkeypatch.setattr(tutor.time, "sleep", delays.append)
+    assert client.post(endpoint, json={"ticket": ticket}).content == clip
+    assert len(attempts) == 2 and delays == [1]
 
 
 def test_safety_reply_does_not_offer_voice(client, ai):
