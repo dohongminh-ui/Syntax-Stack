@@ -186,7 +186,8 @@ def wrong_language(text: str) -> bool:
     return i18n.resolve(None) == "en" and sum(ch in _VI_LETTERS for ch in text.lower()) >= 3
 
 
-def validate_chat_reply(raw: dict, *, requested_topic: Optional[str] = None, follow_up: bool = False) -> dict:
+def validate_chat_reply(raw: dict, *, requested_topic: Optional[str] = None, follow_up: bool = False,
+                        previous_action: Optional[dict] = None, review_topic: Optional[str] = None) -> dict:
     """Only a validated native game tool can supply a button."""
     raw = tutor_prompts.decode_chat_call(raw.get("function_calls"))
     text = raw.get("text")
@@ -195,13 +196,20 @@ def validate_chat_reply(raw: dict, *, requested_topic: Optional[str] = None, fol
         if wrong_language(text):
             raise ValueError("reply not in the request's language")
     text = clean_text(text, MAX_TEXT)
-    action = validate_action(raw.get("action"))
-    if raw["action"] is not None and action is None:
+    proposal = raw["action"]
+    kind = proposal["type"] if proposal else None
+    if kind == "repeat_offer":
+        action = previous_action
+    elif kind == "follow_up_puzzle":
+        action = validate_action({"type": "make_puzzle", "topic": review_topic, "idea": proposal.get("idea")})
+    else:
+        action = validate_action(proposal)
+    if proposal is not None and action is None:
         raise ValueError("invalid Misaki tool arguments")
-    if follow_up and (action is None or action["type"] != "make_puzzle"):
+    if follow_up and kind not in ("make_puzzle", "follow_up_puzzle"):
         raise ValueError("a requested follow-up needs a playable puzzle")
     action_topic = (action.get("focus_topic") or action.get("topic")) if action else None
-    if requested_topic and action_topic and action_topic != requested_topic:
+    if kind != "repeat_offer" and requested_topic and action_topic and action_topic != requested_topic:
         raise ValueError("action focuses on a different topic from the learner's request")
     return {"text": text, "mood": normalize_mood(raw.get("mood")), "action": action}
 
@@ -389,13 +397,10 @@ def _pick(options: list[dict], messages: list[dict]) -> dict:
 # --------------------------------------------------------------------------- chat flow
 
 
-_REVIEW_QUESTION = re.compile(
+_CANNED_REVIEW_QUESTION = re.compile(
     r"\b(?:review|how did i do|what did i get|what (?:did i do|went) wrong|why (?:was|is) (?:my|that|it)|"
     r"which (?:puzzles?|answers?)|on lai|dung va sai|dung o dau|sai o dau|tai sao minh|vi sao minh)\b"
 )
-_ACCEPT = re.compile(r"(?:yes(?: please)?|yeah(?: please)?|sure|okay|ok|please do|lets do it|go ahead|"
-                     r"vang|da vang|duoc(?: a| nhe)?|dong y|choi luon|lam di)")
-_FOLLOW_UP = re.compile(r"\b(?:follow up|another like that|bai tuong tu|cau hoi tiep theo)\b")
 
 
 def _checked_review(pending: dict) -> list[dict]:
@@ -457,31 +462,41 @@ def chat(messages: list[dict], context: Optional[dict], client: Optional[str]) -
     last = messages[-1]["text"]
     if is_crisis(last):
         return safety_reply()
+    context = context or {}
     folded = fold(last)
-    previous_action = validate_action((context or {}).get("previous_action"))
-    if previous_action and len(messages) > 1 and messages[-2]["role"] == "misaki" and _ACCEPT.fullmatch(folded):
-        return {"text": tr("Được nhé! Bấm nút bên dưới để bắt đầu.", "Sure! Use the button below to get started."),
-                "mood": "happy", "action": previous_action, "source": "canned"}
     configured = tutor.configured()
-    wants_follow_up = bool(_FOLLOW_UP.search(folded))
-    wants_review = wants_follow_up or bool(_REVIEW_QUESTION.search(folded))
-    pending = (context or {}).get("puzzle_review")
+    pending = context.get("puzzle_review")
+    puzzle_request = context.get("puzzle_request")
+    follow_up = puzzle_request == "follow_up"
+    wants_review = bool(puzzle_request or (pending and _CANNED_REVIEW_QUESTION.search(folded)))
     review = _checked_review(pending) if pending and (configured or wants_review) else []
-    if pending and wants_review and not review:
-        return {"text": tr("Mình chưa tìm thấy lượt làm đã chấm. Bạn thử trả lời một câu đố mới của mình nhé.",
-                           "I couldn't find a checked attempt. Try answering one of my new puzzles first."),
-                "mood": "thinking", "action": None, "source": "canned"}
-    canned = _review_reply(review) if review and wants_review else canned_chat(messages, context)
-    if review and wants_follow_up:
-        topic = review[-1]["topic"]
+    review_topic = review[-1]["topic"] if review else None
+    if wants_review and not review:
+        canned = {"text": tr("Mình chưa tìm thấy lượt làm đã chấm. Bạn thử trả lời một câu đố mới của mình nhé.",
+                             "I couldn't find a checked attempt. Try answering one of my new puzzles first."),
+                  "mood": "thinking", "action": None}
+        if puzzle_request:
+            return {**canned, "source": "canned"}
+    elif follow_up:
         canned = {"text": tr("Thử thêm một câu cùng chủ đề nhé.", "Try one more puzzle on the same idea."),
-                  "mood": "thinking", "action": {"type": "make_puzzle", "topic": topic, "idea": ""}}
+                  "mood": "thinking", "action": {"type": "make_puzzle", "topic": review_topic, "idea": ""}}
+    else:
+        canned = _review_reply(review) if wants_review else canned_chat(messages, context)
     if not configured:
         return {**canned, "source": "canned"}
+    previous_action = None
+    if len(messages) > 1 and messages[-2]["role"] == "misaki":
+        previous_action = validate_action(context.get("previous_action"))
+    ai_context = _ai_context(messages, context, review)
+    if previous_action:
+        ai_context["previous_action"] = previous_action
+    if puzzle_request:
+        ai_context["puzzle_request"] = puzzle_request
     topics = _strong_topics(folded)
-    requested_topic = review[-1]["topic"] if review and wants_follow_up else topics[0] if len(topics) == 1 else None
-    validate = partial(validate_chat_reply, requested_topic=requested_topic, follow_up=bool(review) and wants_follow_up)
-    return tutor.ask_json(tutor_prompts.CHAT_TASK, _ai_context(messages, context, review), canned, validate, client=client)
+    requested_topic = review_topic if follow_up else topics[0] if len(topics) == 1 else None
+    validate = partial(validate_chat_reply, requested_topic=requested_topic, follow_up=follow_up,
+                       previous_action=previous_action, review_topic=review_topic)
+    return tutor.ask_json(tutor_prompts.CHAT_TASK, ai_context, canned, validate, client=client)
 
 
 # --------------------------------------------------------------------------- puzzle flow (spec section 2)

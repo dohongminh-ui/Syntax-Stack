@@ -97,11 +97,14 @@ characters.
 After submitting an answer, the learner can choose **Review with Misaki** on the set screen to discuss
 their work in chat. Follow-up messages use the same evidence. The review uses up to two recent
 submissions per puzzle, including an earlier miss when the learner then gets it right.
-When an attempt is complete, **Try a follow-up** asks for a new puzzle on the same idea. Misaki can use
-one change to the previous example as the idea for a new set, and the game verifies the resulting code.
+The **Review with Misaki** and **Try a follow-up** buttons set `context.puzzle_request` to `review` and
+`follow_up` respectively. **Try a follow-up** offers another puzzle on the last checked topic even
+when the tutor is unavailable. For a typed request, Gemini can call `follow_up_puzzle` and suggest one
+change to the previous example. The game supplies the topic and verifies the resulting code.
 
-The `previous_action` field carries the last game tool shown in chat. A short affirmative reply brings
-back that validated button. The player clicks the button to run the tool.
+The `previous_action` field carries the offer from the immediately preceding Misaki turn. Gemini calls
+`repeat_offer` when the learner accepts it in chat, and the game reuses the validated action. The
+player clicks the button to start the activity.
 
 In solo Code Rescue and Syntax Rows, **Ask Misaki** uses the current puzzle or board for hints and the
 checked attempt for explanations. Code Rescue offers a related checked prediction after review and

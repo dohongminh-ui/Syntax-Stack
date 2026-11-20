@@ -76,6 +76,7 @@ BAD_CHAT = [
     {"messages": [{"role": "user", "text": "hi"}], "context": {"level": "expert"}},
     {"messages": [{"role": "user", "text": "hi"}], "context": {"weak_topics": ["loops"] * 5}},
     {"messages": [{"role": "user", "text": "hi"}], "context": {"weak_topics": ["magic"]}},
+    {"messages": [{"role": "user", "text": "hi"}], "context": {"puzzle_request": "unknown"}},
 ]
 
 
@@ -213,15 +214,22 @@ def test_old_webhook_without_native_call_uses_authored_fallback(client, ai):
     assert body["source"] == "canned" and body["action"]["topic"] == "loops"
 
 
-def test_short_confirmation_follows_the_immediately_previous_action(client, ai):
+def test_only_repeat_offer_tool_reuses_the_immediately_previous_action(client, ai):
     offer = {"role": "misaki", "text": "Shall we practice loops?"}
     action = {"type": "rescue", "mode": "practice", "level": "beginner", "focus_topic": "loops"}
     body = say("yes please", [offer]) | {"context": {"previous_action": action}}
-    reply = client.post(CHAT, json=body, headers={"X-Lang": "en"}).json()
-    assert reply["action"] == action and "button" in reply["text"]
-    assert not ai.calls
+    headers = {"X-Lang": "en"}
+    ai.reply["misaki_chat"] = {"text": "Of course!", "mood": "happy", "action": None}
+    assert client.post(CHAT, json=body, headers=headers).json()["action"] is None
+    assert ai.calls[-1]["context"]["previous_action"] == action
+    body["messages"][-1]["text"] = "I'm up for that one."
+    ai.reply["misaki_chat"] = {"text": "Let's practice together!", "mood": "happy",
+                               "action": {"type": "repeat_offer", "topic": "variables"}}
+    reply = client.post(CHAT, json=body, headers=headers).json()
+    assert reply["source"] == "ai" and reply["action"] == action
     body["messages"].insert(1, {"role": "user", "text": "actually, what's next?"})
-    assert client.post(CHAT, json=body).json()["action"] is None
+    assert client.post(CHAT, json=body, headers=headers).json()["action"] is None
+    assert "previous_action" not in ai.calls[-1]["context"]
 
 
 def test_requested_follow_up_falls_back_to_playable_puzzle_on_checked_topic(client, ai):
@@ -229,9 +237,26 @@ def test_requested_follow_up_falls_back_to_playable_puzzle_on_checked_topic(clie
     set_view = client.post(PUZZLE, json={"topic": "loops"}).json()["set"]
     puzzle, correct, _ = _prediction_answers(set_view)
     body = _review_request(set_view, puzzle, correct)
-    body["messages"][-1]["text"] = "Give me one follow-up puzzle and change just one detail."
+    body["context"]["puzzle_request"] = "follow_up"
+    body["messages"][-1]["text"] = "One more, please."
     reply = client.post(CHAT, json=body, headers={"X-Lang": "en"}).json()
-    assert reply["action"] == {"type": "make_puzzle", "topic": "loops", "idea": ""}
+    assert reply["source"] == "canned" and reply["action"] == {"type": "make_puzzle", "topic": "loops", "idea": ""}
+    assert ai.calls[-1]["context"]["puzzle_request"] == "follow_up"
+
+
+def test_typed_request_uses_follow_up_tool_with_the_checked_topic(client, ai):
+    headers = {"X-Lang": "en"}
+    set_view = client.post(PUZZLE, json={"topic": "loops"}).json()["set"]
+    puzzle, correct, _ = _prediction_answers(set_view)
+    body = _review_request(set_view, puzzle, correct)
+    body["messages"][-1]["text"] = "Could you tweak the exercise I just solved?"
+    ai.reply["misaki_chat"] = {"text": "Let's change the loop's start.", "mood": "happy",
+                               "action": {"type": "follow_up_puzzle", "idea": "Start range at 2.", "topic": "variables"}}
+    reply = client.post(CHAT, json=body, headers=headers).json()
+    assert reply["source"] == "ai"
+    assert reply["action"] == {"type": "make_puzzle", "topic": "loops", "idea": "Start range at 2."}
+    body.pop("context")
+    assert client.post(CHAT, json=body, headers=headers).json()["action"] is None
 
 
 def test_valid_actions_pass_with_only_their_own_fields(client, ai):
@@ -675,13 +700,16 @@ def test_review_without_ai_uses_the_players_choice_and_verified_output(client):
 def test_review_ignores_unrelated_sets_and_invalid_submissions(client, ai):
     own = client.post("/api/custom/sets", json={"code": misaki.AUTHORED["loops"][0]}).json()
     puzzle, correct, _ = _prediction_answers(own)
-    assert client.post(CHAT, json=_review_request(own, puzzle, correct)).json()["source"] == "canned"
+    request = _review_request(own, puzzle, correct)
+    request["context"]["puzzle_request"] = "review"
+    assert client.post(CHAT, json=request).json()["source"] == "canned"
     assert not ai.calls
 
     made = client.post(PUZZLE, json={"topic": "loops"}).json()["set"]
     generated_puzzle, _, _ = _prediction_answers(made)
     body = _review_request(made, generated_puzzle, {"id": "missing"})
     body["context"]["puzzle_review"]["attempts"].append({"puzzle_id": puzzle["id"], "option_id": correct["id"]})
+    body["context"]["puzzle_request"] = "review"
     body["messages"][-1]["text"] = "Please review my last attempt."
     body = client.post(CHAT, json=body, headers={"X-Lang": "en"}).json()
     assert body["source"] == "canned" and "couldn't find a checked attempt" in body["text"]

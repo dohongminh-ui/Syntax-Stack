@@ -206,6 +206,7 @@ class MisakiContext(BaseModel):
     level: Optional[Level] = None
     weak_topics: list[Topic] = Field(default_factory=list, max_length=4)
     puzzle_review: Optional[MisakiPuzzleReview] = None
+    puzzle_request: Optional[Literal["review", "follow_up"]] = None
     previous_action: Optional[dict[str, Any]] = Field(default=None, max_length=8)
 
 

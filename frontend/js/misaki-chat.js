@@ -231,7 +231,7 @@ function setMood(m) {
 }
 
 // ---- chat --------------------------------------------------------------------------------------------------------
-async function send(raw) {
+async function send(raw, puzzleRequest) {
   const text = String(raw || '').trim().slice(0, MAX_INPUT);
   if (!text || busy) return;
   const previous = msgs.at(-1);
@@ -246,6 +246,7 @@ async function send(raw) {
   try {
     const context = { level: nav.level(), weak_topics: store.weakTopics(TOPICS, 4) };
     if (review?.attempts.length) context.puzzle_review = { set_id: review.set_id, attempts: review.attempts };
+    if (puzzleRequest) context.puzzle_request = puzzleRequest;
     if (previous?.role === 'misaki' && previous.action) context.previous_action = previous.action;
     reply = await api.misakiChat({ messages: payload(), context });
   } catch {
@@ -300,7 +301,7 @@ async function makePuzzle(a, key) {
     onAttempt: (id, answer, result) => recordAttempt(res.set.id, id, answer, result),
     onReview: () => {
       openMisakiChat();
-      send(t(REVIEW_QUESTION));
+      send(t(REVIEW_QUESTION), 'review');
     },
   } });
 }
@@ -358,7 +359,7 @@ function build() {
 
   const log = el('ol', { class: 'mk-log', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions', 'aria-label': 'Cuộc trò chuyện với Misaki' });
   const followUp = el('button', { class: 'btn', type: 'button', text: 'Thử câu hỏi tiếp theo', hidden: true,
-    onclick: () => send(t(FOLLOW_UP_QUESTION)) });
+    onclick: () => send(t(FOLLOW_UP_QUESTION), 'follow_up') });
   const scroller = el('div', { class: 'mk-scroll' }, log, followUp, el('p', { class: 'tutor-foot mk-foot-ai', text: DISCLAIMER }));
   const win = el('div', { class: 'editor mk-win' }, bar, scroller, form);
   $('mk-chat').replaceChildren(win);

@@ -390,18 +390,15 @@ export async function misakiChat(body) {
       source: 'safety', mood: 'worried', action: null,
     };
   }
-  const previous = body.context?.previous_action;
-  if (previous && /^(yes(?: please)?|yeah|sure|okay|ok|vang|duoc(?: a| nhe)?|dong y)$/.test(f)) {
-    const text = lang() === 'en' ? 'Sure! Use the button below to get started.' : 'Được nhé! Bấm nút bên dưới để bắt đầu.';
-    return { text, source: 'canned', mood: 'happy', action: previous };
-  }
   const review = body.context?.puzzle_review;
-  if (review?.set_id === 'mock-set' && /\b(follow up|bai tuong tu|cau hoi tiep theo)\b/.test(f)) {
+  const request = body.context?.puzzle_request;
+  if (review?.set_id === 'mock-set' && request === 'follow_up') {
     const topic = byId(review.attempts.at(-1)?.puzzle_id)?.pub.topic;
     if (topic) return { text: lang() === 'en' ? 'Try one more puzzle on the same idea.' : 'Thử thêm một câu cùng chủ đề nhé.',
       source: 'canned', mood: 'thinking', action: { type: 'make_puzzle', topic, idea: '' } };
   }
-  if (review?.set_id === 'mock-set' && /\b(review|right or wrong|how did i do|what went wrong|on lai|dung va sai|sai o dau)\b/.test(f)) {
+  if (review?.set_id === 'mock-set' && (request === 'review' ||
+      /\b(review|right or wrong|how did i do|what went wrong|on lai|dung va sai|sai o dau)\b/.test(f))) {
     const checked = review.attempts.flatMap((attempt) => {
       const entry = byId(attempt.puzzle_id);
       return entry ? [check(entry, attempt)] : [];
