@@ -43,3 +43,6 @@ Desktop.ini
 .DS_Store
 backend/data/ranked.sqlite
 backend/data/ranked.sqlite-*
+
+# Live2D model files (not redistributable; created by tools/setup_live2d.py)
+frontend/live2d/

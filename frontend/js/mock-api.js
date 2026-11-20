@@ -318,16 +318,16 @@ export async function debrief(body) {
 // ---- custom sets (canned: built from the loops puzzles of the bank) ----
 const mockFail = (status, detail) => Object.assign(new Error(detail), { status });
 
-function mockSet(id, code, level) {
+function mockSet(id, code, level, topic = 'loops') {
   const puzzles = [];
   const skipped = [];
   for (const type of ['fill_blank', 'predict_output', 'parsons', 'find_bug']) {
-    const entry = BANK.find((b) => b.pub.topic === 'loops' && b.pub.type === type);
+    const entry = BANK.find((b) => b.pub.topic === topic && b.pub.type === type);
     if (entry) puzzles.push(publicCopy(entry, level));
     else skipped.push({ type, reason: 'chương trình này không có đủ chỗ để tạo dạng câu đố này' });
   }
-  const out = BANK.find((b) => b.pub.topic === 'loops' && b.pub.expected_output)?.pub.expected_output ?? '';
-  return { id, topic: 'loops', code, expected_output: out, puzzles, skipped };
+  const out = BANK.find((b) => b.pub.topic === topic && b.pub.expected_output)?.pub.expected_output ?? '';
+  return { id, topic, code, expected_output: out, puzzles, skipped };
 }
 
 export async function createCustomSet(body) {
@@ -341,6 +341,75 @@ export async function getCustomSet(id, level) {
   await sleep(250);
   if (id !== 'mock-set' && id !== 'demo') throw mockFail(404, 'Không tìm thấy bộ câu đố.');
   return mockSet(id, ['total = 0', 'for i in range(1, 4):', '    total = total + i', 'print(total)'].join('\n'), level);
+}
+
+// ---- Chat with Misaki: the canned keyword rules of docs/misaki-chat.md section 4 (Vietnamese; i18n-en.js translates) ----
+const MK_TOPICS = ['variables', 'conditions', 'loops', 'functions'];
+const MK_NAME = { variables: 'biến', conditions: 'câu điều kiện', loops: 'vòng lặp', functions: 'hàm' };
+const MK_PROGRAM = {
+  variables: 'price = 12\ncount = 3\ntotal = price * count\nprint(total)',
+  conditions: 'score = 7\nif score >= 5:\n    print(score * 2)\nelse:\n    print(score + 1)',
+  loops: 'total = 0\nfor i in range(1, 5):\n    total = total + i\nprint(total)',
+  functions: 'def double(x):\n    return x * 2\nprint(double(6))',
+};
+const MK_TOPIC_RX = {
+  loops: /\b(vong lap|vong for|loops?|range|while|for loops?|lap lai)\b/,
+  functions: /\b(ham|functions?|def|return|tham so|parameters?|arguments?)\b/,
+  conditions: /\b(dieu kien|conditions?|conditionals?|elif|else)\b/,
+  variables: /\b(bien|variables?|phep gan|assign\w*)\b/,
+};
+const MK_PRACTICE = /\b(luyen tap|luyen|practice|practise|drill|choi)\b/;
+const MK_BORED = /\b(chan|buon chan|nham chan|bored|boring)\b/;
+const MK_STUCK = /\b(kho|sai hoai|sai mai|khong hieu|khong lam duoc|bi ket|stuck|hard|difficult|confus\w*|keep (failing|getting)|dont (get|understand)|cant (do|solve|get))\b/;
+const MK_CRISIS = /\b(tu sat|muon chet|chet di|khong muon song|tu lam dau|tu hai ban than|suicid\w*|kill myself|want to die|self harm\w*|hurt myself|bi danh dap|bi bao hanh)\b/;
+const fold = (t) => String(t).toLowerCase().replace(/đ/g, 'd').replace(/['’]/g, '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+
+export async function misakiChat(body) {
+  await sleep(650);
+  const last = [...(body?.messages || [])].reverse().find((m) => m.role === 'user');
+  if (!last) throw mockFail(422, 'Thiếu tin nhắn của bạn.');
+  const f = fold(last.text);
+  const level = ['beginner', 'intermediate', 'advanced'].includes(body?.context?.level) ? body.context.level : 'intermediate';
+  if (MK_CRISIS.test(f)) {
+    return {
+      text: 'Mình rất vui vì bạn đã nói với mình. Chuyện này quan trọng lắm, nhưng mình chỉ là một nhân vật trong trò chơi nên không giúp bạn đủ được. Bạn hãy nói ngay với một người lớn bạn tin tưởng hoặc thầy cô nhé. Bạn cũng có thể gọi Tổng đài quốc gia bảo vệ trẻ em 111 (miễn phí, 24/7).',
+      source: 'safety', mood: 'worried', action: null,
+    };
+  }
+  const bored = MK_BORED.test(f);
+  const stuck = MK_STUCK.test(f);
+  let topic = MK_TOPICS.find((t) => MK_TOPIC_RX[t].test(f));
+  if (!topic && !bored && !stuck && /\bif\b/.test(f)) topic = 'conditions';
+  if (topic) {
+    const name = MK_NAME[topic];
+    if (MK_PRACTICE.test(f)) {
+      return { text: `Được thôi! Mình mở Luyện tập chủ đề ${name} cho bạn nhé.`, source: 'canned', mood: 'happy',
+        action: { type: 'rescue', mode: 'practice', level, focus_topic: topic } };
+    }
+    return { text: `Chủ đề ${name} hả? Mình viết cho bạn một câu đố nhỏ về ${name} nhé, bạn chỉ cần bấm nút bên dưới.`, source: 'canned', mood: 'thinking',
+      action: { type: 'make_puzzle', topic, idea: '' } };
+  }
+  if (bored) {
+    return { text: 'Chán rồi à? Vậy mình đấu một ván tập với mình cho vui nhé, thua cũng không sao đâu.', source: 'canned', mood: 'excited',
+      action: { type: 'pvp_training', misaki: 1 } };
+  }
+  if (stuck) {
+    return { text: 'Ai cũng có lúc bị kẹt, không sao đâu. Mình mở khay luyện tập các lỗi bạn hay sai để ôn lại từng chút nhé.', source: 'canned', mood: 'worried',
+      action: { type: 'practice_tray' } };
+  }
+  return { text: 'Mình giúp được vài việc: giải thích biến, câu điều kiện, vòng lặp hoặc hàm, viết câu đố riêng cho bạn, hoặc gợi ý bài tập khi bạn thấy chán hay bị kẹt. Bạn đang vướng chỗ nào?',
+    source: 'canned', mood: 'happy', action: null };
+}
+
+export async function misakiPuzzle(body) {
+  await sleep(900);
+  const topic = MK_TOPICS.includes(body?.topic) ? body.topic : 'loops';
+  // the real endpoint returns the custom.create_set view of an authored program; here: the mock set of that topic
+  return {
+    set: mockSet('mock-set', MK_PROGRAM[topic], body?.level, topic),
+    source: 'canned',
+    note: `Mình viết sẵn một chương trình nhỏ về ${MK_NAME[topic]}. Thử đoán xem nó làm gì nhé!`,
+  };
 }
 
 // Syntax Rows mock lives in mock-rows.js

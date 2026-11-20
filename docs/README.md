@@ -15,6 +15,7 @@ want to read the technical side. Start with [architecture.md](architecture.md).
 | [frontend.md](frontend.md) | Module map, screens, game state machines, rendering, drag system, puzzle panel, design system, motion, accessibility, local storage, mock mode and demo hooks. |
 | [operations.md](operations.md) | Setup, running, environment variables, regenerating the bank, tests, deployment, troubleshooting. |
 | [api-contract.md](api-contract.md) | The HTTP API contract (endpoints, enums, JSON examples). Not edited by these documents; see "Open questions" in each document for places where code goes beyond it. |
+| [misaki-chat.md](misaki-chat.md) | Chat with Misaki: Live2D chat screen, recommendations from a fixed action whitelist, AI-written programs turned into verified puzzles, canned and safety fallbacks, model licence handling. |
 | [design-brief.md](design-brief.md) | Visual design brief v2 ("Keycap"): tokens, keycap component, layout, motion rules. |
 | [presentation-content.md](presentation-content.md) | Slide text for the competition presentation (SERS template). |
 

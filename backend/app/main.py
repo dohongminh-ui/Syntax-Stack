@@ -8,7 +8,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from contextlib import asynccontextmanager
 
@@ -16,9 +16,9 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
-from . import bank, custom, hints, i18n, nicknames, pvp, ranked, rescue_engine, rooms, rows, tutor
+from . import bank, custom, hints, i18n, misaki, nicknames, pvp, ranked, rescue_engine, rooms, rows, tutor
 from . import validator as V
 from .i18n import tr
 
@@ -177,6 +177,33 @@ class NextRequest(BaseModel):
 class CustomSetRequest(BaseModel):
     # No length cap here: too long must be a 422 from custom.create_set (in the request's language), not a pydantic list.
     code: str
+    level: Level = "intermediate"
+
+
+class MisakiMessage(BaseModel):
+    role: Literal["user", "misaki"]
+    text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+
+
+class MisakiContext(BaseModel):
+    level: Optional[Level] = None
+    weak_topics: list[Topic] = Field(default_factory=list, max_length=4)
+
+
+class MisakiChatRequest(BaseModel):
+    messages: list[MisakiMessage] = Field(min_length=1, max_length=12)
+    context: Optional[MisakiContext] = None
+
+    @model_validator(mode="after")
+    def _last_is_user(self):
+        if self.messages[-1].role != "user":
+            raise ValueError("the last message must be from the user")
+        return self
+
+
+class MisakiPuzzleRequest(BaseModel):
+    topic: Topic
+    idea: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     level: Level = "intermediate"
 
 
@@ -479,6 +506,22 @@ def custom_get(set_id: str, level: Level = "intermediate"):
     return custom.get_set(set_id, level)
 
 
+# --------------------------------------------------------------------------- Chat with Misaki (docs/misaki-chat.md)
+
+
+@app.post("/api/misaki/chat")
+def misaki_chat(req: MisakiChatRequest, request: Request):
+    """A reply from Misaki: ``{text, source: ai|canned|safety, mood, action}``. Nothing is stored or logged."""
+    return misaki.chat([m.model_dump() for m in req.messages],
+                       req.context.model_dump() if req.context else None, _client_ip(request))
+
+
+@app.post("/api/misaki/puzzle")
+def misaki_puzzle(req: MisakiPuzzleRequest, request: Request):
+    """A custom puzzle set that Misaki wrote (or an authored one): ``{set, source: ai|canned, note}``."""
+    return misaki.make_puzzle(req.topic, req.idea, req.level, _client_ip(request))
+
+
 # --------------------------------------------------------------------------- live classroom
 
 
@@ -775,7 +818,7 @@ def render_index(build: str) -> str:
 
 def content_security_policy(html: str, ws_origin: str = "") -> str:
     """CSP for the page: own scripts plus the inline import map (allowed by its exact hash), Google
-    Fonts and Cloudflare Web Analytics, nothing else. The JSON-LD block is data, not script, so
+    Fonts, Cloudflare Web Analytics and Live2D's Cubism Core (one exact file), nothing else. The JSON-LD block is data, not script, so
     CSP does not apply to it. Cloudflare's inline bot-detection snippet stays blocked on purpose:
     it changes on every request, so it can only be allowed with 'unsafe-inline'.
 
@@ -788,7 +831,9 @@ def content_security_policy(html: str, ws_origin: str = "") -> str:
     return "; ".join([
         "default-src 'self'",
         # Cloudflare Web Analytics: the beacon script, which reports to cloudflareinsights.com
-        "script-src 'self' https://static.cloudflareinsights.com " + " ".join(hashes),
+        # Live2D Cubism Core (Chat with Misaki): Live2D's official file, by its exact path
+        "script-src 'self' https://static.cloudflareinsights.com " + " ".join(hashes)
+        + " https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  # inline style="--c:..." on LEDs
         "font-src 'self' https://fonts.gstatic.com",
         "img-src 'self' data:",

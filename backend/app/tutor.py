@@ -1,4 +1,9 @@
-"""Optional n8n tutor for validated game context.
+"""Optional tutor (n8n webhook, or Gemini directly) for validated game context.
+
+Two providers, picked on every call: ``n8n`` when ``SYNTAX_STACK_TUTOR_URL`` and ``SYNTAX_STACK_TUTOR_TOKEN`` are set
+(preferred), else ``gemini`` when ``SYNTAX_STACK_GEMINI_API_KEY`` is set (REST call straight to Gemini, the request is
+built in ``tutor_prompts.py`` exactly as the n8n flow builds it), else nothing (always canned). Both go through the same
+``_run`` core below, so quotas, slots, cache, logging and the canned fallback behave identically.
 
 Every tutor attempt ends in exactly one outcome: ``ai`` (fresh reply), ``cached`` (reply served from
 the in-process cache, no outbound call) or ``canned:<reason>`` with reason ``not_configured``,
@@ -12,6 +17,7 @@ Clients are identified by a hash of their IP that is kept in memory only and for
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import logging
@@ -20,11 +26,11 @@ import time
 from collections import OrderedDict
 from datetime import date
 from threading import BoundedSemaphore, Lock
-from typing import Optional
+from typing import Any, Callable, Optional
 
 import httpx
 
-from . import i18n
+from . import i18n, tutor_prompts
 
 logger = logging.getLogger(__name__)
 _slots = BoundedSemaphore(2)
@@ -35,7 +41,7 @@ DEFAULT_CLIENT_LIMIT = 40
 MAX_TRACKED_CLIENTS = 20_000  # memory bound; beyond it new clients are treated as over quota
 
 _lock = Lock()
-_cache: "OrderedDict[tuple[str, str, str], str]" = OrderedDict()
+_cache: "OrderedDict[tuple[str, str, str], Any]" = OrderedDict()
 _day: date = date.today()
 _calls = _ai = _fallback = 0
 _per_client: dict[str, int] = {}
@@ -55,8 +61,38 @@ def request_tutor(url: str, payload: str, *, timeout: float) -> dict:
     return data
 
 
+GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+GEMINI_PREFIX = "gemini:"   # pseudo-URL (part of the cache key) that routes a call to the direct Gemini provider
+
+
+def gemini_model(task: str) -> str:
+    return (os.getenv("SYNTAX_STACK_GEMINI_MODEL") or "").strip() or tutor_prompts.default_model(task)
+
+
+def request_gemini(model: str, payload: str, *, timeout: float) -> dict:
+    """Call Gemini directly and return what the n8n flow would: ``{"text"}`` or the parsed JSON object.
+
+    The key travels only in the ``x-goog-api-key`` header (never in the URL, never logged)."""
+    body = json.loads(payload)
+    structured = tutor_prompts.is_structured(body.get("task"))
+    response = httpx.post(
+        GEMINI_ENDPOINT.format(model=model),
+        json=tutor_prompts.build_request(body, model),
+        headers={"x-goog-api-key": os.environ["SYNTAX_STACK_GEMINI_API_KEY"]},
+        timeout=timeout, trust_env=False,
+    )
+    response.raise_for_status()
+    return tutor_prompts.parse_response(response.json(), structured)
+
+
+def _call(url: str, payload: str) -> dict:
+    if url.startswith(GEMINI_PREFIX):
+        return request_gemini(url[len(GEMINI_PREFIX):], payload, timeout=38)
+    return request_tutor(url, payload, timeout=38)
+
+
 def _ask(url: str, payload: str) -> str:
-    text = request_tutor(url, payload, timeout=38).get("text")
+    text = _call(url, payload).get("text")
     if not isinstance(text, str) or not 0 < len(text.strip()) <= 750:
         raise ValueError("Missing or invalid tutor text")
     return text.strip()
@@ -87,8 +123,17 @@ def client_key(ip: Optional[str]) -> Optional[str]:
     return hashlib.sha256(f"{date.today().isoformat()}|{ip}".encode()).hexdigest()[:20]
 
 
+def provider() -> Optional[str]:
+    """``"n8n"`` (preferred), ``"gemini"`` (direct, key only) or ``None``."""
+    if os.getenv("SYNTAX_STACK_TUTOR_URL") and os.getenv("SYNTAX_STACK_TUTOR_TOKEN"):
+        return "n8n"
+    if os.getenv("SYNTAX_STACK_GEMINI_API_KEY"):
+        return "gemini"
+    return None
+
+
 def configured() -> bool:
-    return bool(os.getenv("SYNTAX_STACK_TUTOR_URL") and os.getenv("SYNTAX_STACK_TUTOR_TOKEN"))
+    return provider() is not None
 
 
 def _roll_day() -> None:
@@ -103,7 +148,7 @@ def _roll_day() -> None:
 def stats() -> dict:
     with _lock:
         _roll_day()
-        return {"configured": configured(), "calls_today": _calls, "ai_today": _ai,
+        return {"configured": configured(), "provider": provider(), "calls_today": _calls, "ai_today": _ai,
                 "fallback_today": _fallback, "limit": daily_limit(),
                 "client_limit": client_limit()}
 
@@ -117,49 +162,50 @@ def reset() -> None:
         _day, _calls, _ai, _fallback = date.today(), 0, 0, 0
 
 
-def _finish(task: str, started: float, outcome: str, text: str, fallback: str) -> dict:
+def _finish(task: str, started: float, outcome: str, value: Any, fallback: Any) -> tuple[Any, str]:
     global _fallback
     ms = round((time.monotonic() - started) * 1000)
     if outcome.startswith("canned"):
         with _lock:
             _roll_day()
             _fallback += 1
-        text, source = fallback, "canned"
+        value, source = fallback, "canned"
     else:
         source = "ai"
     logger.info("tutor task=%s outcome=%s latency_ms=%d", task, outcome, ms)
-    return {"text": text, "source": source}
+    return value, source
 
 
-def feedback(task: str, context: dict, fallback: str, client: Optional[str] = None,
-             lang: Optional[str] = None) -> dict:
-    """Ask the tutor; ``client`` is the requester's IP (used only for the per-client quota).
+def _run(task: str, context: dict, fallback: Any, client: Optional[str], lang: Optional[str],
+         ask: Callable[[str, str], Any]) -> tuple[Any, str]:
+    """Shared core of ``feedback`` and ``ask_json``: configuration check, quotas, cache, slots, logging.
 
-    ``lang`` (``"vi"`` / ``"en"``, default: the request's) is sent to n8n in the body of every task so the reply is
-    written in that language, and is part of the cache key so a reply is never served to the other language."""
+    ``ask(url, payload)`` makes the call and returns the validated reply (a string or a dict); it raises
+    ``ValueError`` & co. for a bad reply. Returns ``(reply, "ai")`` or ``(fallback, "canned")``."""
     global _calls, _ai
     lang = i18n.resolve(lang)
     who = client_key(client)
     started = time.monotonic()
-    url = os.getenv("SYNTAX_STACK_TUTOR_URL")
-    if not (url and os.getenv("SYNTAX_STACK_TUTOR_TOKEN")):
-        return _finish(task, started, "canned:not_configured", "", fallback)
+    kind = provider()
+    if kind is None:
+        return _finish(task, started, "canned:not_configured", None, fallback)
+    url = os.environ["SYNTAX_STACK_TUTOR_URL"] if kind == "n8n" else GEMINI_PREFIX + gemini_model(task)
     limit = daily_limit()
     if limit == 0:
-        return _finish(task, started, "canned:limit", "", fallback)
+        return _finish(task, started, "canned:limit", None, fallback)
     try:
         payload = json.dumps({"task": task, "lang": lang, "context": context}, ensure_ascii=False)
     except (TypeError, ValueError):
-        return _finish(task, started, "canned:error", "", fallback)
+        return _finish(task, started, "canned:error", None, fallback)
     key = (url, lang, payload)
     with _lock:
-        hit: Optional[str] = _cache.get(key)
+        hit = _cache.get(key)
         if hit is not None:
             _cache.move_to_end(key)
     if hit is not None:
-        return _finish(task, started, "cached", hit, fallback)
+        return _finish(task, started, "cached", copy.deepcopy(hit), fallback)
     if not _slots.acquire(blocking=False):
-        return _finish(task, started, "canned:busy", "", fallback)
+        return _finish(task, started, "canned:busy", None, fallback)
     try:
         per_client = client_limit()
         with _lock:
@@ -175,18 +221,40 @@ def feedback(task: str, context: dict, fallback: str, client: Optional[str] = No
                 if who:
                     _per_client[who] = used + 1
         if over:
-            return _finish(task, started, over, "", fallback)
+            return _finish(task, started, over, None, fallback)
         try:
-            text = _ask(url, payload)
+            reply = ask(url, payload)
         except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError) as exc:
             logger.warning("Tutor unavailable (%s)", type(exc).__name__)
-            return _finish(task, started, "canned:error", "", fallback)
+            return _finish(task, started, "canned:error", None, fallback)
         with _lock:
             _ai += 1
-            _cache[key] = text
+            _cache[key] = copy.deepcopy(reply)
             _cache.move_to_end(key)
             while len(_cache) > CACHE_SIZE:
                 _cache.popitem(last=False)
-        return _finish(task, started, "ai", text, fallback)
+        return _finish(task, started, "ai", reply, fallback)
     finally:
         _slots.release()
+
+
+def feedback(task: str, context: dict, fallback: str, client: Optional[str] = None,
+             lang: Optional[str] = None) -> dict:
+    """Ask the tutor; ``client`` is the requester's IP (used only for the per-client quota).
+
+    ``lang`` (``"vi"`` / ``"en"``, default: the request's) is sent to the provider in the body of every task so the reply is
+    written in that language, and is part of the cache key so a reply is never served to the other language."""
+    text, source = _run(task, context, fallback, client, lang, lambda url, payload: _ask(url, payload))
+    return {"text": text, "source": source}
+
+
+def ask_json(task: str, context: dict, fallback: dict, validate: Callable[[dict], dict],
+             client: Optional[str] = None, lang: Optional[str] = None) -> dict:
+    """Like ``feedback`` for tasks that need a structured reply (``misaki_chat``, ``misaki_puzzle``).
+
+    Same quotas, slots, cache, day roll and log line. ``validate(raw_reply_object)`` returns the cleaned dict or raises
+    ``ValueError`` / ``KeyError`` / ``TypeError``; any such error means the AI failed. Returns
+    ``{**validated, "source": "ai"}`` or ``{**fallback, "source": "canned"}``."""
+    value, source = _run(task, context, fallback, client, lang,
+                         lambda url, payload: validate(_call(url, payload)))
+    return {**value, "source": source}

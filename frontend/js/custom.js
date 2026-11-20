@@ -260,21 +260,35 @@ async function playAll() {
 }
 
 // ---- screen entry ------------------------------------------------------------------------------------
-function frame(shared) {
+function frame(shared, preset = null) {
   nav.show('screen-custom');
-  showStrip(true, { back: nav.home, backLabel: 'Về màn hình chính' });
-  setMode(shared ? 'BỘ CÂU ĐỐ CHIA SẺ' : 'TẠO CÂU ĐỐ');
+  showStrip(true, { back: preset?.back || nav.home, backLabel: preset?.backLabel || 'Về màn hình chính' });
+  setMode(preset ? 'CÂU ĐỐ TỪ MISAKI' : shared ? 'BỘ CÂU ĐỐ CHIA SẺ' : 'TẠO CÂU ĐỐ');
   setStreak(null);
-  $('cu-title').textContent = shared ? 'Bộ câu đố được chia sẻ' : 'Tạo câu đố từ code';
-  $('cu-sub').textContent = shared ? 'Một bộ câu đố được tạo từ chương trình Python của người khác. Giải thử và xem bạn đúng được mấy câu.' : EXPLAIN;
+  $('cu-title').textContent = preset ? 'Câu đố từ Misaki' : shared ? 'Bộ câu đố được chia sẻ' : 'Tạo câu đố từ code';
+  $('cu-sub').textContent = preset ? preset.note || 'Misaki viết một chương trình Python nhỏ, hệ thống kiểm chứng và biến nó thành câu đố.'
+    : shared ? 'Một bộ câu đố được tạo từ chương trình Python của người khác. Giải thử và xem bạn đúng được mấy câu.' : EXPLAIN;
   $('cu-title').focus({ preventScroll: true });
 }
 
-export function openCustom({ shared = null } = {}) {
+/**
+ * Opens the custom-puzzle screen. `shared`: the id of a set to load. `preset`: a set already in hand
+ * ({ set, note, back, backLabel }), as made by "Chat with Misaki"; it plays like a shared set (the program stays hidden).
+ */
+export function openCustom({ shared = null, preset = null } = {}) {
   st.token++;
   st.busy = false;
   const editorSlot = $('cu-editor');
   const result = $('cu-result');
+  if (preset) {
+    st.view = 'preset';
+    frame(true, preset);
+    editorSlot.replaceChildren();
+    st.set = preset.set;
+    st.done = new Set();
+    renderResult(preset.set, { shared: true });
+    return Promise.resolve();
+  }
   if (shared) {
     st.view = 'shared';
     frame(true);

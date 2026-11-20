@@ -34,6 +34,8 @@ All files are in `frontend/js/`. Imports form a tree with `main.js` at the top.
 | `api.js` | The only module that calls `fetch`. Relative URLs; `?mock=1` routes to the mocks. | no | yes |
 | `mock-api.js`, `mock-rows.js` | In-browser stand-ins for the API (20 puzzles, 5 row levels). Used only with `?mock=1`. | no | no |
 | `storage.js` | `localStorage` wrappers (all in try/catch). | no | no |
+| `misaki-chat.js` | "Chat with Misaki": history (module + `sessionStorage`), composer, quick replies, her one action keycap, the puzzle flow into the custom-puzzle screen, hide/show of the stage. See [misaki-chat.md](misaki-chat.md). | yes | via `api.js` |
+| `misaki-stage.js` | The stage: lazy-loads `vendor/` (PixiJS 6.5.10, `@pixi/unsafe-eval`, pixi-live2d-display 0.4.0) and Live2D Cubism Core, shows the model (mood to expression and motion, pointer follow, chibi/normal body via `Clothes2`), or a portrait, or the keycap avatar. | yes | model files, Cubism Core |
 | `strip.js` | The header strip: wordmark, mode label, streak, LEDs, score. | yes | no |
 | `start.js` | Keycap title, one-time press wave, the two mini previews on the start screen. | yes | no |
 | `keycap.js` | The keycap factory, `keycap()` and `setLegend()`. | yes | no |
@@ -78,6 +80,7 @@ shown or hidden by `strip.js: showStrip`.
 | `screen-end` | Code Rescue result: score, receipt, "Báo cáo lỗi", practice keys | hidden | `finish()` after crash or no-fit |
 | `screen-rows-select` | Syntax Rows level list with stars, rules and star table | shown, back = home | start card "Chơi Syntax Rows" |
 | `screen-rows` | Syntax Rows game: goal, board, tray, editor side panel | shown, back = level select (or the practice screen) | level key, "Màn tiếp theo", practice items |
+| `screen-misaki` | Chat with Misaki: stage panel (Live2D model, portrait or keycap avatar) beside an editor-window chat. Two columns from 900 px; on phones the stage is on top (34svh). The stage can be hidden (chat centred at 760 px) | plain, back = home | start screen, Học, "Trò chuyện với Misaki"; "Câu đố từ Misaki" plays in `screen-custom` and its back returns here |
 
 ```mermaid
 flowchart LR
@@ -427,9 +430,11 @@ All access is wrapped in `try/catch` (`storage.js`); the game works with storage
 | `syntaxstack.rescue.highscore` | number as string; only updated when higher | `setHighScore` at the end of a Rescue run |
 | `syntaxstack.rescue.prefs` | JSON `{"mode":"rescue\|practice","level":"beginner\|intermediate\|advanced"}` | start screen radio keys |
 | `syntaxstack.rows.progress` | JSON `{ "r1": {"stars": 3, "score": 400}, ... }`, best values | `recordRowsResult` on a normal pass |
+| `syntaxstack.misaki.body` | `chibi` (default) or `normal`: which body her model shows | `misaki-stage.js` |
+| `syntaxstack.misaki.stage` | `hidden` or `shown` (default): the stage panel of the Misaki chat | `misaki-chat.js` |
 | `syntaxstack.practice.mistakes` | JSON array of the last 40 mistakes: `{topic, puzzleId}` from Code Rescue wrong answers (non-standalone, non-mock) and `{topic, levelId, errorGroup, rows}` from Syntax Rows failures (not practice, twist or `empty`) | `recordMistake` |
 
-`sessionStorage` key `ss.wave` marks that the title key wave already played in this tab.
+`sessionStorage` key `ss.wave` marks that the title key wave already played in this tab; `syntaxstack.misaki.chat` holds the Misaki chat history (last 60 messages) for the tab.
 
 The mistake history includes the player's board (`rows`) so "Sửa lỗi trên bàn" can restore it. Nothing
 in storage is ever sent to the server.
@@ -513,6 +518,7 @@ correctness. Coverage:
 | `demo=puzzle-fill-blank`, `puzzle-predict-output`, `puzzle-parsons`, `puzzle-find-bug` | as `lock`, then open a puzzle of that type immediately. With the real API the client keeps requesting puzzles until the type appears (up to 80 tries); with the mock it picks a matching mock puzzle |
 | `demo=end` | the Code Rescue result screen with two sample mistakes and a crash; also stores a high score of at least 1500 |
 | `demo=judge` | legacy alias for the ordinary practice screen |
+| `demo=misaki` | opens the Chat with Misaki screen (`?mock=1` answers with the canned keyword rules of misaki-chat.md section 4) |
 | `demo=rows-select` | level select with r1 (3 stars) and r2 (2 stars) saved |
 | `demo=rows-3` | level r3 with `for i in range(2) :` placed |
 | `demo=rows-3-fail` | r3 with `range(2)` and `print(i)` placed, run, then hint 1 |

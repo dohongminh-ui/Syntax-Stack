@@ -99,7 +99,7 @@ export function comment(text, cls = '') {
 }
 
 /** Text with `inline code` spans; everything is inserted as text nodes (never innerHTML). */
-function richText(text) {
+export function richText(text) {
   const frag = document.createDocumentFragment();
   String(text ?? '').split(/(`[^`\n]+`)/g).forEach((part) => {
     if (part.length > 2 && part.startsWith('`') && part.endsWith('`')) frag.append(el('code', { text: part.slice(1, -1) }));

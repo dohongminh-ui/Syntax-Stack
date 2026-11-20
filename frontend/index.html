@@ -67,6 +67,7 @@
   <link rel="stylesheet" href="css/rooms.css">
   <link rel="stylesheet" href="css/ranked.css">
   <link rel="stylesheet" href="css/pvp.css">
+  <link rel="stylesheet" href="css/misaki.css">
 </head>
 <body>
 <noscript><p class="noscript">Syntax Stack cần JavaScript để chạy. Hãy bật JavaScript trong trình duyệt rồi tải lại trang.</p></noscript>
@@ -146,6 +147,7 @@
           <h2 class="hub-h">Học</h2>
           <button id="btn-practice-tray" class="btn" type="button">Luyện theo lỗi</button>
           <button id="btn-skills" class="btn" type="button">Bản đồ kỹ năng</button>
+          <button id="btn-misaki" class="btn" type="button">Trò chuyện với Misaki</button>
         </div>
         <div class="hub-col">
           <h2 class="hub-h">Thi đấu</h2>
@@ -191,6 +193,27 @@
       <div id="sk-empty" class="sk-empty" hidden></div>
       <div id="sk-detail" class="sk-detail" aria-live="polite"></div>
     </div>
+  </section>
+
+  <!-- CHAT WITH MISAKI: Live2D stage (or portrait / keycap avatar) beside an editor-window chat (js/misaki-chat.js) -->
+  <section id="screen-misaki" class="screen misaki" hidden>
+    <h1 id="mk-title" class="sr-only" tabindex="-1">Trò chuyện với Misaki</h1>
+    <div id="mk-stage" class="mk-stage">
+      <div class="mk-panel-wrap">
+        <div id="mk-panel" class="mk-panel" aria-hidden="true"><div id="mk-view" class="mk-view"></div></div>
+        <!-- shown only when the Live2D model is loaded (js/misaki-stage.js) -->
+        <div id="mk-body" class="switch mk-body" role="radiogroup" aria-label="Dáng của Misaki" hidden>
+          <span class="mk-body-l" aria-hidden="true">Dáng</span>
+          <label class="key keyopt"><input class="sr-only" type="radio" name="mk-body" value="chibi" checked><span class="cap-top"><span class="kb-label">Chibi</span></span></label>
+          <label class="key keyopt"><input class="sr-only" type="radio" name="mk-body" value="normal"><span class="cap-top"><span class="kb-label">Thường</span></span></label>
+        </div>
+      </div>
+      <div class="mk-foot">
+        <span id="mk-plate" class="mk-plate" aria-hidden="true"></span>
+        <p class="mk-credit">Mô hình Live2D: DeepSeek-chan — minh họa Kamiya Ryoko, rigging 霓虹猫_NeonNeko</p>
+      </div>
+    </div>
+    <div id="mk-chat" class="mk-chat"></div>
   </section>
 
   <!-- LIVE CLASSROOM: teacher creates a room -->

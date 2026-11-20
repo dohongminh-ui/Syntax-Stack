@@ -463,6 +463,11 @@ function playMisaki({ misaki, training }) {
   begin('bot', { misaki, training: !!training });
 }
 
+/** Chat with Misaki: start a training match against her at ladder level `misaki` (1..4). The server may answer 403 if that level is still locked. */
+export function startMisakiTraining(misaki) {
+  playMisaki({ misaki: Math.min(4, Math.max(1, Number(misaki) || 1)), training: true });
+}
+
 /** A fresh `start` on the same socket after both players pressed "Đấu lại": a new match against the same opponent. */
 function startRematch(msg) {
   const s = S;

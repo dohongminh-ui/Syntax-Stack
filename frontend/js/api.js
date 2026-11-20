@@ -178,6 +178,21 @@ export async function getCustomSet(id, level) {
   return request('GET', '/api/custom/sets/' + encodeURIComponent(id) + (level ? '?level=' + encodeURIComponent(level) : ''));
 }
 
+// ---- Chat with Misaki (docs/misaki-chat.md) ----
+const MISAKI_PUZZLE_TIMEOUT_MS = 75000; // tutor (up to ~38 s) + the sandbox that builds the set
+
+/** body: { messages: [{role: 'user'|'misaki', text}], context?: { level, weak_topics } } -> { text, source, mood, action }. */
+export async function misakiChat(body) {
+  if (isMock) return (await mock()).misakiChat(body);
+  return request('POST', '/api/misaki/chat', body, { timeout: TUTOR_TIMEOUT_MS });
+}
+
+/** body: { topic, idea, level } -> { set, source: 'ai'|'canned', note }. `set` has the custom-set shape. 429 = rate limited. */
+export async function misakiPuzzle(body) {
+  if (isMock) return (await mock()).misakiPuzzle(body);
+  return request('POST', '/api/misaki/puzzle', body, { timeout: MISAKI_PUZZLE_TIMEOUT_MS });
+}
+
 // ---- Live classroom ----
 const keyHeader = (key) => ({ 'X-Teacher-Key': key });
 const room = (code) => '/api/rooms/' + encodeURIComponent(code);

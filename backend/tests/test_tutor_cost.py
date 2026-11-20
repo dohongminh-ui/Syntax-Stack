@@ -55,7 +55,7 @@ def test_daily_cap_returns_canned_without_calling_out(monkeypatch):
     sources = [tutor.feedback("coach", {"n": n}, "c")["source"] for n in range(4)]
     assert sources == ["ai", "ai", "canned", "canned"]
     assert len(calls) == 2
-    assert tutor.stats() == {"configured": True, "calls_today": 2, "ai_today": 2,
+    assert tutor.stats() == {"configured": True, "provider": "n8n", "calls_today": 2, "ai_today": 2,
                              "fallback_today": 2, "limit": 2, "client_limit": 40}
 
 
@@ -128,7 +128,7 @@ def test_health_reports_tutor_counters(client, monkeypatch):
     tutor.feedback("coach", {}, "c")
     body = client.get("/api/health").json()
     assert body["ok"] is True and body["puzzles"] > 0
-    assert body["tutor"] == {"configured": True, "calls_today": 1, "ai_today": 1,
+    assert body["tutor"] == {"configured": True, "provider": "n8n", "calls_today": 1, "ai_today": 1,
                              "fallback_today": 0, "limit": 7, "client_limit": 40}
 
 

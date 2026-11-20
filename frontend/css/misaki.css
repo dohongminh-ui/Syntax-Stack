@@ -1,0 +1,193 @@
+/* Chat with Misaki (js/misaki-chat.js, js/misaki-stage.js). Tokens, keycaps, the editor window and the .tutor block
+   come from base.css and modal.css. Phone first: stage on top, chat below; two columns from 900px. */
+
+.misaki {
+  height: calc(100vh - var(--strip-h));
+  height: calc(100dvh - var(--strip-h));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: clamp(224px, 34vh, 360px) minmax(0, 1fr);
+  grid-template-rows: clamp(224px, 34svh, 360px) minmax(0, 1fr);
+  overflow: hidden;
+  min-width: 0;
+  transition: grid-template-rows 200ms var(--ease-out), grid-template-columns 200ms var(--ease-out), gap 200ms var(--ease-out);
+}
+.misaki.is-solo { grid-template-rows: 0px minmax(0, 1fr); }
+.misaki.is-solo .mk-stage { visibility: hidden; opacity: 0; padding-top: 0; transition: opacity 120ms linear, visibility 0s 200ms, padding 200ms var(--ease-out); }
+.mk-stage { overflow: hidden; transition: opacity 160ms linear 40ms, padding 200ms var(--ease-out); }
+
+/* ---------------- stage: a recessed keyboard-plate panel ---------------- */
+.mk-stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 10px var(--gutter) 0; }
+.mk-panel {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--r-case);
+  background:
+    radial-gradient(90% 75% at 50% 0%, color-mix(in srgb, var(--mustard) 14%, transparent), transparent 72%),
+    linear-gradient(180deg, color-mix(in srgb, var(--mustard) 5%, var(--plate)), var(--plate));
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), inset 0 0 0 1px var(--line), 0 1px 0 var(--case-hi);
+}
+.mk-panel::before {                 /* the plate's MX stem crosses, very faint */
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.9;
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28'><path d='M14 10v8M10 14h8' stroke='%23ece8df' stroke-opacity='.07' fill='none'/></svg>");
+}
+.mk-panel::after {                  /* the model is cropped at the waist: let it sink into the plate */
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 24%;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--plate), transparent);
+}
+.mk-view { position: absolute; inset: 0; }
+.mk-panel:has(.mk-view[data-body='chibi'])::after { display: none; }   /* the chibi is shown whole: no fade at the feet */
+
+/* body-type switch: a small keycap switch in the stage's top-right corner (only with the Live2D model) */
+.mk-panel-wrap { position: relative; flex: 1 1 auto; min-height: 0; display: flex; }
+.mk-panel-wrap .mk-panel { flex: 1 1 auto; }
+.mk-body { position: absolute; top: 10px; right: 10px; z-index: 2; align-items: center; gap: 4px; padding: 4px 4px 4px 10px; border-radius: 10px; width: auto; }
+.mk-body-l { font: 700 10px/1 var(--f-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
+.mk-body .key { flex: 0 0 auto; }
+.mk-body .keyopt .cap-top { min-height: 32px; padding: 0 10px; }
+.mk-body .kb-label { font-size: 12px; }
+@media (pointer: coarse) { .mk-body .keyopt .cap-top { min-height: 44px; } }
+.mk-canvas, .mk-portrait { position: absolute; inset: 0; width: 100%; height: 100%; animation: mk-in 320ms var(--ease-out) both; }
+.mk-portrait {
+  object-fit: contain; object-position: 50% 38%; user-select: none; pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 82%, transparent); mask-image: linear-gradient(to bottom, #000 82%, transparent);
+}
+@keyframes mk-in { from { opacity: 0; } to { opacity: 1; } }
+.mk-fallback { position: absolute; inset: 0; display: grid; place-items: center; transition: opacity 240ms ease; }
+.mk-view[data-state='model'] .mk-fallback, .mk-view[data-state='portrait'] .mk-fallback { opacity: 0; pointer-events: none; }
+.mk-avatar-big { --u: 84px; width: 96px; height: 84px; padding-bottom: 7px; }
+.mk-avatar-big .legend { font: 800 46px/1 var(--f-display); }
+
+.mk-foot { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 8px 0 6px; }
+.mk-plate { flex: none; display: flex; }
+.mk-plate-key { --u: 40px; }
+.mk-plate-key .cap-top { align-items: center; min-height: 28px; padding: 0 14px; }
+.mk-plate-key .kb-label { font: 700 12px/1 var(--f-mono); letter-spacing: 0.14em; }
+.mk-credit { font: 400 11px/1.4 var(--f-ui); color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+
+/* ---------------- chat: an editor window ---------------- */
+.mk-chat { min-width: 0; min-height: 0; padding-top: 6px; }
+.mk-win { height: 100%; min-height: 0; border-radius: var(--r-panel) var(--r-panel) 0 0; }
+.mk-new { margin: 0 -4px 0 0; align-self: center; font-size: 12px; }
+.mk-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px var(--gutter) 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scroll-padding-bottom: 12px;
+}
+.mk-log { display: flex; flex-direction: column; gap: 14px; margin: 0; min-width: 0; }
+.mk-row { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.mk-row-ai, .mk-row-chips { align-items: flex-start; }
+.mk-row-ai { max-width: min(100%, 580px); }
+.mk-row-me { align-items: flex-end; }
+.mk-msg { max-width: 100%; min-width: 0; }
+.mk-foot-ai { margin-top: auto; }
+
+/* learner: a neutral keycap bubble, right-aligned */
+.mk-bubble { max-width: min(88%, 460px); --u: 40px; -webkit-user-select: text; user-select: text; }
+.mk-bubble .cap-top { padding: 9px 13px 10px; }
+.mk-me-text { font: 400 14px/1.55 var(--f-ui); color: var(--legend); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+
+/* Misaki's one action: an Enter keycap under her bubble */
+.mk-action { max-width: 100%; }
+.mk-action .cap-top { min-height: 44px; padding-top: 8px; padding-bottom: 8px; }
+.mk-action .kb-label { white-space: normal; line-height: 1.25; }
+
+/* quick replies: small keycaps under the opening line */
+.mk-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.mk-chip .cap-top { min-height: 36px; padding: 0 12px; }
+@media (pointer: coarse) { .mk-chip .cap-top { min-height: 44px; } }
+
+/* composer: sticks to the bottom of the window; 16px type so phones do not zoom in */
+.mk-composer {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 10px var(--gutter) calc(10px + env(safe-area-inset-bottom, 0px));
+  background: var(--case);
+  border-top: 1px solid var(--line);
+}
+.mk-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 48px;
+  max-height: 132px;
+  resize: none;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--plate);
+  color: var(--text);
+  font: 400 16px/1.4 var(--f-ui);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+.mk-input::placeholder { color: var(--muted); }
+.mk-send { flex: none; }
+.mk-send .cap-top { min-height: 44px; }
+.is-busy .mk-send { cursor: progress; }
+
+/* tablet: the phone layout, roomier */
+@media (min-width: 600px) {
+  .misaki { max-width: 780px; margin: 0 auto; }
+  .mk-stage { padding: 12px 24px 0; }
+  .mk-scroll, .mk-composer { padding-left: 24px; padding-right: 24px; }
+}
+
+/* desktop: stage left (~42%), chat right */
+@media (min-width: 900px) {
+  .misaki {
+    max-width: 1360px;
+    grid-template-columns: 42fr 58fr;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 28px;
+    padding: 24px 28px 28px;
+  }
+  /* stage hidden: the chat fills the screen, centred at a readable width */
+  .misaki.is-solo { grid-template-columns: 0fr 1fr; grid-template-rows: minmax(0, 1fr); gap: 0; }
+  .misaki.is-solo .mk-chat { width: 100%; max-width: 760px; justify-self: center; }
+  .mk-stage { padding: 0; }
+  .mk-foot { flex-direction: column; gap: 8px; padding: 14px 0 0; text-align: center; }
+  .mk-credit { max-width: 40ch; }
+  .mk-chat { padding: 0; }
+  .mk-win { border-radius: var(--r-panel); }
+  .mk-avatar-big { --u: 120px; width: 136px; height: 120px; padding-bottom: 9px; }
+  .mk-avatar-big .legend { font-size: 66px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .misaki, .mk-stage, .misaki.is-solo .mk-stage { transition: none; }
+  .mk-canvas, .mk-portrait { animation: none; }
+  .mk-fallback { transition: none; }
+}
+
+/* phone: the switch is a column at the right edge, clear of the (centred) model */
+@media (max-width: 899px) {
+  .mk-body { flex-direction: column; align-items: stretch; gap: 4px; padding: 6px 4px 4px; }
+  .mk-body-l { text-align: center; margin: 0 0 2px; }
+  .mk-body .keyopt .cap-top { min-height: 36px; padding: 0 8px; }
+}
+@media (max-width: 899px) and (pointer: coarse) { .mk-body .keyopt .cap-top { min-height: 40px; } }
+
+/* title bar: "new chat" and the hide/show-Misaki keycap */
+.mk-bar-r { display: flex; align-items: center; gap: 10px; padding-bottom: 4px; }
+.mk-toggle { --u: 32px; flex: none; }
+.mk-toggle .cap-top { align-items: center; min-height: 30px; padding: 0 9px; }
+.mk-toggle-in { display: inline-flex; align-items: center; gap: 6px; color: var(--legend); }
+.mk-toggle-t { font: 600 12px/1 var(--f-ui); white-space: nowrap; }
+@media (max-width: 599px) { .mk-toggle-t { display: none; } .mk-toggle .cap-top { padding: 0 11px; } }
+@media (pointer: coarse) { .mk-toggle .cap-top { min-height: 38px; } }

@@ -14,7 +14,7 @@ import { sfx } from './sound.js';
 import { keycap } from './keycap.js';
 import { initStrip, showStrip, setMode, setScore, setStatus, setStreak, setLedMode } from './strip.js';
 import { buildTitle, playWave, buildPreviews, buildBackdrop } from './start.js';
-import { initRows, openPracticeRows, openSelect, runDemo } from './rows-screen.js';
+import { initRows, openPracticeRows, openSelect, openLevel, runDemo } from './rows-screen.js';
 import { setScreenTitle } from './title.js';
 import { initSkills, openSkills } from './skills.js';
 import { initCustom, openCustom } from './custom.js';
@@ -25,6 +25,7 @@ import * as Ranked from './ranked.js';
 import { initLeaderboard, openLeaderboard } from './leaderboard.js';
 import { initRace, openRace } from './race.js';
 import * as Pvp from './pvp-screen.js';
+import { initMisakiChat, openMisakiChat } from './misaki-chat.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -51,7 +52,7 @@ function show(id) {
   setScreenTitle(id);
   for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
   if (['screen-start', 'screen-end', 'screen-pvp-end'].includes(id)) showStrip(false);
-  $('strip').classList.toggle('strip-plain', ['screen-practice', 'screen-skills', 'screen-custom', 'screen-leaderboard', 'screen-race-new', 'screen-race', 'screen-pvp'].includes(id));
+  $('strip').classList.toggle('strip-plain', ['screen-practice', 'screen-skills', 'screen-custom', 'screen-leaderboard', 'screen-race-new', 'screen-race', 'screen-pvp', 'screen-misaki'].includes(id));
   Rooms.syncChip(id);
   window.scrollTo(0, 0);
 }
@@ -94,6 +95,7 @@ function initStart() {
   $('btn-practice-tray').addEventListener('click', () => showPractice());
   $('btn-skills').addEventListener('click', () => openSkills());
   $('btn-custom').addEventListener('click', () => openCustom());
+  $('btn-misaki').addEventListener('click', () => openMisakiChat());
   $('practice-home').addEventListener('click', goHome);
   for (const [card, btn] of [['card-rescue', 'btn-play'], ['card-rows', 'btn-rows']]) {
     $(card).addEventListener('click', (e) => {
@@ -766,6 +768,19 @@ async function boot() {
     play: () => playPrefs(),
   });
   initCustom({ show, home: goHome, level: () => prefs.level });
+  initMisakiChat({
+    show,
+    home: goHome,
+    level: () => prefs.level,
+    // what her action keycaps do (they only run on a click); "make a puzzle" is handled inside misaki-chat.js
+    run: {
+      rescue: ({ mode, level, focusTopic }) => startGame({ mode, level: LEVEL_NAME[level] ? level : prefs.level, focusTopic }),
+      rows: (id) => openLevel(id),
+      practice: () => showPractice(),
+      skills: () => openSkills(),
+      pvp: (misaki) => Pvp.startMisakiTraining(misaki),
+    },
+  });
   initStart();
   Ranked.initRanked({ openBoard: (level) => openLeaderboard({ level }) });
   initLeaderboard({ show, home: goHome, level: () => prefs.level, playRun });
@@ -787,6 +802,7 @@ async function boot() {
   if (!demo) return;
   if (demo === 'skills') return openSkills({ sample: demoSkills() });
   if (demo === 'custom') return openCustom();
+  if (demo === 'misaki') return openMisakiChat();
   if (demo === 'judge') return showPractice(); // legacy URL: ordinary practice, without a separate judge flow
   if (demo.startsWith('rows-')) return runDemo(demo);
   const mode = params.get('mode') || 'rescue';

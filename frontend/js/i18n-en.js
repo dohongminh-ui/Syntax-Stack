@@ -863,6 +863,50 @@ export const EN = new Map([
   ["Chương trình đang trống. Hãy dán một đoạn mã Python ngắn.", "The program is empty. Paste a short piece of Python code."],
 
   ["Gợi ý bước này", "Hint for this step"],
+
+  // ---- Chat with Misaki (misaki-chat.js, misaki-stage.js, index.html, mock-api.js) ----
+  ["Trò chuyện với Misaki", "Chat with Misaki"],
+  ["Trò chuyện với Misaki — Syntax Stack", "Chat with Misaki — Syntax Stack"],
+  ["TRÒ CHUYỆN VỚI MISAKI", "CHAT WITH MISAKI"],
+  ["Mô hình Live2D: DeepSeek-chan — minh họa Kamiya Ryoko, rigging 霓虹猫_NeonNeko", "Live2D model: DeepSeek-chan, illustration by Kamiya Ryoko, rigging by 霓虹猫_NeonNeko"],
+  ["Chào bạn! Hôm nay bạn đang vướng chỗ nào?", "Hi! What are you stuck on today?"],
+  ["Mình hay sai vòng lặp", "I keep getting loops wrong"],
+  ["Mình thấy chán", "I'm bored"],
+  ["Tạo câu đố cho mình", "Make me a puzzle"],
+  ["Nên chơi gì tiếp?", "What should I play next?"],
+  ["Gợi ý câu hỏi", "Quick questions"],
+  ["Do AI tạo, có thể chưa chính xác. Câu đố Misaki viết luôn được hệ thống kiểm chứng.", "Written by AI, so it may be wrong. The puzzles Misaki writes are always checked by the system."],
+  ["Misaki đang nghĩ", "Misaki is thinking"],
+  ["Misaki đang viết câu đố…", "Misaki is writing a puzzle…"],
+  ["Tin nhắn cho Misaki", "Message for Misaki"],
+  ["Nhắn cho Misaki…", "Message Misaki…"],
+  ["Gửi", "Send"],
+  ["Cuộc trò chuyện mới", "New chat"],
+  ["Cuộc trò chuyện với Misaki", "Conversation with Misaki"],
+  ["Mình đang mất kết nối một chút. Bạn gửi lại giúp mình nhé?", "I lost my connection for a moment. Could you send that again?"],
+  ["Mình chưa viết được câu đố lúc này. Bạn thử lại sau nhé.", "I couldn't write a puzzle just now. Please try again in a bit."],
+  ["Bạn nhờ mình hơi nhanh đó. Đợi một lát rồi nhờ mình lần nữa nhé.", "You're asking me a bit fast! Wait a moment, then ask me again."],
+  ["Câu đố của bạn đây. Vào giải thử nhé!", "Here's your puzzle. Give it a try!"],
+  ["Luyện tập Code Rescue", "Practice Code Rescue"],
+  ["Mở bản đồ kỹ năng", "Open the Skill Map"],
+  ["CÂU ĐỐ TỪ MISAKI", "PUZZLES FROM MISAKI"],
+  ["Câu đố từ Misaki", "Puzzles from Misaki"],
+  ["Misaki viết một chương trình Python nhỏ, hệ thống kiểm chứng và biến nó thành câu đố.", "Misaki writes a small Python program, and the system checks it and turns it into puzzles."],
+  ["Về cuộc trò chuyện", "Back to the chat"],
+  ["Thiếu tin nhắn của bạn.", "Your message is missing."],
+  ["Dáng", "Form"],
+  ["Ẩn Misaki", "Hide Misaki"],
+  ["Hiện Misaki", "Show Misaki"],
+  ["Dáng của Misaki", "Misaki's form"],
+  ["Thường", "Normal"],
+  ["biến", "variables"],
+  ["câu điều kiện", "conditions"],
+  ["vòng lặp", "loops"],
+  ["hàm", "functions"],
+  ["Mình rất vui vì bạn đã nói với mình. Chuyện này quan trọng lắm, nhưng mình chỉ là một nhân vật trong trò chơi nên không giúp bạn đủ được. Bạn hãy nói ngay với một người lớn bạn tin tưởng hoặc thầy cô nhé. Bạn cũng có thể gọi Tổng đài quốc gia bảo vệ trẻ em 111 (miễn phí, 24/7).", "I'm really glad you told me. This is important, and I'm only a game character, so I can't help you enough. Please talk to a trusted adult or a teacher right now. You can also call your local emergency number or a child helpline."],
+  ["Chán rồi à? Vậy mình đấu một ván tập với mình cho vui nhé, thua cũng không sao đâu.", "Feeling bored? Let's play a practice match against me, it's just for fun."],
+  ["Ai cũng có lúc bị kẹt, không sao đâu. Mình mở khay luyện tập các lỗi bạn hay sai để ôn lại từng chút nhé.", "Everyone gets stuck sometimes, it's okay. Let's open practice for the mistakes you make most and go over them step by step."],
+  ["Mình giúp được vài việc: giải thích biến, câu điều kiện, vòng lặp hoặc hàm, viết câu đố riêng cho bạn, hoặc gợi ý bài tập khi bạn thấy chán hay bị kẹt. Bạn đang vướng chỗ nào?", "I can help with variables, conditions, loops or functions, write a puzzle just for you, or suggest something to play when you're bored or stuck. What's troubling you?"],
 ]);
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -921,6 +965,8 @@ const TPL = [
 
 const NAME_ANIMALS = 'Mèo|Cáo|Gấu|Hổ|Cú|Rùa|Thỏ|Sói';
 const NAME_COLORS = 'Xanh|Đỏ|Vàng|Tím|Hồng|Nâu|Bạc|Cam';
+
+const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
 
 export const EN_PATTERNS = [
   ...FAIL,
@@ -1045,6 +1091,13 @@ export const EN_PATTERNS = [
   [/^Máy (\d+)$/, (m) => `Bot ${m[1]}`],
   [/^Kết quả trận (.+)$/, (m) => `Match results ${m[1]}`],
   [/^([\s\S]+?) Bạn vẫn có thể chơi một ván Rescue không xếp hạng\.$/, (m, t) => `${t(m[1])} You can still play an unranked Rescue game.`],
+
+  // ---- Chat with Misaki ----
+  [/^Luyện tập: (.+)$/, (m, t) => `Practice: ${t(m[1])}`],
+  [/^Chơi Syntax Rows · Màn (\d+)$/, (m) => `Play Syntax Rows · Level ${m[1]}`],
+  [/^Được thôi! Mình mở Luyện tập chủ đề (.+) cho bạn nhé\.$/, (m, t) => `Sure! Let's open Practice on ${t(m[1])}.`],
+  [/^Chủ đề (.+) hả\? Mình viết cho bạn một câu đố nhỏ về (.+) nhé, bạn chỉ cần bấm nút bên dưới\.$/, (m, t) => `${cap(t(m[1]))}, right? I can write you a small puzzle about ${t(m[2])}, just press the button below.`],
+  [/^Mình viết sẵn một chương trình nhỏ về (.+)\. Thử đoán xem nó làm gì nhé!$/, (m, t) => `I wrote a small program about ${t(m[1])} for you. Try to work out what it does!`],
 
   // ---- mock data ----
   [new RegExp(`^(${NAME_ANIMALS}) (${NAME_COLORS})( \\d+)?$`), (m, t) => `${t(m[2])} ${t(m[1])}${m[3] || ''}`],

@@ -73,6 +73,8 @@ Do not use `--reload` in production: Syntax Rows levels are cached after first u
 | `SYNTAX_STACK_LEVELS` | `app/rows.py` (read at import) | `backend/content/levels` | Folder with Syntax Rows level YAML files. |
 | `SYNTAX_STACK_TUTOR_URL` | `app/tutor.py` (read on every call) | unset | n8n webhook URL. With the token unset the tutor is off. |
 | `SYNTAX_STACK_TUTOR_TOKEN` | `app/tutor.py` (read on every call) | unset | Shared secret, sent as header `X-Syntax-Stack-Token`. |
+| `SYNTAX_STACK_GEMINI_API_KEY` | `app/tutor.py` (read on every call) | unset | Google Gemini API key for the direct provider (no n8n). Used only when the n8n pair above is not both set. Sent in the `x-goog-api-key` header, never in a URL, never logged. |
+| `SYNTAX_STACK_GEMINI_MODEL` | `app/tutor.py` (read on every call) | per task | Gemini model for every task of the direct provider. Default: the model the n8n flow uses first, `gemini-3.8-flash` for `coach` and `gemini-3.5-flash-lite` for every other task. |
 | `SYNTAX_STACK_TUTOR_DAILY_LIMIT` | `app/tutor.py` (read on every call) | `500` | Maximum real tutor calls per local day, counted in process. `0` turns the tutor off (always canned). An unparsable value falls back to 500. |
 | `SYNTAX_STACK_TUTOR_CLIENT_LIMIT` | `app/tutor.py` (read on every call) | `40` | Maximum real tutor calls per visitor (IP) per local day, so one visitor cannot use up the daily limit for everyone. Over it: canned text (reason `client_limit`). |
 | `SYNTAX_STACK_PUBLIC_URL` | `app/rooms.py` (read on every call) | unset | Public base URL used for live-classroom join links and QR codes (e.g. `https://syntaxstack.example`). Unset: the proxy's `X-Forwarded-Proto` / `X-Forwarded-Host`, else the request host. |
@@ -85,8 +87,18 @@ Do not use `--reload` in production: Syntax Rows levels are cached after first u
 Everything else (port, host, workers) is a uvicorn command-line option. Nothing reads a `.env` file;
 set variables in the shell or the service definition.
 
-The tutor needs **both** `SYNTAX_STACK_TUTOR_URL` and `SYNTAX_STACK_TUTOR_TOKEN`. Details and the
+The n8n tutor needs **both** `SYNTAX_STACK_TUTOR_URL` and `SYNTAX_STACK_TUTOR_TOKEN`. Details and the
 fallback rules: [ai-tutor.md](ai-tutor.md#4-environment-variables-and-runtime-limits).
+
+**Local Gemini without n8n.** To try the tutor and Chat with Misaki on your own machine without running
+n8n, set only `SYNTAX_STACK_GEMINI_API_KEY` (and optionally `SYNTAX_STACK_GEMINI_MODEL`) before starting
+uvicorn. With the n8n pair unset, `app/tutor.py` calls the Gemini REST API directly
+(`generativelanguage.googleapis.com`, key in a header, a 38 s timeout, no proxy settings read from the
+environment) using the same prompts, JSON mode and response schemas as `deploy/n8n-tutor.json`
+(`app/tutor_prompts.py` holds the copy; a test keeps the two identical). Quotas, the in-process cache,
+the concurrency slots and the canned fallback are the same as with n8n, and if both providers are
+configured n8n wins. `GET /api/health` reports the active one as `tutor.provider` (`"n8n"`, `"gemini"`
+or `null`). Keep the key out of git, as with the n8n token.
 
 ## 4. Regenerating the puzzle bank
 

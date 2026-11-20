@@ -98,6 +98,13 @@ export function practiceFocus(topics) {
   };
 }
 
+/** The (up to `limit`) topics the learner got wrong most often in the last 40 mistakes, most frequent first. Sent to Misaki as a hint. */
+export function weakTopics(topics, limit = 4) {
+  const counts = new Map();
+  for (const entry of practiceHistory()) if (topics.includes(entry?.topic)) counts.set(entry.topic, (counts.get(entry.topic) || 0) + 1);
+  return [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a)).slice(0, limit);
+}
+
 // ---- Skill map: per-template outcomes of Code Rescue bank puzzles ----
 const SKILLS_KEY = 'syntaxstack.skills';
 const SKILLS_SEEN_KEY = 'syntaxstack.skills.seen';
@@ -144,6 +151,44 @@ export function loadSkillsSeen() {
 export function saveSkillsSeen(levels) {
   try {
     localStorage.setItem(SKILLS_SEEN_KEY, JSON.stringify(levels));
+  } catch {
+    /* ignore */
+  }
+}
+
+// ---- Chat with Misaki: which body her model shows ('chibi' is the default, 'normal' the tall form) ----
+const BODY_KEY = 'syntaxstack.misaki.body';
+
+export function loadMisakiBody() {
+  try {
+    return localStorage.getItem(BODY_KEY) === 'normal' ? 'normal' : 'chibi';
+  } catch {
+    return 'chibi';
+  }
+}
+
+export function saveMisakiBody(name) {
+  try {
+    localStorage.setItem(BODY_KEY, name === 'normal' ? 'normal' : 'chibi');
+  } catch {
+    /* ignore */
+  }
+}
+
+// ---- Chat with Misaki: is her stage panel hidden? (default: shown) ----
+const STAGE_KEY = 'syntaxstack.misaki.stage';
+
+export function loadMisakiStageHidden() {
+  try {
+    return localStorage.getItem(STAGE_KEY) === 'hidden';
+  } catch {
+    return false;
+  }
+}
+
+export function saveMisakiStageHidden(hidden) {
+  try {
+    localStorage.setItem(STAGE_KEY, hidden ? 'hidden' : 'shown');
   } catch {
     /* ignore */
   }
