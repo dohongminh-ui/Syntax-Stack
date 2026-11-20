@@ -157,6 +157,10 @@ topic.
 
 ### Slide 12 — Live demo (target 3:30, hard stop 3:45)
 
+Before the presentation, clear Syntax Rows Levels 1 and 2 in the presenter’s browser profile to
+unlock Level 3. Start on the English homepage and press **Ctrl+Alt+M** to open the prepared chat.
+Paste the three prompts below as written.
+
 | Clock | Action | Evidence to point at |
 | --- | --- | --- |
 | 0:00–0:45 | Open Code Rescue from chat and clear one locked line. | Solving a Python puzzle unlocks the line. |
@@ -183,9 +187,10 @@ Replace `range(2)` with `range(3)` and run again. Return to the chat.
 
 > Make a beginner Python loop puzzle set. Use a short for loop with range(1, 4), and let me predict the output before you explain it.
 
-Click **Make puzzles** and open **Predict the output**. Submit a wrong answer, then correct it.
-Click **Review with Misaki** and let her explain the two checked attempts. If you're ahead of time,
-click **Try a follow-up** to show how she builds on the same mistake.
+Click **Make puzzles** and open **Predict the output**. Submit a wrong answer, then select the
+output with `1`, `2`, and `3` on separate lines. Click **Review with Misaki**. When the validator
+confirms that sequence, Misaki plays the prepared review. Keep **Try a follow-up** for Q&A because
+it uses the live tutor.
 
 **4. Show the live classroom.** Press **Ctrl+2** and cue Lam to submit a wrong answer. Point to the
 student's result and **Most common mistakes** as the dashboard updates. Keep the QR code visible

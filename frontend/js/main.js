@@ -1,5 +1,5 @@
 // Boot, screens and the Code Rescue controller (glue between game.js, board.js, the puzzle panel and the API).
-import './i18n.js'; // first: sets <html lang> and translates the static page before anything renders
+import { lang, setLang } from './i18n.js'; // first: sets <html lang> and translates the static page before anything renders
 import * as Game from './game.js';
 import * as api from './api.js';
 import { isMock } from './api.js';
@@ -14,7 +14,7 @@ import { sfx } from './sound.js';
 import { keycap } from './keycap.js';
 import { initStrip, showStrip, setMode, setScore, setStatus, setStreak, setLedMode } from './strip.js';
 import { buildTitle, playWave, buildPreviews, buildBackdrop } from './start.js';
-import { initRows, openPracticeRows, openSelect, openLevel, runDemo } from './rows-screen.js';
+import { initRows, lockedLevelReferral, openPracticeRows, openSelect, openLevel, runDemo } from './rows-screen.js';
 import { setScreenTitle } from './title.js';
 import { initSkills, openSkills } from './skills.js';
 import { initCustom, openCustom } from './custom.js';
@@ -25,10 +25,11 @@ import * as Ranked from './ranked.js';
 import { initLeaderboard, openLeaderboard } from './leaderboard.js';
 import { initRace, openRace } from './race.js';
 import * as Pvp from './pvp-screen.js';
-import { initMisakiChat, openMisakiChat } from './misaki-chat.js';
+import { initMisakiChat, openMisakiChat, openMisakiRehearsal } from './misaki-chat.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
+const REHEARSAL_START_KEY = 'syntaxstack.misaki.start-rehearsal';
 
 // Diagnostics for headless checks (?diag=1): collect runtime errors into the DOM.
 if (params.get('diag') === '1') {
@@ -110,7 +111,7 @@ function initStart() {
   document.addEventListener('keydown', onPresenterShortcut);
 }
 
-// Prepare three real screens from home; use the browser's Ctrl+1/2/3 to switch tabs on stage.
+// Prepare real screens from home; use the browser's Ctrl+1/2/3 to switch tabs on stage.
 async function onPresenterShortcut(e) {
   if (!e.ctrlKey || !e.altKey || e.shiftKey || e.metaKey || e.repeat || e.isComposing || e.defaultPrevented) return;
   if ($('screen-start').hidden || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
@@ -119,6 +120,16 @@ async function onPresenterShortcut(e) {
     Digit2: () => openCustom(),
     Digit3: () => openPracticeRows('r3', 'predict', showPractice),
     Digit4: () => Pvp.openMisakiTraining(),
+    KeyM: () => {
+      if (lang() === 'en') return openMisakiRehearsal();
+      try {
+        sessionStorage.setItem(REHEARSAL_START_KEY, '1');
+      } catch {
+        toast('Chọn EN rồi nhấn Ctrl+Alt+M để mở bản diễn tập.');
+        return;
+      }
+      setLang('en');
+    },
   }[e.code];
   if (!open) return;
   e.preventDefault();
@@ -785,6 +796,7 @@ async function boot() {
     show,
     home: goHome,
     level: () => prefs.level,
+    lockedLevelReferral,
     // what her action keycaps do (they only run on a click); "make a puzzle" is handled inside misaki-chat.js
     run: {
       rescue: ({ mode, level, focus_topic }) => startGame({ mode, level, focusTopic: focus_topic || undefined }),
@@ -811,6 +823,14 @@ async function boot() {
   if (raceCode) return openRace(raceCode);
   const setId = params.get('set');
   if (setId) return openCustom({ shared: setId });
+  let startRehearsal = false;
+  try {
+    startRehearsal = sessionStorage.getItem(REHEARSAL_START_KEY) === '1';
+    if (startRehearsal) sessionStorage.removeItem(REHEARSAL_START_KEY);
+  } catch {
+    /* Storage is optional. The shortcut still works from the English homepage. */
+  }
+  if (startRehearsal && lang() === 'en') return openMisakiRehearsal();
   const demo = params.get('demo');
   if (!demo) return;
   if (demo === 'skills') return openSkills({ sample: demoSkills() });

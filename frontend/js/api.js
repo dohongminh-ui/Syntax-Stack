@@ -148,13 +148,14 @@ export function teachBack(id, body) {
 }
 
 /** Tutor explains why a wrong output prediction differs from the real output. body: { rows, prediction } */
-export async function explainPrediction(id, body) {
+export async function explainPrediction(id, body, { rehearsal = false } = {}) {
   if (isMock) {
     const m = await mock();
     const run = await m.rowsRun(id, { rows: body.rows });
     return m.explainPrediction(body.prediction, run.actual_output);
   }
-  return request('POST', '/api/rows/levels/' + encodeURIComponent(id) + '/explain-prediction', body, { timeout: TUTOR_TIMEOUT_MS });
+  const path = '/api/rows/levels/' + encodeURIComponent(id) + '/explain-prediction';
+  return request('POST', path + (rehearsal ? '?rehearsal=true' : ''), body, { timeout: TUTOR_TIMEOUT_MS });
 }
 
 /** End-of-run tutor summary. body: { level, mode, end_reason, wrong: [...] } */

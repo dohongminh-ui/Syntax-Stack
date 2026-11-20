@@ -29,6 +29,7 @@ MAX_CODE = 2500         # a puzzle reply is bigger than a chat reply; create_set
 MAX_REVIEW_ATTEMPTS = 8  # up to two submissions per puzzle in the latest set
 MISAKI_LEVELS = (1, 2, 3, 4)
 ACTION_TYPES = ("rescue", "rows", "practice_tray", "skills", "pvp_training", "make_puzzle")
+REHEARSAL_CODE = "for i in range(1, 4):\n    print(i)"
 
 TOPIC_NAMES = {
     "variables": ("biến", "variables"), "conditions": ("câu điều kiện", "conditions"),
@@ -487,8 +488,29 @@ def _ai_context(messages: list[dict], context: Optional[dict], review: list[dict
     return ctx
 
 
+def _respect_rows_unlocks(reply: dict, completed: Optional[list[str]]) -> dict:
+    action = reply.get("action")
+    if completed is None or not action or action["type"] != "rows":
+        return reply
+    levels = rows.list_levels()
+    target = next((i for i, level in enumerate(levels) if level["id"] == action["level_id"]), -1)
+    if target <= 0 or levels[target - 1]["id"] in completed:
+        return reply
+    playable = target - 1
+    while playable > 0 and levels[playable - 1]["id"] not in completed:
+        playable -= 1
+    wanted, previous = levels[target]["order"], levels[target - 1]["order"]
+    text = tr(f"Màn {wanted} đang khóa. Hoàn thành Màn {previous} để mở nhé.",
+              f"Level {wanted} is locked. Finish Level {previous} to unlock it.")
+    if playable < target - 1:
+        first = levels[playable]["order"]
+        text += tr(f" Bạn có thể bắt đầu ở Màn {first}.", f" You can start with Level {first}.")
+    return {"text": text, "source": "canned", "mood": "happy",
+            "action": {"type": "rows", "level_id": levels[playable]["id"]}}
+
+
 def chat(messages: list[dict], context: Optional[dict], client: Optional[str], *,
-         voice_language: Optional[str] = None) -> dict:
+         voice_language: Optional[str] = None, rehearsal: bool = False) -> dict:
     """``{"text", "source", "mood", "action"}``. The safety check runs first and never calls the tutor."""
     last = messages[-1]["text"]
     if is_crisis(last):
@@ -513,8 +535,20 @@ def chat(messages: list[dict], context: Optional[dict], client: Optional[str], *
                   "mood": "thinking", "action": {"type": "make_puzzle", "topic": review_topic, "idea": ""}}
     else:
         canned = _review_reply(review) if wants_review else canned_chat(messages, context)
-    if not configured:
+    if rehearsal and puzzle_request == "review":
+        # Play the recorded line only when the checked attempts support every claim in it.
+        if i18n.cur() == "en" and len(review) == 2:
+            first, retry = review
+            if (first["puzzle_id"] == retry["puzzle_id"] and retry["type"] == "predict_output"
+                    and retry["code"].strip() == REHEARSAL_CODE and not first["correct"] and retry["correct"]
+                    and retry["actual_output"] == "1\n2\n3"):
+                return {
+                    "text": "Your first prediction was off. On your retry, you got one, two, and three. The loop stops before four.",
+                    "mood": "happy", "action": None, "source": "canned", "recording": "review",
+                }
         return {**canned, "source": "canned"}
+    if not configured:
+        return _respect_rows_unlocks({**canned, "source": "canned"}, context.get("rows_completed"))
     previous_action = None
     if len(messages) > 1 and messages[-2]["role"] == "misaki":
         previous_action = validate_action(context.get("previous_action"))
@@ -529,7 +563,8 @@ def chat(messages: list[dict], context: Optional[dict], client: Optional[str], *
     requested_topic = review_topic if follow_up else topics[0] if len(topics) == 1 else None
     validate = partial(validate_chat_reply, requested_topic=requested_topic, follow_up=follow_up,
                        previous_action=previous_action, review_topic=review_topic, voice_language=voice_language)
-    return tutor.ask_json(tutor_prompts.CHAT_TASK, ai_context, canned, validate, client=client)
+    reply = tutor.ask_json(tutor_prompts.CHAT_TASK, ai_context, canned, validate, client=client)
+    return _respect_rows_unlocks(reply, context.get("rows_completed"))
 
 
 # --------------------------------------------------------------------------- puzzle flow (spec section 2)
@@ -567,8 +602,14 @@ def _is_rate_limit(exc: Exception) -> bool:
 
 
 def make_puzzle(topic: str, idea: str, level: str, client: Optional[str], *,
-                voice_language: Optional[str] = None) -> dict:
+                voice_language: Optional[str] = None, rehearsal: bool = False) -> dict:
     """``{"set", "source": "ai" | "canned", "note"}``. A 429 from the custom-set rate limit passes through."""
+    if rehearsal and topic == "loops" and i18n.cur() == "en":
+        return {
+            "set": custom.create_set(REHEARSAL_CODE, level, client, from_misaki=True),
+            "source": "canned", "recording": "puzzle",
+            "note": "Here’s your loop puzzle. Predict what it prints before checking your answer.",
+        }
     if tutor.configured():
         context = {"topic": topic, "idea": idea, "level": level}
         if voice_language:

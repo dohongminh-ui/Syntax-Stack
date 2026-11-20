@@ -1,5 +1,6 @@
 import { misakiVoice } from './api.js';
 import { readVoiceStream } from './misaki-pcm.js';
+import { isRehearsalRecording, loadRehearsalRecording } from './misaki-rehearsal.js';
 import { createVisemeSampler } from './misaki-visemes.js';
 import { isMuted, prepareAudio } from './sound.js';
 
@@ -25,14 +26,15 @@ export function createVoicePlayer(setSampler) {
     onState(false);
   }
 
-  async function play(ticket, onState, onStart, onClip) {
+  async function play(voice, onState, onStart, onClip) {
     if (isMuted() || !voiceSupported) return;
     stop();
     const context = prepareAudio();
     if (!context) return;
     const analyser = context.createAnalyser();
     analyser.connect(context.destination);
-    const current = { ticket, onState, analyser, abort: new AbortController(), sources: new Set() };
+    const key = voice.recording || voice.ticket;
+    const current = { key, onState, analyser, abort: new AbortController(), sources: new Set() };
     playing = current;
     onState(true);
     const timeline = [];
@@ -73,17 +75,24 @@ export function createVoicePlayer(setSampler) {
     try {
       if (context.state !== 'running') await context.resume();
       if (playing !== current) return;
-      if (clip?.ticket === ticket) {
+      if (clip?.key === key) {
         enqueue(clip.buffer, false);
+      } else if (isRehearsalRecording(voice.recording)) {
+        const data = await loadRehearsalRecording(voice.recording);
+        if (playing !== current) return;
+        const buffer = await context.decodeAudioData(data.slice(0));
+        if (playing !== current) return;
+        clip = { key, buffer };
+        enqueue(buffer, false);
       } else {
-        const response = await misakiVoice(ticket, current.abort.signal);
+        const response = await misakiVoice(voice.ticket, current.abort.signal);
         if (playing !== current) return;
         const streamed = response.headers.get('content-type')?.startsWith('application/octet-stream');
         const buffer = streamed
           ? await readVoiceStream(response, context, (part) => enqueue(part, true), () => next <= context.currentTime)
           : await context.decodeAudioData(await response.arrayBuffer());
         if (playing !== current) return;
-        clip = { ticket, buffer };
+        clip = { key, buffer };
         if (streamed) onClip(buffer);
         else enqueue(buffer, false);
       }
@@ -96,9 +105,9 @@ export function createVoicePlayer(setSampler) {
     }
   }
 
-  async function toggle(ticket, onState, onStart, onClip) {
-    if (playing?.ticket === ticket) stop();
-    else await play(ticket, onState, onStart, onClip);
+  async function toggle(voice, onState, onStart, onClip) {
+    if (playing?.key === (voice.recording || voice.ticket)) stop();
+    else await play(voice, onState, onStart, onClip);
   }
 
   return { play, toggle, stop };

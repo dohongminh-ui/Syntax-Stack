@@ -802,6 +802,34 @@ def _review_request(set_view, puzzle, *options):
     }}}
 
 
+def test_rehearsal_uses_checked_attempts_without_the_tutor_or_voice_provider(client, ai):
+    headers = {"X-Lang": "en"}
+    made = client.post(PUZZLE, json={"topic": "loops", "rehearsal": True, "voice": True}, headers=headers).json()
+    assert made["recording"] == "puzzle" and "voice" not in made
+    assert made["set"]["expected_output"] == "1\n2\n3"
+    puzzle, correct, wrong = _prediction_answers(made["set"])
+
+    for picks, recording in [((wrong, correct), "review"), ((correct,), None), ((correct, wrong), None)]:
+        body = _review_request(made["set"], puzzle, *picks) | {"rehearsal": True}
+        body["context"]["puzzle_request"] = "review"
+        review = client.post(CHAT, json=body, headers=headers).json()
+        assert review.get("recording") == recording
+        assert review["source"] == "canned"
+
+    assert not ai.calls
+
+
+@pytest.mark.parametrize(("completed", "offered", "locked"), [
+    ([], "r1", True), (["r1"], "r2", True), (["r1", "r2"], "r3", False),
+])
+def test_chat_recommends_a_playable_prerequisite_for_a_locked_rows_level(client, ai, completed, offered, locked):
+    ai.reply["misaki_chat"] = {"text": "Try Count to three.", "mood": "happy", "action": {"type": "rows", "level_id": "r3"}}
+    body = say("Open Syntax Rows Level 3") | {"context": {"rows_completed": completed}}
+    reply = client.post(CHAT, json=body, headers={"X-Lang": "en"}).json()
+    assert reply["action"] == {"type": "rows", "level_id": offered}
+    assert ("Level 3 is locked. Finish Level 2" in reply["text"]) is locked
+
+
 def test_chat_uses_checked_wrong_and_correct_attempts_from_misakis_puzzle(client, ai):
     ai.reply["misaki_puzzle"] = {"code": misaki.AUTHORED["loops"][0], "note": "Try this loops puzzle."}
     headers = {"X-Lang": "en"}

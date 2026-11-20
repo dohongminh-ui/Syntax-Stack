@@ -10,6 +10,7 @@ import { titleBar, codeBlock, terminal, comment, tutorNote } from './editor.js';
 import { showStrip, setMode, setScore, setStatus, setStreak, setLedMode } from './strip.js';
 import { setLevelTitle } from './title.js';
 import { sfx } from './sound.js';
+import { rehearsing } from './misaki-rehearsal.js';
 
 const $ = (id) => document.getElementById(id);
 let nav = { show: () => {}, home: () => {} };
@@ -101,6 +102,17 @@ async function loadLevels() {
   levels.sort((a, b) => a.order - b.order);
   progress = store.loadRowsProgress();
   return levels;
+}
+
+/** Find the immediate prerequisite and the earlier level the player can open now. */
+export async function lockedLevelReferral(id) {
+  if (!levels) await loadLevels();
+  const saved = store.loadRowsProgress();
+  const target = levels.findIndex((level) => level.id === id);
+  if (target <= 0 || R.isUnlocked(levels, saved, id)) return null;
+  let playable = target - 1;
+  while (!R.isUnlocked(levels, saved, levels[playable].id)) playable--;
+  return { target: levels[target], previous: levels[target - 1], playable: levels[playable] };
 }
 
 // ---- level select -----------------------------------------------------------------------------------------
@@ -512,7 +524,9 @@ async function explainWrongPrediction(game, button) {
   button.disabled = true;
   box.replaceChildren(tutorNote({ loading: true }));
   try {
-    const r = await api.explainPrediction(game.state.level.id, { rows: attempt.rows, prediction: game.lastPrediction });
+    const levelId = game.state.level.id;
+    const r = await api.explainPrediction(levelId, { rows: attempt.rows, prediction: game.lastPrediction },
+      { rehearsal: rehearsing && levelId === 'r3' });
     if (game !== G || status.whyToken !== token) return;
     box.replaceChildren(tutorNote({ text: r.text, source: r.source === 'ai' ? 'ai' : 'canned', context: 'dự đoán' }));
   } catch (e) {

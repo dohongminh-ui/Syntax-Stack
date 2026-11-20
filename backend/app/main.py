@@ -206,6 +206,7 @@ class MisakiPuzzleReview(BaseModel):
 class MisakiContext(BaseModel):
     level: Optional[Level] = None
     weak_topics: list[Topic] = Field(default_factory=list, max_length=4)
+    rows_completed: Optional[list[str]] = Field(default=None, max_length=40)
     puzzle_review: Optional[MisakiPuzzleReview] = None
     puzzle_request: Optional[Literal["review", "follow_up"]] = None
     previous_action: Optional[dict[str, Any]] = Field(default=None, max_length=8)
@@ -222,6 +223,7 @@ class MisakiVoiceOptions(BaseModel):
 class MisakiChatRequest(MisakiVoiceOptions):
     messages: list[MisakiMessage] = Field(min_length=1, max_length=12)
     context: Optional[MisakiContext] = None
+    rehearsal: bool = False
 
     @model_validator(mode="after")
     def _last_is_user(self):
@@ -239,6 +241,7 @@ class MisakiPuzzleRequest(MisakiVoiceOptions):
     topic: Topic
     idea: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     level: Level = "intermediate"
+    rehearsal: bool = False
 
 
 class PuzzleSubmission(BaseModel):
@@ -579,7 +582,7 @@ def custom_get(set_id: str, level: Level = "intermediate"):
 
 def _attach_voice(reply: dict, text_key: str, req: MisakiVoiceOptions, client: Optional[str]) -> dict:
     spoken = reply.pop("speech_text", None)
-    if req.voice and reply["source"] != "safety" and tutor.configured() and tutor.daily_limit():
+    if req.voice and not reply.get("recording") and reply["source"] != "safety" and tutor.configured() and tutor.daily_limit():
         language = req.translation_language()
         text = reply[text_key]
         spoken = (spoken or misaki.translate_speech(text, language, client)) if language else text
@@ -594,7 +597,7 @@ def misaki_chat(req: MisakiChatRequest, request: Request):
     client = _client_ip(request)
     reply = misaki.chat([m.model_dump() for m in req.messages],
                         req.context.model_dump() if req.context else None, client,
-                        voice_language=req.translation_language())
+                        voice_language=req.translation_language(), rehearsal=req.rehearsal)
     return _attach_voice(reply, "text", req, client)
 
 
@@ -629,7 +632,8 @@ async def misaki_speech(req: MisakiVoiceRequest, request: Request):
 def misaki_puzzle(req: MisakiPuzzleRequest, request: Request):
     """A custom puzzle set that Misaki wrote (or an authored one): ``{set, source: ai|canned, note}``."""
     client = _client_ip(request)
-    reply = misaki.make_puzzle(req.topic, req.idea, req.level, client, voice_language=req.translation_language())
+    reply = misaki.make_puzzle(req.topic, req.idea, req.level, client,
+                               voice_language=req.translation_language(), rehearsal=req.rehearsal)
     return _attach_voice(reply, "note", req, client)
 
 
@@ -824,7 +828,7 @@ def rows_teach_back(level_id: str, req: TeachBackRequest, request: Request):
 
 
 @app.post("/api/rows/levels/{level_id}/explain-prediction")
-def rows_explain_prediction(level_id: str, req: RunRequest, request: Request):
+def rows_explain_prediction(level_id: str, req: RunRequest, request: Request, rehearsal: bool = False):
     """Explain a wrong output prediction. The server re-runs the board; the client sends its guess."""
     lv = rows.get_level(level_id)
     prediction = (req.prediction or "").strip()
@@ -852,6 +856,11 @@ def rows_explain_prediction(level_id: str, req: RunRequest, request: Request):
         "Mở «Theo dõi từng bước» để xem mỗi dòng print chạy lúc nào.",
         f"You predicted:\n{guess}\nThe program prints:\n{actual or '(nothing)'}\n"
         "Open \"Step-by-step trace\" to see when each print line runs.")
+    if rehearsal:
+        if (i18n.cur() == "en" and level_id == "r3" and actual == "0\n1" and guess == "0\n1\n2"
+                and result["code"].strip().replace(" :", ":") == "for i in range(2):\n    print(i)"):
+            fallback = "You predicted 0, 1, and 2. The trace shows `range(2)` stops before 2, so the loop prints 0 and 1."
+        return {"text": fallback, "source": "canned"}
     return tutor.feedback("predict", context, fallback, client=_client_ip(request))
 
 

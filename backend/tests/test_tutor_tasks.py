@@ -97,6 +97,14 @@ def test_predict_reports_a_failing_board_too(client, sent):
     assert ctx["passed"] is False and ctx["actual_output"].split() == ["0", "1"]
 
 
+def test_rehearsal_prediction_explains_the_checked_trace_without_the_tutor(client, sent):
+    body = {"rows": swap("r3", "t4", "t1"), "prediction": "0\n1\n2"}
+    response = client.post(PREDICT + "?rehearsal=true", json=body, headers={"X-Lang": "en"})
+    assert response.status_code == 200
+    assert "`range(2)` stops before 2" in response.json()["text"]
+    assert not sent
+
+
 def test_predict_only_client_data_is_the_prediction(client, sent):
     marker = "ZZ-LEARNER-ZZ"
     client.post(PREDICT, json={"rows": canon("r3"), "prediction": marker})
