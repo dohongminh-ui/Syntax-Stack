@@ -266,8 +266,9 @@ def ask_json(task: str, context: dict, fallback: dict, validate: Callable[[dict]
     def ask(url: str, payload: str) -> dict:
         raw = _call(url, payload)
         if task == tutor_prompts.VOICE_TASK and raw.get("status") == 429:
-            time.sleep(1)
-            raw = _call(url, payload)
+            body = json.loads(payload)
+            body["context"]["fallback"] = True
+            raw = _call(url, json.dumps(body, ensure_ascii=False))
         return validate(raw)
 
     value, source = _run(task, context, fallback, client, lang, ask, cache=cache)

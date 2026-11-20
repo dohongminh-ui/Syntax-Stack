@@ -13,6 +13,7 @@ COACH_MODEL = "gemini-3.8-flash"
 CHAT_TASK = "misaki_chat"
 VOICE_TASK = "misaki_voice"
 VOICE_MODEL = "gemini-3.8-flash-lite-tts"
+VOICE_FALLBACK_MODEL = "gemini-3.8-flash-tts"
 VOICE_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
 
 TUTOR = (
@@ -127,7 +128,7 @@ def default_model(task: str) -> str:
 
 def build_voice_request(body: dict) -> dict:
     return {
-        "model": VOICE_MODEL,
+        "model": VOICE_FALLBACK_MODEL if body["context"].get("fallback") else VOICE_MODEL,
         "store": False,
         "input": body["context"]["text"],
         "response_format": {"type": "audio"},

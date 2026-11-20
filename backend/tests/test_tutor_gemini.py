@@ -175,6 +175,8 @@ def test_voice_uses_the_interactions_endpoint_and_prebuilt_voice(gemini):
         "model": "gemini-3.8-flash-lite-tts", "store": False, "input": "こんにちは！",
         "response_format": {"type": "audio"}, "generation_config": {"speech_config": [{"voice": "Leda"}]},
     }
+    fallback = tutor_prompts.build_voice_request({"context": {"text": "こんにちは！", "fallback": True}})
+    assert fallback == {**call["json"], "model": "gemini-3.8-flash-tts"}
 
 
 @pytest.mark.parametrize("reply", [
