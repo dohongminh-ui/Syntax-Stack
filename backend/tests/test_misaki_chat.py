@@ -162,6 +162,32 @@ def test_invalid_action_is_dropped_but_the_text_stays(client, ai, action):
     assert body["source"] == "ai" and body["text"] == "Thử cái này nhé." and body["action"] is None
 
 
+@pytest.mark.parametrize("lang, request_text, reply_text, action", [
+    ("en", "I keep getting loops wrong",
+     "Let's practice variables, just click the button below.", None),
+    ("vi", "Mình hay sai vòng lặp",
+     "Bạn bấm nút bên dưới để luyện tập nhé.", {"type": "rescue", "mode": "practice"}),
+    ("en", "I keep getting loops wrong", "Let's practice variables.",
+     {"type": "rescue", "mode": "practice", "level": "beginner", "focus_topic": "variables"}),
+    ("en", "I keep getting loops wrong", "Try a puzzle about variables.",
+     {"type": "make_puzzle", "topic": "variables"}),
+])
+def test_unusable_button_recommendation_falls_back_to_the_requested_topic(client, ai, lang, request_text, reply_text, action):
+    ai.reply["misaki_chat"] = {"text": reply_text, "mood": "happy", "action": action}
+    request = say(request_text) | {"context": {"level": "beginner", "weak_topics": ["variables"]}}
+    body = client.post(CHAT, json=request, headers={"X-Lang": lang}).json()
+    assert body["source"] == "canned"
+    assert body["action"] == {"type": "make_puzzle", "topic": "loops", "idea": ""}
+    assert ("loops" if lang == "en" else "vòng lặp") in body["text"].lower()
+
+
+def test_explanation_without_a_button_still_passes(client, ai):
+    reply = {"text": "The stop value of `range` is excluded.", "mood": "thinking", "action": None}
+    ai.reply["misaki_chat"] = reply
+    response = client.post(CHAT, json=say("How do loops work?"), headers={"X-Lang": "en"})
+    assert response.json() == {**reply, "source": "ai"}
+
+
 def test_valid_actions_pass_with_only_their_own_fields(client, ai):
     first_level = sorted(rows.load_levels())[0]
     cases = [

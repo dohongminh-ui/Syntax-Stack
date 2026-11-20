@@ -60,8 +60,9 @@ Response:
 - `mood`: one of `neutral`, `happy`, `excited`, `thinking`, `worried`, `sad`, `shy`, `dizzy`. Anything
   else becomes `neutral`.
 - `text`: at most 600 characters, plain text, inline `code` spans allowed, URLs stripped.
-- `action`: `null` or exactly one of the shapes below. An invalid action is dropped (set to `null`)
-  and the text is kept.
+- `action`: `null` or exactly one of the shapes below. The server drops invalid actions. If the reply
+  refers to a missing button or the action targets a different topic than the one the learner named,
+  the server uses the authored reply with its matching action.
 
 | `type` | Extra fields | Client does |
 | --- | --- | --- |

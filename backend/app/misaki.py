@@ -10,6 +10,7 @@ import logging
 import random
 import re
 import unicodedata
+from functools import partial
 from typing import Any, Optional
 
 from . import custom, i18n, rows, tutor
@@ -178,21 +179,32 @@ def validate_action(raw: Any) -> Optional[dict]:
 # Letters only Vietnamese uses (đ, ă, ơ, ư and the vowels with a hook or dot below). Three or more in an English
 # reply means the model ignored the language: treat it as unusable so the learner gets the authored line instead.
 _VI_LETTERS = set("đăơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ")
+_BUTTON_CUE = re.compile(
+    r"\b(?:(?:button|keycap) (?:(?:right|just) )?(?:below|above|underneath)"
+    r"|(?:click|press|tap|hit) (?:on )?(?:the |this |that )?(?:button|keycap)"
+    r"|(?:bam|nhan|an|cham) (?:vao )?(?:cai )?nut|nut (?:ben |phia )?duoi)\b"
+)
 
 
 def wrong_language(text: str) -> bool:
     return i18n.resolve(None) == "en" and sum(ch in _VI_LETTERS for ch in text.lower()) >= 3
 
 
-def validate_chat_reply(raw: dict) -> dict:
-    """Tutor reply -> ``{"text", "mood", "action"}``; ``ValueError`` when there is no usable text."""
+def validate_chat_reply(raw: dict, *, requested_topic: Optional[str] = None) -> dict:
+    """Validate the tutor text and its optional action together."""
     text = raw.get("text")
     if isinstance(text, str):
         text = text[:MAX_RAW_TEXT]
         if wrong_language(text):
             raise ValueError("reply not in the request's language")
-    return {"text": clean_text(text, MAX_TEXT), "mood": normalize_mood(raw.get("mood")),
-            "action": validate_action(raw.get("action"))}
+    text = clean_text(text, MAX_TEXT)
+    action = validate_action(raw.get("action"))
+    if action is None and _BUTTON_CUE.search(fold(text)):
+        raise ValueError("reply refers to a missing action button")
+    action_topic = (action.get("focus_topic") or action.get("topic")) if action else None
+    if requested_topic and action_topic and action_topic != requested_topic:
+        raise ValueError("action focuses on a different topic from the learner's request")
+    return {"text": text, "mood": normalize_mood(raw.get("mood")), "action": action}
 
 
 def validate_puzzle_reply(raw: dict) -> dict:
@@ -242,8 +254,12 @@ _WHAT_TO_PLAY = re.compile(
 MAX_GREETING_WORDS = 8   # "hi" inside a long message is rarely a greeting
 
 
+def _strong_topics(folded: str) -> list[str]:
+    return [topic for topic in TOPICS if _TOPIC_STRONG[topic].search(folded)]
+
+
 def _topic_of(folded: str, mood_word: bool) -> Optional[str]:
-    hits = [t for t in TOPICS if _TOPIC_STRONG[t].search(folded)]
+    hits = _strong_topics(folded)
     if not hits and not mood_word:
         hits = [t for t, rx in _TOPIC_WEAK.items() if rx.search(folded)]
     return hits[0] if hits else None
@@ -389,7 +405,9 @@ def chat(messages: list[dict], context: Optional[dict], client: Optional[str]) -
     canned = canned_chat(messages, context)
     if not tutor.configured():
         return {**canned, "source": "canned"}
-    return tutor.ask_json("misaki_chat", _ai_context(messages, context), canned, validate_chat_reply, client=client)
+    topics = _strong_topics(fold(messages[-1]["text"]))
+    validate = partial(validate_chat_reply, requested_topic=topics[0] if len(topics) == 1 else None)
+    return tutor.ask_json("misaki_chat", _ai_context(messages, context), canned, validate, client=client)
 
 
 # --------------------------------------------------------------------------- puzzle flow (spec section 2)
