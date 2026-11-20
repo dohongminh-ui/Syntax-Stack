@@ -278,14 +278,15 @@ function frame(shared, preset = null) {
   setMode(preset ? 'CÂU ĐỐ TỪ MISAKI' : shared ? 'BỘ CÂU ĐỐ CHIA SẺ' : 'TẠO CÂU ĐỐ');
   setStreak(null);
   $('cu-title').textContent = preset ? 'Câu đố từ Misaki' : shared ? 'Bộ câu đố được chia sẻ' : 'Tạo câu đố từ code';
-  $('cu-sub').textContent = preset ? preset.note || 'Misaki viết một chương trình Python nhỏ, hệ thống kiểm chứng và biến nó thành câu đố.'
-    : shared ? 'Một bộ câu đố được tạo từ chương trình Python của người khác. Giải thử và xem bạn đúng được mấy câu.' : EXPLAIN;
+  $('cu-sub').replaceChildren(preset
+    ? preset.noteContent || preset.note || 'Misaki viết một chương trình Python nhỏ, hệ thống kiểm chứng và biến nó thành câu đố.'
+    : shared ? 'Một bộ câu đố được tạo từ chương trình Python của người khác. Giải thử và xem bạn đúng được mấy câu.' : EXPLAIN);
   $('cu-title').focus({ preventScroll: true });
 }
 
 /**
  * Opens the custom-puzzle screen. `shared`: the id of a set to load. `preset`: a set already in hand
- * ({ set, note, back, backLabel, onAttempt, onReview }), as made by "Chat with Misaki"; it plays like a shared set.
+ * ({ set, note, noteContent, back, backLabel, onAttempt, onReview }), as made by "Chat with Misaki".
  */
 export function openCustom({ shared = null, preset = null } = {}) {
   st.token++;

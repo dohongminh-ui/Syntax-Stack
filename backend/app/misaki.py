@@ -193,6 +193,22 @@ def wrong_language(text: str, language: Optional[str] = None) -> bool:
     return i18n.resolve(language) == "en" and sum(ch in _VI_LETTERS for ch in text.lower()) >= 3
 
 
+def speech_text(value: Any, language: str) -> Optional[str]:
+    try:
+        text = clean_text(value, MAX_TEXT)
+        if not wrong_language(text, language):
+            return text
+    except ValueError:
+        pass
+    return None
+
+
+def translate_speech(text: str, language: str, client: Optional[str]) -> Optional[str]:
+    result = tutor.feedback(tutor_prompts.VOICE_TRANSLATION_TASK,
+                            {"text": text, "voice_language": language}, "", client=client)
+    return speech_text(result["text"], language)
+
+
 def validate_chat_reply(raw: dict, *, requested_topic: Optional[str] = None, follow_up: bool = False,
                         previous_action: Optional[dict] = None, review_topic: Optional[str] = None,
                         voice_language: Optional[str] = None) -> dict:
@@ -220,17 +236,12 @@ def validate_chat_reply(raw: dict, *, requested_topic: Optional[str] = None, fol
     if kind != "repeat_offer" and requested_topic and action_topic and action_topic != requested_topic:
         raise ValueError("action focuses on a different topic from the learner's request")
     reply = {"text": text, "mood": normalize_mood(raw.get("mood")), "action": action}
-    if voice_language:
-        try:
-            spoken = clean_text(raw.get("speech_text"), MAX_TEXT)
-            if not wrong_language(spoken, voice_language):
-                reply["speech_text"] = spoken
-        except ValueError:
-            pass
+    if voice_language and (spoken := speech_text(raw.get("speech_text"), voice_language)):
+        reply["speech_text"] = spoken
     return reply
 
 
-def validate_puzzle_reply(raw: dict) -> dict:
+def validate_puzzle_reply(raw: dict, *, voice_language: Optional[str] = None) -> dict:
     """Tutor reply -> ``{"code", "note"}``; ``ValueError`` when there is no program."""
     code = raw.get("code")
     if not isinstance(code, str) or not code.strip() or len(code) > MAX_CODE:
@@ -242,7 +253,10 @@ def validate_puzzle_reply(raw: dict) -> dict:
             note = ""
     except ValueError:
         note = ""
-    return {"code": code, "note": note}
+    reply = {"code": code, "note": note}
+    if note and voice_language and (spoken := speech_text(raw.get("speech_text"), voice_language)):
+        reply["speech_text"] = spoken
+    return reply
 
 
 # --------------------------------------------------------------------------- canned Misaki (spec section 4)
@@ -552,11 +566,15 @@ def _is_rate_limit(exc: Exception) -> bool:
     return isinstance(exc, custom.CustomError) and exc.status == 429
 
 
-def make_puzzle(topic: str, idea: str, level: str, client: Optional[str]) -> dict:
+def make_puzzle(topic: str, idea: str, level: str, client: Optional[str], *,
+                voice_language: Optional[str] = None) -> dict:
     """``{"set", "source": "ai" | "canned", "note"}``. A 429 from the custom-set rate limit passes through."""
     if tutor.configured():
-        reply = tutor.ask_json("misaki_puzzle", {"topic": topic, "idea": idea, "level": level},
-                               {"code": "", "note": ""}, validate_puzzle_reply, client=client)
+        context = {"topic": topic, "idea": idea, "level": level}
+        if voice_language:
+            context["voice_language"] = voice_language
+        reply = tutor.ask_json("misaki_puzzle", context, {"code": "", "note": ""},
+                               partial(validate_puzzle_reply, voice_language=voice_language), client=client)
         if reply["source"] == "ai":
             try:
                 made = custom.create_set(reply["code"], level, client, from_misaki=True)
@@ -567,7 +585,10 @@ def make_puzzle(topic: str, idea: str, level: str, client: Optional[str]) -> dic
             except Exception as exc:  # the sandbox must never take the endpoint down: use an authored program
                 logger.warning("misaki puzzle: AI program failed (%s)", type(exc).__name__)
             else:
-                return {"set": made, "source": "ai", "note": reply["note"] or _canned_note(topic)}
+                result = {"set": made, "source": "ai", "note": reply["note"] or _canned_note(topic)}
+                if "speech_text" in reply:
+                    result["speech_text"] = reply["speech_text"]
+                return result
     programs = AUTHORED[topic][:]
     random.shuffle(programs)
     last: Optional[Exception] = None

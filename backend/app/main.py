@@ -211,11 +211,17 @@ class MisakiContext(BaseModel):
     previous_action: Optional[dict[str, Any]] = Field(default=None, max_length=8)
 
 
-class MisakiChatRequest(BaseModel):
-    messages: list[MisakiMessage] = Field(min_length=1, max_length=12)
-    context: Optional[MisakiContext] = None
+class MisakiVoiceOptions(BaseModel):
     voice: bool = False
     voice_language: Optional[Literal["vi", "en", "ja"]] = None
+
+    def translation_language(self) -> Optional[str]:
+        return self.voice_language if self.voice and self.voice_language != i18n.cur() else None
+
+
+class MisakiChatRequest(MisakiVoiceOptions):
+    messages: list[MisakiMessage] = Field(min_length=1, max_length=12)
+    context: Optional[MisakiContext] = None
 
     @model_validator(mode="after")
     def _last_is_user(self):
@@ -229,7 +235,7 @@ class MisakiVoiceRequest(BaseModel):
     stream: bool = False
 
 
-class MisakiPuzzleRequest(BaseModel):
+class MisakiPuzzleRequest(MisakiVoiceOptions):
     topic: Topic
     idea: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
     level: Level = "intermediate"
@@ -571,17 +577,25 @@ def custom_get(set_id: str, level: Level = "intermediate"):
 # --------------------------------------------------------------------------- Chat with Misaki (docs/misaki-chat.md)
 
 
+def _attach_voice(reply: dict, text_key: str, req: MisakiVoiceOptions, client: Optional[str]) -> dict:
+    spoken = reply.pop("speech_text", None)
+    if req.voice and reply["source"] != "safety" and tutor.configured() and tutor.daily_limit():
+        language = req.translation_language()
+        text = reply[text_key]
+        spoken = (spoken or misaki.translate_speech(text, language, client)) if language else text
+        if spoken and (voice := misaki_voice.issue(spoken)):
+            reply["voice"] = voice
+    return reply
+
+
 @app.post("/api/misaki/chat")
 def misaki_chat(req: MisakiChatRequest, request: Request):
     """A reply from Misaki: ``{text, source: ai|canned|safety, mood, action}``. Nothing is stored or logged."""
-    translation = req.voice_language if req.voice and req.voice_language != i18n.cur() else None
+    client = _client_ip(request)
     reply = misaki.chat([m.model_dump() for m in req.messages],
-                        req.context.model_dump() if req.context else None, _client_ip(request),
-                        voice_language=translation)
-    spoken = reply.pop("speech_text", None) if translation else reply["text"]
-    if req.voice and spoken and reply["source"] != "safety" and (voice := misaki_voice.issue(spoken)):
-        reply["voice"] = voice
-    return reply
+                        req.context.model_dump() if req.context else None, client,
+                        voice_language=req.translation_language())
+    return _attach_voice(reply, "text", req, client)
 
 
 @app.post("/api/misaki/voice")
@@ -614,7 +628,9 @@ async def misaki_speech(req: MisakiVoiceRequest, request: Request):
 @app.post("/api/misaki/puzzle")
 def misaki_puzzle(req: MisakiPuzzleRequest, request: Request):
     """A custom puzzle set that Misaki wrote (or an authored one): ``{set, source: ai|canned, note}``."""
-    return misaki.make_puzzle(req.topic, req.idea, req.level, _client_ip(request))
+    client = _client_ip(request)
+    reply = misaki.make_puzzle(req.topic, req.idea, req.level, client, voice_language=req.translation_language())
+    return _attach_voice(reply, "note", req, client)
 
 
 # --------------------------------------------------------------------------- live classroom

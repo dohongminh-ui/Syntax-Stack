@@ -302,6 +302,32 @@ def test_missing_translation_keeps_the_written_reply(client, ai):
     assert client.post(CHAT, json={**say("hi"), "voice_language": "jp"}).status_code == 422
 
 
+def test_missing_spoken_translation_gets_a_voice_ticket(client, ai):
+    text = "You solved all four puzzles!"
+    spoken = "四問とも正解だったよ！"
+    ai.reply["misaki_chat"] = {"text": text, "mood": "happy", "action": None}
+    ai.reply["misaki_voice_translation"] = {"text": spoken}
+    reply = client.post(CHAT, json={**say("How did I do?"), "voice": True, "voice_language": "ja"},
+                        headers={"X-Lang": "en"}).json()
+    assert reply["text"] == text
+    assert reply["voice"]["transcript"] == spoken
+    assert [call["task"] for call in ai.calls] == ["misaki_chat", "misaki_voice_translation"]
+    assert ai.calls[-1]["context"] == {"text": text, "voice_language": "ja"}
+
+
+def test_puzzle_introduction_has_separate_voice_language(client, ai):
+    text = "Guess what this program prints."
+    spoken = "このプログラムが何を表示するか考えてみてね。"
+    ai.reply["misaki_puzzle"] = {"code": "n = 2\nprint(n * 4)", "note": text, "speech_text": spoken}
+    response = client.post(PUZZLE, json={"topic": "variables", "voice": True, "voice_language": "ja"},
+                           headers={"X-Lang": "en"})
+    assert response.status_code == 200
+    reply = response.json()
+    assert reply["note"] == text and reply["set"]["puzzles"]
+    assert "speech_text" not in reply and reply["voice"]["transcript"] == spoken
+    assert [call["task"] for call in ai.calls] == ["misaki_puzzle"]
+
+
 def test_button_decision_comes_from_the_tool_even_when_text_is_identical(client, ai):
     text = "Let's practice loops."
     ai.reply["misaki_chat"] = {"function_calls": [{"name": "reply", "args": {

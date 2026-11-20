@@ -299,3 +299,10 @@ def test_speech_translation_prompt_matches_the_n8n_flow():
     body = {"task": tutor_prompts.CHAT_TASK, "lang": "en", "context": {"voice_language": "ja"}}
     request = tutor_prompts.build_request(body, tutor_prompts.DEFAULT_MODEL)
     assert request["systemInstruction"]["parts"][0]["text"].endswith(tutor_prompts.LANG_EN + tutor_prompts.SPEECH_TRANSLATION)
+    for name, prompt, task in (
+        ("puzzleSpeechTranslation", tutor_prompts.PUZZLE_SPEECH_TRANSLATION, "misaki_puzzle"),
+        ("voiceTranslation", tutor_prompts.VOICE_TRANSLATION, tutor_prompts.VOICE_TRANSLATION_TASK),
+    ):
+        assert "const " + name + " = " + json.dumps(prompt, ensure_ascii=False) + ";" in js
+        request = tutor_prompts.build_request({**body, "task": task}, tutor_prompts.DEFAULT_MODEL)
+        assert request["systemInstruction"]["parts"][0]["text"].endswith(prompt)

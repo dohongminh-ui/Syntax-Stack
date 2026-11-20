@@ -86,7 +86,7 @@ starts the activity. The tool call supplies the action, and the app supplies the
 ### `POST /api/misaki/puzzle`
 
 Request: `{"topic": "loops", "idea": "range bắt đầu từ 1", "level": "beginner"}`. `idea` is 0 to 200
-characters.
+characters. The same optional `voice` and `voice_language` fields can request speech for Misaki's puzzle introduction.
 
 1. If the tutor is configured, ask the AI task `misaki_puzzle` for `{"code", "note"}`. `code` is a Python
    program of at most 15 lines, in the custom-puzzle subset, on `topic`.
@@ -127,9 +127,10 @@ the Leda voice. On a provider rate limit, speech falls back to Gemini 3.8 Flash 
 Voice calls share the tutor's quotas.
 
 When the voice language differs from the game's language, the same chat tool call supplies a spoken
-translation. The browser buffers about 300 ms of streamed audio before starting playback and revealing the reply.
+translation. An additional translation request is used if the chat reply or puzzle introduction has no usable spoken
+translation. The browser buffers about 300 ms of streamed audio before starting playback and revealing the text.
 If audio fails or has not started
-after 15 seconds, it shows the reply and cancels autoplay. Muted speech also leaves the text visible.
+after 15 seconds, it shows the reply and cancels autoplay. Muted turns request text only.
 While audio plays, the current phrase is highlighted using estimated timing from the clip and transcript.
 
 The browser estimates vowel shapes from the speech audio and blends the rig's mouth opening, form,
