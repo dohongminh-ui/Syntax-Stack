@@ -120,12 +120,12 @@ async function onPresenterShortcut(e) {
     Digit2: () => openCustom(),
     Digit3: () => openPracticeRows('r3', 'predict', showPractice),
     Digit4: () => Pvp.openMisakiTraining(),
-    KeyM: () => {
+    KeyB: () => {
       if (lang() === 'en') return openMisakiRehearsal();
       try {
         sessionStorage.setItem(REHEARSAL_START_KEY, '1');
       } catch {
-        toast('Chọn EN rồi nhấn Ctrl+Alt+M để mở bản diễn tập.');
+        toast('Chọn EN rồi nhấn Ctrl+Alt+B để mở bản diễn tập.');
         return;
       }
       setLang('en');

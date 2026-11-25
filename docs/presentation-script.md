@@ -158,7 +158,7 @@ topic.
 ### Slide 12 — Live demo (target 3:30, hard stop 3:45)
 
 Before the presentation, clear Syntax Rows Levels 1 and 2 in the presenter’s browser profile to
-unlock Level 3. Start on the English homepage and press **Ctrl+Alt+M** to open the prepared chat.
+unlock Level 3. Start on the English homepage and press **Ctrl+Alt+B** to open the prepared chat.
 Paste the three prompts below as written.
 
 | Clock | Action | Evidence to point at |
